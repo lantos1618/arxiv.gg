@@ -78,9 +78,9 @@ embeddings:
 docker:
 	docker build -t arxiv-cache .
 
-# Run Docker container
+# Run Docker container (production)
 docker-run:
-	docker run -p 8080:8080 -v $(HOME)/.arxiv:/root/.arxiv arxiv-cache
+	docker run -d --name arxiv-container --restart unless-stopped -p 80:80 -v /data/arxiv:/data/arxiv arxiv-cache
 
 # Benchmark tests
 bench:

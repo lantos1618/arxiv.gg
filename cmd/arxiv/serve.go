@@ -56,6 +56,7 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 8080, "Port to listen on")
+	localMode := fs.Bool("local", false, "Enable local PDF/source caching (downloads files locally instead of redirecting to arxiv.org)")
 	fs.Parse(args)
 
 	cache, err := arxiv.Open(cacheDir)
@@ -63,7 +64,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		log.Fatalf("open cache: %v", err)
 	}
 
-	srv := &server{cache: cache, cacheDir: cacheDir}
+	srv := &server{cache: cache, cacheDir: cacheDir, localMode: *localMode}
 	mux := http.NewServeMux()
 
 	// API routes (before other routes for proper matching)
@@ -119,8 +120,9 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 }
 
 type server struct {
-	cache    *arxiv.Cache
-	cacheDir string
+	cache     *arxiv.Cache
+	cacheDir  string
+	localMode bool // Enable local PDF/source caching instead of redirecting to arxiv.org
 }
 
 // sitemapURLs collects the public, crawlable URLs for the sitemap.
@@ -625,6 +627,7 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 		"CitedByCount":   citedByCount,
 		"FetchingSource": fetchingSource,
 		"HasEmbedding":   hasEmbedding,
+		"LocalMode":      s.localMode,
 	}
 	templates.ExecuteTemplate(w, "paper", data)
 }
@@ -696,43 +699,45 @@ func (s *server) handlePDF(w http.ResponseWriter, r *http.Request) {
 
 	// Serve PDF: GET /pdf/{id}
 	paperID := path
-	paper, err := s.cache.GetPaper(ctx, paperID)
+
+	paper, err := s.cache.Fetch(ctx, paperID)
 	if err != nil {
-		// Ensure metadata exists (fetch from arxiv.org if needed)
-		paper, err = s.cache.Fetch(ctx, paperID)
-		if err != nil {
-			http.Error(w, "failed to fetch paper: "+err.Error(), http.StatusNotFound)
-			return
-		}
-	}
-
-	// Download PDF if we don't have it yet or path is missing
-	if !paper.PDFDownloaded || paper.PDFPath == "" {
-		opts := &arxiv.DownloadOptions{DownloadPDF: true, DownloadSource: false}
-		if err := s.cache.DownloadPaper(ctx, paper.ID, opts); err != nil {
-			http.Error(w, "failed to download PDF: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// Reload paper metadata to get updated PDFPath
-		if p2, err := s.cache.GetPaperFresh(ctx, paperID); err == nil {
-			paper = p2
-		}
-	}
-
-	if paper.PDFPath == "" {
-		http.Error(w, "PDF path missing", http.StatusInternalServerError)
+		http.Error(w, "paper not found: "+err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// Verify file exists
-	if _, err := os.Stat(paper.PDFPath); err != nil {
-		http.Error(w, "PDF file not found", http.StatusNotFound)
+	// Local mode: download and serve PDFs locally
+	if s.localMode {
+		if !paper.PDFDownloaded || paper.PDFPath == "" {
+			opts := &arxiv.DownloadOptions{DownloadPDF: true, DownloadSource: false}
+			if err := s.cache.DownloadPaper(ctx, paper.ID, opts); err != nil {
+				http.Error(w, "failed to download PDF: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if p2, err := s.cache.GetPaperFresh(ctx, paperID); err == nil {
+				paper = p2
+			}
+		}
+
+		if paper.PDFPath == "" {
+			http.Error(w, "PDF path missing", http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := os.Stat(paper.PDFPath); err != nil {
+			http.Error(w, "PDF file not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", paperID+".pdf"))
+		http.ServeFile(w, r, paper.PDFPath)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", paperID+".pdf"))
-	http.ServeFile(w, r, paper.PDFPath)
+	// Gateway mode: redirect to arXiv.org
+	arxivURL := fmt.Sprintf("https://arxiv.org/pdf/%s.pdf", paperID)
+	http.Redirect(w, r, arxivURL, http.StatusFound)
 }
 
 func (s *server) handleSource(w http.ResponseWriter, r *http.Request) {
@@ -743,39 +748,44 @@ func (s *server) handleSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	// Local mode: serve source files from local cache
+	if s.localMode {
+		ctx := r.Context()
+		paperID := parts[0]
+		filePath := strings.Join(parts[1:], "/")
 
-	paperID := parts[0]
-	filePath := strings.Join(parts[1:], "/")
+		paper, err := s.cache.GetPaper(ctx, paperID)
+		if err != nil && len(parts) >= 3 {
+			paperID = parts[0] + "/" + parts[1]
+			filePath = strings.Join(parts[2:], "/")
+			paper, err = s.cache.GetPaper(ctx, paperID)
+		}
 
-	paper, err := s.cache.GetPaper(ctx, paperID)
-	if err != nil && len(parts) >= 3 {
-		paperID = parts[0] + "/" + parts[1]
-		filePath = strings.Join(parts[2:], "/")
-		paper, err = s.cache.GetPaper(ctx, paperID)
-	}
+		if err != nil || !paper.SourceDownloaded || paper.SourcePath == "" {
+			http.NotFound(w, r)
+			return
+		}
 
-	if err != nil || !paper.SourceDownloaded || paper.SourcePath == "" {
-		http.NotFound(w, r)
+		fullPath := filepath.Join(paper.SourcePath, filePath)
+		fullPath = filepath.Clean(fullPath)
+		if !strings.HasPrefix(fullPath, paper.SourcePath) {
+			http.NotFound(w, r)
+			return
+		}
+
+		info, err := os.Stat(fullPath)
+		if err != nil || info.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, fullPath)
 		return
 	}
 
-	// Security: ensure the requested path is within the source directory
-	fullPath := filepath.Join(paper.SourcePath, filePath)
-	fullPath = filepath.Clean(fullPath)
-	if !strings.HasPrefix(fullPath, paper.SourcePath) {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Check file exists
-	info, err := os.Stat(fullPath)
-	if err != nil || info.IsDir() {
-		http.NotFound(w, r)
-		return
-	}
-
-	http.ServeFile(w, r, fullPath)
+	// Gateway mode: redirect to arXiv.org
+	arxivURL := fmt.Sprintf("https://arxiv.org/src/%s", strings.Join(parts, "/"))
+	http.Redirect(w, r, arxivURL, http.StatusFound)
 }
 
 // handleRobots serves a static robots.txt file from the project root

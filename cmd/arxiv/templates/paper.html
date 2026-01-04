@@ -182,7 +182,7 @@
 <div class="abstract">{{.Paper.Abstract}}</div>
 
 <div class="actions">
-	{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}"><i class="btn-icon">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit"><i class="btn-icon">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;">Fetching PDF...</span>{{end}}
+	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}"><i class="btn-icon">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit"><i class="btn-icon">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer"><i class="btn-icon">📄</i> PDF on arXiv.org</a>{{end}}
 	<button class="btn btn-secondary" type="button" id="generate-embedding-btn"><i class="btn-icon">🧠</i> {{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} Embedding</button>
 	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer"><i class="btn-icon">↗</i> arxiv.org</a>
 </div>
@@ -240,11 +240,14 @@
 </ul>
 {{end}}
 
-{{if .Files}}
+{{if .LocalMode}}{{if .Files}}
 <h2>Source Files</h2>
 <ul class="files">
 {{range .Files}}<li><a href="/src/{{$.Paper.ID}}/{{.}}">{{.}}</a></li>{{end}}
 </ul>
+{{end}}{{else}}
+<h2>Source Files</h2>
+<p><i class="btn-icon">📁</i> Source files are served from <a href="https://arxiv.org/src/{{.Paper.ID}}" target="_blank" rel="noopener noreferrer">arXiv.org</a> for compliance</p>
 {{end}}
 
 <script>

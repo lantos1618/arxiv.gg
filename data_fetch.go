@@ -15,9 +15,11 @@ const apiBaseURL = "https://export.arxiv.org/api/query"
 // Fetch retrieves a paper's metadata directly from arXiv API and stores it.
 // This is for fetching individual papers without a full OAI-PMH sync.
 func (c *Cache) Fetch(ctx context.Context, id string) (*Paper, error) {
-	// Check if already in cache
 	paper, err := c.GetPaper(ctx, id)
 	if err == nil {
+		now := time.Now()
+		paper.FetchedAt = &now
+		c.db.WithContext(ctx).Save(paper)
 		return paper, nil
 	}
 
@@ -30,6 +32,7 @@ func (c *Cache) Fetch(ctx context.Context, id string) (*Paper, error) {
 	// Store in database
 	now := time.Now()
 	paper.MetadataUpdated = &now
+	paper.FetchedAt = &now
 	if err := c.db.WithContext(ctx).Save(paper).Error; err != nil {
 		return nil, fmt.Errorf("store paper: %w", err)
 	}
@@ -102,6 +105,7 @@ func (c *Cache) FetchBatch(ctx context.Context, ids []string) ([]*Paper, error) 
 
 		now := time.Now()
 		paper.MetadataUpdated = &now
+		paper.FetchedAt = &now
 		if err := c.db.WithContext(ctx).Save(paper).Error; err == nil {
 			existing = append(existing, paper)
 		}

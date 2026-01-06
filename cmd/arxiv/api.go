@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tmc/arxiv"
 )
@@ -575,6 +576,12 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Broadcast new paper to all SSE subscribers
+	s.paperBroadcast.Broadcast(paperEvent{
+		Paper:        *paper,
+		HasEmbedding: s.cache.HasEmbedding(ctx, paper.ID),
+	})
+
 	if generateEmbedding {
 		cmd := exec.Command("python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--paper-id", path)
 		output, err := cmd.CombinedOutput()
@@ -1000,6 +1007,103 @@ func (s *server) generateQueryEmbedding(query string) ([]float32, error) {
 	}
 
 	return embedding, nil
+}
+
+// handleAPIRecentPapersStream streams recent papers via SSE with real-time updates
+func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Send start event
+	fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+		"type": "start",
+	}))
+	flusher.Flush()
+
+	// Fetch initial recent papers
+	papers, err := s.cache.ListPapers(ctx, "", 0, limit)
+	if err != nil {
+		fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+			"type":  "error",
+			"error": err.Error(),
+		}))
+		flusher.Flush()
+		return
+	}
+
+	// Stream initial papers
+	for i, paper := range papers {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			hasEmbedding := s.cache.HasEmbedding(ctx, paper.ID)
+			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+				"type":         "paper",
+				"index":        i,
+				"paper":        paper,
+				"hasEmbedding": hasEmbedding,
+			}))
+			flusher.Flush()
+		}
+	}
+
+	// Send initial load complete
+	fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+		"type":  "initial_complete",
+		"count": len(papers),
+	}))
+	flusher.Flush()
+
+	// Subscribe to real-time paper updates
+	paperChan := s.paperBroadcast.Subscribe()
+	defer s.paperBroadcast.Unsubscribe(paperChan)
+
+	// Keep connection open for real-time updates
+	keepalive := time.NewTicker(30 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-paperChan:
+			// New paper broadcast received - send immediately
+			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+				"type":         "new_paper",
+				"paper":        event.Paper,
+				"hasEmbedding": event.HasEmbedding,
+			}))
+			flusher.Flush()
+		case <-keepalive.C:
+			// Send keepalive to prevent timeout
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 // respondJSON sends a JSON response

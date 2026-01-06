@@ -56,6 +56,9 @@ type Paper struct {
 
 	// MetadataUpdated timestamp
 	MetadataUpdated *time.Time `gorm:"column:metadata_updated"`
+
+	// FetchedAt is when the paper was added/fetched to the local cache
+	FetchedAt *time.Time `gorm:"column:fetched_at;index"`
 }
 
 func (Paper) TableName() string {

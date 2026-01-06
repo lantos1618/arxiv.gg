@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tmc/arxiv"
@@ -64,7 +65,12 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		log.Fatalf("open cache: %v", err)
 	}
 
-	srv := &server{cache: cache, cacheDir: cacheDir, localMode: *localMode}
+	srv := &server{
+		cache:          cache,
+		cacheDir:       cacheDir,
+		localMode:      *localMode,
+		paperBroadcast: newPaperBroadcaster(),
+	}
 	mux := http.NewServeMux()
 
 	// API routes (before other routes for proper matching)
@@ -80,6 +86,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/api/v1/categories", srv.handleAPICategories)
 	mux.HandleFunc("/api/v1/stats", srv.handleAPIStats)
 	mux.HandleFunc("/api/v1/embeddings/generate", srv.handleAPIGenerateEmbeddings)
+	mux.HandleFunc("/api/v1/papers/recent/stream", srv.handleAPIRecentPapersStream)
 
 	// Web routes
 	mux.HandleFunc("/", srv.handleIndex)
@@ -93,6 +100,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/pdf/", srv.handlePDF)
 	mux.HandleFunc("/robots.txt", srv.handleRobots)
 	mux.HandleFunc("/sitemap.xml", srv.handleSitemap)
+	mux.HandleFunc("/BingSiteAuth.xml", srv.handleBingSiteAuth)
 
 	// Admin routes (unlisted, secret)
 	mux.HandleFunc("/admin/embeddings", srv.handleAdminEmbeddings)
@@ -123,6 +131,59 @@ type server struct {
 	cache     *arxiv.Cache
 	cacheDir  string
 	localMode bool // Enable local PDF/source caching instead of redirecting to arxiv.org
+
+	// Real-time paper broadcast
+	paperBroadcast *paperBroadcaster
+}
+
+// paperBroadcaster manages real-time paper update subscriptions
+type paperBroadcaster struct {
+	subscribers map[chan paperEvent]struct{}
+	mu          sync.RWMutex
+}
+
+type paperEvent struct {
+	Paper        arxiv.Paper `json:"paper"`
+	HasEmbedding bool        `json:"hasEmbedding"`
+}
+
+func newPaperBroadcaster() *paperBroadcaster {
+	return &paperBroadcaster{
+		subscribers: make(map[chan paperEvent]struct{}),
+	}
+}
+
+func (b *paperBroadcaster) Subscribe() chan paperEvent {
+	ch := make(chan paperEvent, 10)
+	b.mu.Lock()
+	b.subscribers[ch] = struct{}{}
+	b.mu.Unlock()
+	return ch
+}
+
+func (b *paperBroadcaster) Unsubscribe(ch chan paperEvent) {
+	b.mu.Lock()
+	delete(b.subscribers, ch)
+	close(ch)
+	b.mu.Unlock()
+}
+
+func (b *paperBroadcaster) Broadcast(event paperEvent) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for ch := range b.subscribers {
+		select {
+		case ch <- event:
+		default:
+			// Skip if channel is full
+		}
+	}
+}
+
+// paperWithEmbedding wraps a paper with its embedding status for templates
+type paperWithEmbedding struct {
+	arxiv.Paper
+	HasEmbedding bool
 }
 
 // sitemapURLs collects the public, crawlable URLs for the sitemap.
@@ -224,17 +285,11 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	papers, err := s.cache.ListPapers(ctx, "", 0, 50)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	// Papers are now loaded via SSE in the client
 	data := map[string]any{
-		"Title":  "Home",
-		"Stats":  stats,
-		"Papers": papers,
-		"Query":  "",
+		"Title": "Home",
+		"Stats": stats,
+		"Query": "",
 	}
 	templates.ExecuteTemplate(w, "index", data)
 }
@@ -386,11 +441,17 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 
 		// Fetch metadata and source
 		opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
-		_, err := s.cache.FetchAndDownload(ctx, paperID, opts)
+		paper, err := s.cache.FetchAndDownload(ctx, paperID, opts)
 		if err != nil {
 			http.Error(w, "failed to fetch paper: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// Broadcast new paper to all SSE subscribers
+		s.paperBroadcast.Broadcast(paperEvent{
+			Paper:        *paper,
+			HasEmbedding: s.cache.HasEmbedding(ctx, paper.ID),
+		})
 
 		// Redirect to paper page
 		http.Redirect(w, r, "/paper/"+paperID, http.StatusSeeOther)
@@ -572,6 +633,11 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 				http.Error(w, "Paper not found: "+err.Error(), http.StatusNotFound)
 				return
 			}
+			// Broadcast new paper to all SSE subscribers
+			s.paperBroadcast.Broadcast(paperEvent{
+				Paper:        *paper,
+				HasEmbedding: s.cache.HasEmbedding(ctx, paper.ID),
+			})
 		} else {
 			http.NotFound(w, r)
 			return
@@ -807,6 +873,20 @@ func (s *server) handleRobots(w http.ResponseWriter, r *http.Request) {
 	// Fallback minimal robots.txt
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, "User-agent: *\nDisallow:\n\nSitemap: %s/sitemap.xml\n", arxiv.SiteBaseURL())
+}
+
+// handleBingSiteAuth serves the Bing Webmaster Tools verification file.
+func (s *server) handleBingSiteAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Write([]byte(`<?xml version="1.0"?>
+<users>
+    <user>5D13814D95915D6874F1138BE444F2ED</user>
+</users>
+`))
 }
 
 // parseAuthors splits an author string into individual author names.

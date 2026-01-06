@@ -167,6 +167,17 @@
 			vertical-align: text-bottom;
 		}
 		@keyframes blink { 50% { opacity: 0; } }
+
+		/* Mobile responsive */
+		@media (max-width: 600px) {
+			body { padding: 0.5rem; }
+			h1 { font-size: 1.2rem; }
+			.actions { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+			.actions .btn { width: 100%; justify-content: center; text-align: center; }
+			.actions .auto-fetch { margin: 0.25rem 0; }
+			.graph-container { height: 300px; }
+			.refs li { padding: 0.75rem; }
+		}
 	</style>
 </head>
 <body>
@@ -182,9 +193,10 @@
 <div class="abstract">{{.Paper.Abstract}}</div>
 
 <div class="actions">
-	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}"><i class="btn-icon">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit"><i class="btn-icon">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer"><i class="btn-icon">📄</i> PDF on arXiv.org</a>{{end}}
-	<button class="btn btn-secondary" type="button" id="generate-embedding-btn"><i class="btn-icon">🧠</i> {{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} Embedding</button>
-	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer"><i class="btn-icon">↗</i> arxiv.org</a>
+	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}" aria-label="View PDF"><i class="btn-icon" aria-hidden="true">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit" aria-label="Fetch PDF"><i class="btn-icon" aria-hidden="true">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle" aria-label="Auto-fetch PDFs"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;" aria-live="polite">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer" aria-label="Open PDF on arXiv.org"><i class="btn-icon" aria-hidden="true">📄</i> PDF on arXiv.org</a>{{end}}
+	<button class="btn btn-secondary" type="button" id="generate-embedding-btn" aria-label="{{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} embedding for semantic search"><i class="btn-icon" aria-hidden="true">🧠</i> {{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} Embedding</button>
+	<label class="auto-fetch"><input type="checkbox" id="auto-embed-toggle" aria-label="Auto-generate embeddings"> Auto-embed</label>
+	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer" aria-label="View on arxiv.org"><i class="btn-icon" aria-hidden="true">↗</i> arxiv.org</a>
 </div>
 <div class="terminal" id="embedding-terminal">
 	<div class="terminal-header">
@@ -741,6 +753,20 @@
 
 	if (embeddingBtn) {
 		embeddingBtn.addEventListener('click', runEmbeddingGeneration);
+	}
+
+	// Auto-embed toggle
+	const autoEmbedToggle = document.getElementById('auto-embed-toggle');
+	const autoEmbedKey = 'autoEmbed';
+	if (autoEmbedToggle) {
+		autoEmbedToggle.checked = localStorage.getItem(autoEmbedKey) === 'true';
+		autoEmbedToggle.addEventListener('change', () => {
+			localStorage.setItem(autoEmbedKey, autoEmbedToggle.checked);
+		});
+		// Auto-generate embedding on page load if enabled and no existing embedding
+		if (autoEmbedToggle.checked && !hasExistingEmbedding) {
+			setTimeout(runEmbeddingGeneration, 500);
+		}
 	}
 
 	// Initial graph load

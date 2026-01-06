@@ -126,8 +126,7 @@ func (c *Cache) ListCategories(ctx context.Context) ([]CategoryCount, error) {
 }
 
 // ListPapers lists papers, optionally filtered by category.
-// Prioritizes recently fetched papers (with source downloaded), ordered by ID descending.
-// New-style IDs (YYMM.NNNNN) are sorted correctly; old-style IDs (category/NNNNNNN) are deprioritized.
+// Sorted by FetchedAt (most recently fetched first), with fallback to ID for legacy papers.
 func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit int) ([]Paper, error) {
 	if limit <= 0 {
 		limit = 100
@@ -138,44 +137,15 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 		query = query.Where("categories LIKE ?", "%"+category+"%")
 	}
 
-	// Prioritize papers with source downloaded and new-style IDs (no slash)
-	// Old-style IDs contain '/' which sorts higher lexicographically
 	var papers []Paper
 	err := query.
-		Where("src_downloaded = ? AND id NOT LIKE '%/%'", true).
-		Order("id DESC").
+		Where("src_downloaded = ?", true).
+		Order("COALESCE(fetched_at, '1970-01-01') DESC, id DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&papers).Error
 
-	if err != nil {
-		return nil, err
-	}
-
-	// If we don't have enough papers with new-style IDs, fallback to all papers with source
-	if len(papers) < limit {
-		remaining := limit - len(papers)
-		var morePapers []Paper
-		existingIDs := make([]string, len(papers))
-		for i, p := range papers {
-			existingIDs[i] = p.ID
-		}
-
-		fallbackQuery := c.db.WithContext(ctx).Model(&Paper{})
-		if category != "" {
-			fallbackQuery = fallbackQuery.Where("categories LIKE ?", "%"+category+"%")
-		}
-		fallbackQuery.
-			Where("src_downloaded = ?", true).
-			Where("id NOT IN ?", existingIDs).
-			Order("id DESC").
-			Limit(remaining).
-			Find(&morePapers)
-
-		papers = append(papers, morePapers...)
-	}
-
-	return papers, nil
+	return papers, err
 }
 
 // ListPapersFiltered lists papers with various filter options.

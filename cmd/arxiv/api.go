@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tmc/arxiv"
 )
@@ -1072,13 +1073,50 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// Send complete and close - no need to keep connection open
-	// Papers don't change that frequently, users can refresh if needed
+	// Send complete for initial load
 	fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
 		"type":  "complete",
 		"count": len(papers),
 	}))
 	flusher.Flush()
+
+	// Subscribe to real-time updates
+	sub := s.paperBroadcast.Subscribe()
+	defer s.paperBroadcast.Unsubscribe(sub)
+
+	// Keep connection open for 10 minutes max (client will reconnect)
+	timeout := time.After(10 * time.Minute)
+
+	// Send keepalive every 30s to prevent connection timeouts
+	keepalive := time.NewTicker(30 * time.Second)
+	defer keepalive.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		case <-timeout:
+			// Connection timeout - client will reconnect
+			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+				"type": "timeout",
+			}))
+			flusher.Flush()
+			return
+		case <-keepalive.C:
+			// Send keepalive comment to prevent proxy timeouts
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		case event := <-sub:
+			// New paper fetched - stream it to client
+			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
+				"type":         "new",
+				"paper":        event.Paper,
+				"hasEmbedding": event.HasEmbedding,
+			}))
+			flusher.Flush()
+		}
+	}
 }
 
 // respondJSON sends a JSON response

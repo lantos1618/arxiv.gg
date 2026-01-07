@@ -77,6 +77,7 @@
 	function loadRecentPapers() {
 		const eventSource = new EventSource('/api/v1/papers/recent/stream?limit=50');
 		let paperCount = 0;
+		let initialLoadComplete = false;
 
 		eventSource.onmessage = function(e) {
 			const data = JSON.parse(e.data);
@@ -90,10 +91,23 @@
 					recentList.insertAdjacentHTML('beforeend', renderRecentPaper(data.paper));
 					break;
 				case 'complete':
+					initialLoadComplete = true;
 					if (paperCount === 0) {
 						recentList.innerHTML = '<p>No papers cached yet. Use <code>arxiv fetch</code> or <code>arxiv sync</code> to add papers.</p>';
 					}
+					// Keep connection open for real-time updates
+					break;
+				case 'new':
+					// New paper fetched in real-time - prepend to top with highlight
+					paperCount++;
+					const paperHtml = renderRecentPaper(data.paper).replace('class="paper"', 'class="paper paper-new"');
+					recentList.insertAdjacentHTML('afterbegin', paperHtml);
+					updateStats(data.paper);
+					break;
+				case 'timeout':
+					// Server closed connection after 10 min, reconnect
 					eventSource.close();
+					setTimeout(loadRecentPapers, 100);
 					break;
 				case 'error':
 					recentList.innerHTML = '<p class="error">Error loading papers: ' + escapeHtml(data.error) + '</p>';
@@ -103,11 +117,11 @@
 		};
 
 		eventSource.onerror = function() {
-			if (paperCount === 0) {
+			if (!initialLoadComplete && paperCount === 0) {
 				recentList.innerHTML = '<p class="error">Failed to load recent papers.</p>';
 			}
 			eventSource.close();
-			// Try to reconnect after 5 seconds
+			// Reconnect after 5 seconds
 			setTimeout(loadRecentPapers, 5000);
 		};
 	}

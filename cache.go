@@ -86,6 +86,19 @@ func (c *Cache) initSchema() error {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 
+	// Add indexes for common queries (idempotent - IF NOT EXISTS)
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_papers_src_downloaded ON papers(src_downloaded)",
+		"CREATE INDEX IF NOT EXISTS idx_papers_pdf_downloaded ON papers(pdf_downloaded)",
+		"CREATE INDEX IF NOT EXISTS idx_papers_fetched_at ON papers(fetched_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_papers_src_fetched ON papers(src_downloaded, fetched_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_citations_to_id ON citations(to_id)",
+		"CREATE INDEX IF NOT EXISTS idx_citations_from_id ON citations(from_id)",
+	}
+	for _, idx := range indexes {
+		c.db.Exec(idx)
+	}
+
 	// FTS5 virtual tables and triggers MUST use raw SQL - GORM doesn't support FTS5
 	// We use GORM's Exec() method to stay consistent with GORM patterns
 	ftsSchema := `
@@ -159,6 +172,20 @@ func (c *Cache) HasEmbedding(ctx context.Context, paperID string) bool {
 	var count int64
 	c.db.WithContext(ctx).Model(&Embedding{}).Where("paper_id = ?", paperID).Count(&count)
 	return count > 0
+}
+
+// GetEmbeddingIDs returns a set of paper IDs that have embeddings.
+func (c *Cache) GetEmbeddingIDs(ctx context.Context) (map[string]bool, error) {
+	var ids []string
+	err := c.db.WithContext(ctx).Model(&Embedding{}).Pluck("paper_id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		result[id] = true
+	}
+	return result, nil
 }
 
 // CacheStats contains statistics about the cache.

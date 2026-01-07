@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/tmc/arxiv"
 )
@@ -1054,56 +1053,32 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Batch fetch embedding IDs (one query instead of 50)
+	embeddingIDs, _ := s.cache.GetEmbeddingIDs(ctx)
+
 	// Stream initial papers
 	for i, paper := range papers {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			hasEmbedding := s.cache.HasEmbedding(ctx, paper.ID)
 			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
 				"type":         "paper",
 				"index":        i,
 				"paper":        paper,
-				"hasEmbedding": hasEmbedding,
+				"hasEmbedding": embeddingIDs[paper.ID],
 			}))
 			flusher.Flush()
 		}
 	}
 
-	// Send initial load complete
+	// Send complete and close - no need to keep connection open
+	// Papers don't change that frequently, users can refresh if needed
 	fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
-		"type":  "initial_complete",
+		"type":  "complete",
 		"count": len(papers),
 	}))
 	flusher.Flush()
-
-	// Subscribe to real-time paper updates
-	paperChan := s.paperBroadcast.Subscribe()
-	defer s.paperBroadcast.Unsubscribe(paperChan)
-
-	// Keep connection open for real-time updates
-	keepalive := time.NewTicker(30 * time.Second)
-	defer keepalive.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case event := <-paperChan:
-			// New paper broadcast received - send immediately
-			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
-				"type":         "new_paper",
-				"paper":        event.Paper,
-				"hasEmbedding": event.HasEmbedding,
-			}))
-			flusher.Flush()
-		case <-keepalive.C:
-			// Send keepalive to prevent timeout
-			fmt.Fprintf(w, ": keepalive\n\n")
-			flusher.Flush()
-		}
-	}
 }
 
 // respondJSON sends a JSON response

@@ -89,26 +89,11 @@
 					paperCount++;
 					recentList.insertAdjacentHTML('beforeend', renderRecentPaper(data.paper));
 					break;
-				case 'initial_complete':
+				case 'complete':
 					if (paperCount === 0) {
 						recentList.innerHTML = '<p>No papers cached yet. Use <code>arxiv fetch</code> or <code>arxiv sync</code> to add papers.</p>';
 					}
-					// Keep connection open for real-time updates
-					break;
-				case 'new_paper':
-					// New paper added - prepend to top with highlight animation
-					paperCount++;
-					updateStats(data.paper);
-					const emptyMsg = recentList.querySelector('p');
-					if (emptyMsg) emptyMsg.remove();
-					const paperHtml = renderRecentPaper(data.paper);
-					const wrapper = document.createElement('div');
-					wrapper.innerHTML = paperHtml;
-					const paperEl = wrapper.firstChild;
-					paperEl.classList.add('paper-new');
-					recentList.insertBefore(paperEl, recentList.firstChild);
-					// Remove highlight after animation
-					setTimeout(() => paperEl.classList.remove('paper-new'), 2000);
+					eventSource.close();
 					break;
 				case 'error':
 					recentList.innerHTML = '<p class="error">Error loading papers: ' + escapeHtml(data.error) + '</p>';
@@ -121,6 +106,7 @@
 			if (paperCount === 0) {
 				recentList.innerHTML = '<p class="error">Failed to load recent papers.</p>';
 			}
+			eventSource.close();
 			// Try to reconnect after 5 seconds
 			setTimeout(loadRecentPapers, 5000);
 		};

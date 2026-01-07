@@ -140,7 +140,7 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 	var papers []Paper
 	err := query.
 		Where("src_downloaded = ?", true).
-		Order("COALESCE(fetched_at, '1970-01-01') DESC, id DESC").
+		Order("fetched_at DESC, id DESC").
 		Limit(limit).
 		Offset(offset).
 		Find(&papers).Error

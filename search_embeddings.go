@@ -2,10 +2,8 @@ package arxiv
 
 import (
 	"context"
-	"math"
-	"sort"
-
-	"github.com/viterin/vek"
+	"fmt"
+	"strings"
 )
 
 type SemanticResult struct {
@@ -14,51 +12,61 @@ type SemanticResult struct {
 	Paper      *Paper  `json:"paper,omitempty"`
 }
 
+// SearchSemantic performs semantic search using pgvector's native similarity search.
+// Uses cosine distance operator (<=>) for fast approximate nearest neighbor search.
 func (c *Cache) SearchSemantic(ctx context.Context, queryEmbedding []float32, limit int) ([]SemanticResult, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	var embeddings []Embedding
-	err := c.db.WithContext(ctx).Find(&embeddings).Error
+	// Convert query embedding to pgvector format: [0.1,0.2,...]
+	vecStr := float32SliceToVectorString(queryEmbedding)
+
+	// Use pgvector's cosine distance operator (<=>)
+	// 1 - distance = similarity
+	query := `
+		SELECT paper_id, 1 - (vector <=> $1::vector) as similarity
+		FROM embeddings
+		WHERE vector IS NOT NULL
+		ORDER BY vector <=> $1::vector
+		LIMIT $2
+	`
+
+	sqlDB, err := c.db.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	if len(embeddings) == 0 {
+	rows, err := sqlDB.QueryContext(ctx, query, vecStr, limit)
+	if err != nil {
+		return nil, fmt.Errorf("semantic search query failed: %w", err)
+	}
+	defer rows.Close()
+
+	var results []SemanticResult
+	for rows.Next() {
+		var r SemanticResult
+		if err := rows.Scan(&r.PaperID, &r.Similarity); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(results) == 0 {
 		return []SemanticResult{}, nil
 	}
 
-	results := make([]SemanticResult, 0, len(embeddings))
-
-	for _, emb := range embeddings {
-		vector := bytesToFloat32Slice(emb.Vector)
-		if len(vector) != len(queryEmbedding) {
-			continue
-		}
-
-		similarity := cosineSimilarity(queryEmbedding, vector)
-		if similarity > 0 {
-			results = append(results, SemanticResult{
-				PaperID:    emb.PaperID,
-				Similarity: similarity,
-			})
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Similarity > results[j].Similarity
-	})
-
-	if len(results) > limit {
-		results = results[:limit]
-	}
-
+	// Fetch paper details
 	papers, err := c.GetPapersByIDs(ctx, getPaperIDs(results))
 	if err == nil {
 		paperMap := make(map[string]*Paper)
 		for _, paper := range papers {
-			paperMap[paper.ID] = &paper
+			p := paper // avoid closure issue
+			paperMap[paper.ID] = &p
 		}
 
 		for i := range results {
@@ -71,34 +79,13 @@ func (c *Cache) SearchSemantic(ctx context.Context, queryEmbedding []float32, li
 	return results, nil
 }
 
-func cosineSimilarity(a, b []float32) float64 {
-	if len(a) != len(b) {
-		return 0
+// float32SliceToVectorString converts a float32 slice to pgvector format: [0.1,0.2,...]
+func float32SliceToVectorString(v []float32) string {
+	strs := make([]string, len(v))
+	for i, f := range v {
+		strs[i] = fmt.Sprintf("%g", f)
 	}
-
-	// Convert to float64 for vek library
-	a64 := make([]float64, len(a))
-	b64 := make([]float64, len(b))
-	for i := range a {
-		a64[i] = float64(a[i])
-		b64[i] = float64(b[i])
-	}
-
-	similarity := vek.CosineSimilarity(a64, b64)
-	return similarity
-}
-
-func bytesToFloat32Slice(data []byte) []float32 {
-	if len(data)%4 != 0 {
-		return nil
-	}
-
-	result := make([]float32, 0, len(data)/4)
-	for i := 0; i < len(data); i += 4 {
-		bits := uint32(data[i]) | uint32(data[i+1])<<8 | uint32(data[i+2])<<16 | uint32(data[i+3])<<24
-		result = append(result, math.Float32frombits(bits))
-	}
-	return result
+	return "[" + strings.Join(strs, ",") + "]"
 }
 
 func getPaperIDs(results []SemanticResult) []string {

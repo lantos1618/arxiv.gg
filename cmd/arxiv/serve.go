@@ -168,6 +168,12 @@ func (b *paperBroadcaster) Unsubscribe(ch chan paperEvent) {
 	b.mu.Unlock()
 }
 
+func (b *paperBroadcaster) Count() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.subscribers)
+}
+
 func (b *paperBroadcaster) Broadcast(event paperEvent) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()

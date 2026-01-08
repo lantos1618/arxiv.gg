@@ -7,7 +7,7 @@ ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go mod tidy && go build -o arxiv-server ./cmd/arxiv
+RUN go mod tidy && go build -o arxiv-server ./cmd/arxiv && go build -o arxiv-migrate ./cmd/migrate
 
 FROM python:3.11-slim
 
@@ -19,8 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy Go binary
+# Copy Go binaries
 COPY --from=builder /build/arxiv-server .
+COPY --from=builder /build/arxiv-migrate .
 
 # Copy Python tools and install CPU-only PyTorch + dependencies (no NVIDIA/CUDA)
 COPY tools/ /app/tools/

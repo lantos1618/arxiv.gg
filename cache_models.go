@@ -100,11 +100,12 @@ func (DownloadQueueItem) TableName() string {
 }
 
 // Embedding stores vector embeddings for semantic search.
+// Note: The vector column is handled via raw SQL for pgvector compatibility.
 type Embedding struct {
 	PaperID string    `gorm:"primaryKey;column:paper_id"`
 	Model   string    `gorm:"column:model"`
-	Vector  []byte    `gorm:"type:blob;column:vector"`
 	Created time.Time `gorm:"column:created"`
+	// Vector is managed via raw SQL (pgvector type in PostgreSQL)
 }
 
 func (Embedding) TableName() string {

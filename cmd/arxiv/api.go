@@ -533,9 +533,19 @@ func (s *server) handleAPIStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Include live connection count
+	response := map[string]interface{}{
+		"TotalPapers":       stats.TotalPapers,
+		"PDFsDownloaded":    stats.PDFsDownloaded,
+		"SourcesDownloaded": stats.SourcesDownloaded,
+		"QueuedDownloads":   stats.QueuedDownloads,
+		"EmbeddingsCount":   stats.EmbeddingsCount,
+		"SSEConnections":    s.paperBroadcast.Count(),
+	}
+
 	respondJSON(w, http.StatusOK, APIResponse{
 		Success: true,
-		Data:    stats,
+		Data:    response,
 	})
 }
 
@@ -1009,10 +1019,20 @@ func (s *server) generateQueryEmbedding(query string) ([]float32, error) {
 	return embedding, nil
 }
 
+// Semaphore to limit concurrent SSE initializations (prevents DB overload)
+// SQLite can handle ~10-20 concurrent queries before lock contention hurts performance
+var sseInitSemaphore = make(chan struct{}, 10) // Max 10 concurrent initializations
+
 // handleAPIRecentPapersStream streams recent papers via SSE with real-time updates
 func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check total connections limit
+	if s.paperBroadcast.Count() >= 10000 {
+		http.Error(w, "too many connections", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1043,9 +1063,18 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 	}))
 	flusher.Flush()
 
+	// Acquire semaphore to limit concurrent DB queries
+	select {
+	case sseInitSemaphore <- struct{}{}:
+		// Got slot
+	case <-ctx.Done():
+		return
+	}
+
 	// Fetch initial recent papers
 	papers, err := s.cache.ListPapers(ctx, "", 0, limit)
 	if err != nil {
+		<-sseInitSemaphore // Release semaphore
 		fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
 			"type":  "error",
 			"error": err.Error(),
@@ -1056,6 +1085,9 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 
 	// Batch fetch embedding IDs (one query instead of 50)
 	embeddingIDs, _ := s.cache.GetEmbeddingIDs(ctx)
+
+	// Release semaphore - DB queries done
+	<-sseInitSemaphore
 
 	// Stream initial papers
 	for i, paper := range papers {

@@ -6,13 +6,21 @@ import (
 	"time"
 )
 
-// Search searches papers by title/abstract text using FTS5.
-// Note: Uses raw SQL because GORM doesn't support FTS5 MATCH queries.
+// Search searches papers by title/abstract text using full-text search.
+// Uses FTS5 for SQLite or tsvector for PostgreSQL.
 func (c *Cache) Search(ctx context.Context, query, category string, limit int) ([]Paper, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
+	if c.dbType == DBTypePostgres {
+		return c.searchPostgres(ctx, query, category, limit)
+	}
+	return c.searchSQLite(ctx, query, category, limit)
+}
+
+// searchSQLite uses FTS5 for full-text search
+func (c *Cache) searchSQLite(ctx context.Context, query, category string, limit int) ([]Paper, error) {
 	sql := `
 		SELECT p.id, p.created, p.updated, p.title, p.abstract, p.authors, p.categories,
 		       p.comments, p.journal_ref, p.doi, p.license, p.pdf_downloaded, p.src_downloaded
@@ -30,7 +38,6 @@ func (c *Cache) Search(ctx context.Context, query, category string, limit int) (
 	sql += " ORDER BY rank LIMIT ?"
 	args = append(args, limit)
 
-	// Must use raw SQL for FTS5 MATCH queries - GORM doesn't support FTS5
 	sqlDB, _ := c.db.DB()
 	rows, err := sqlDB.QueryContext(ctx, sql, args...)
 	if err != nil {
@@ -64,6 +71,56 @@ func (c *Cache) Search(ctx context.Context, query, category string, limit int) (
 	return papers, rows.Err()
 }
 
+// searchPostgres uses tsvector for full-text search
+func (c *Cache) searchPostgres(ctx context.Context, query, category string, limit int) ([]Paper, error) {
+	sql := `
+		SELECT id, created, updated, title, abstract, authors, categories,
+		       comments, journal_ref, doi, license, pdf_downloaded, src_downloaded,
+		       ts_rank(search_vector, plainto_tsquery('english', $1)) AS rank
+		FROM papers
+		WHERE search_vector @@ plainto_tsquery('english', $1)
+	`
+	args := []any{query}
+	argNum := 2
+
+	if category != "" {
+		sql += " AND categories ILIKE '%' || $" + string(rune('0'+argNum)) + " || '%'"
+		args = append(args, category)
+		argNum++
+	}
+
+	sql += " ORDER BY rank DESC LIMIT $" + string(rune('0'+argNum))
+	args = append(args, limit)
+
+	var papers []Paper
+	err := c.db.WithContext(ctx).Raw(sql, args...).Scan(&papers).Error
+	if err != nil {
+		// Fallback to ILIKE search if tsvector not populated
+		return c.searchPostgresFallback(ctx, query, category, limit)
+	}
+
+	if len(papers) == 0 {
+		// Try fallback if no results (might be tsvector not populated)
+		return c.searchPostgresFallback(ctx, query, category, limit)
+	}
+
+	return papers, nil
+}
+
+// searchPostgresFallback uses ILIKE for searching when tsvector not available
+func (c *Cache) searchPostgresFallback(ctx context.Context, query, category string, limit int) ([]Paper, error) {
+	q := c.db.WithContext(ctx).Model(&Paper{}).
+		Where("title ILIKE ? OR abstract ILIKE ?", "%"+query+"%", "%"+query+"%")
+
+	if category != "" {
+		q = q.Where("categories ILIKE ?", "%"+category+"%")
+	}
+
+	var papers []Paper
+	err := q.Order("created DESC").Limit(limit).Find(&papers).Error
+	return papers, err
+}
+
 // SearchByAuthor searches papers by author name.
 func (c *Cache) SearchByAuthor(ctx context.Context, author string, limit int) ([]Paper, error) {
 	if limit <= 0 {
@@ -71,8 +128,14 @@ func (c *Cache) SearchByAuthor(ctx context.Context, author string, limit int) ([
 	}
 
 	var papers []Paper
+	// Use ILIKE for PostgreSQL, LIKE for SQLite (SQLite LIKE is case-insensitive by default)
+	likeOp := "LIKE"
+	if c.dbType == DBTypePostgres {
+		likeOp = "ILIKE"
+	}
+
 	err := c.db.WithContext(ctx).
-		Where("authors LIKE ?", "%"+author+"%").
+		Where("authors "+likeOp+" ?", "%"+author+"%").
 		Order("created DESC").
 		Limit(limit).
 		Find(&papers).Error
@@ -134,13 +197,23 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 
 	query := c.db.WithContext(ctx).Model(&Paper{})
 	if category != "" {
-		query = query.Where("categories LIKE ?", "%"+category+"%")
+		// Use ILIKE for PostgreSQL
+		if c.dbType == DBTypePostgres {
+			query = query.Where("categories ILIKE ?", "%"+category+"%")
+		} else {
+			query = query.Where("categories LIKE ?", "%"+category+"%")
+		}
 	}
 
 	var papers []Paper
+	orderClause := "fetched_at DESC, id DESC"
+	if c.dbType == DBTypePostgres {
+		orderClause = "fetched_at DESC NULLS LAST, id DESC"
+	}
+
 	err := query.
 		Where("src_downloaded = ?", true).
-		Order("fetched_at DESC, id DESC").
+		Order(orderClause).
 		Limit(limit).
 		Offset(offset).
 		Find(&papers).Error
@@ -153,7 +226,11 @@ func (c *Cache) ListPapersFiltered(ctx context.Context, category string, srcOnly
 	query := c.db.WithContext(ctx).Model(&Paper{})
 
 	if category != "" {
-		query = query.Where("categories LIKE ?", "%"+category+"%")
+		if c.dbType == DBTypePostgres {
+			query = query.Where("categories ILIKE ?", "%"+category+"%")
+		} else {
+			query = query.Where("categories LIKE ?", "%"+category+"%")
+		}
 	}
 
 	if srcOnly {
@@ -176,16 +253,38 @@ func (c *Cache) ListPapersFiltered(ctx context.Context, category string, srcOnly
 
 // DownloadCategory downloads papers for a category.
 func (c *Cache) DownloadCategory(ctx context.Context, category string, limit int, opts *DownloadOptions) error {
-	sql := `
-		SELECT id FROM papers
-		WHERE categories LIKE '%' || ? || '%'
-		AND (
-			(? = 1 AND pdf_downloaded = 0) OR
-			(? = 1 AND src_downloaded = 0)
-		)
-		ORDER BY created DESC
-	`
-	args := []any{category}
+	// Use parameter placeholders appropriate for database type
+	placeholder := "?"
+	if c.dbType == DBTypePostgres {
+		placeholder = "$"
+	}
+
+	var sql string
+	var args []any
+
+	if c.dbType == DBTypePostgres {
+		sql = `
+			SELECT id FROM papers
+			WHERE categories ILIKE '%' || $1 || '%'
+			AND (
+				($2 = 1 AND pdf_downloaded = false) OR
+				($3 = 1 AND src_downloaded = false)
+			)
+			ORDER BY created DESC
+		`
+	} else {
+		sql = `
+			SELECT id FROM papers
+			WHERE categories LIKE '%' || ? || '%'
+			AND (
+				(? = 1 AND pdf_downloaded = 0) OR
+				(? = 1 AND src_downloaded = 0)
+			)
+			ORDER BY created DESC
+		`
+	}
+
+	args = []any{category}
 
 	dlPDF := 0
 	dlSrc := 0
@@ -198,7 +297,11 @@ func (c *Cache) DownloadCategory(ctx context.Context, category string, limit int
 	args = append(args, dlPDF, dlSrc)
 
 	if limit > 0 {
-		sql += " LIMIT ?"
+		if c.dbType == DBTypePostgres {
+			sql += " LIMIT $4"
+		} else {
+			sql += " LIMIT " + placeholder
+		}
 		args = append(args, limit)
 	}
 

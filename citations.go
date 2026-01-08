@@ -84,7 +84,7 @@ func (c *Cache) References(ctx context.Context, paperID string) ([]Reference, er
 		Table("citations").
 		Select("citations.to_id as id, COALESCE(papers.title, '') as title, "+
 			"CASE WHEN papers.id IS NOT NULL AND papers.title != '' THEN 1 ELSE 0 END as has_title, "+
-			"CASE WHEN papers.src_downloaded = 1 THEN 1 ELSE 0 END as has_source").
+			"CASE WHEN papers.src_downloaded = true THEN 1 ELSE 0 END as has_source").
 		Joins("LEFT JOIN papers ON citations.to_id = papers.id").
 		Where("citations.from_id = ?", paperID).
 		Order("citations.to_id DESC").
@@ -94,7 +94,7 @@ func (c *Cache) References(ctx context.Context, paperID string) ([]Reference, er
 		rawRows, err := sqlDB.QueryContext(ctx, `
 			SELECT c.to_id, COALESCE(p.title, ''),
 			       CASE WHEN p.id IS NOT NULL AND p.title != '' THEN 1 ELSE 0 END,
-			       CASE WHEN p.src_downloaded = 1 THEN 1 ELSE 0 END
+			       CASE WHEN p.src_downloaded = true THEN 1 ELSE 0 END
 			FROM citations c
 			LEFT JOIN papers p ON c.to_id = p.id
 			WHERE c.from_id = ?

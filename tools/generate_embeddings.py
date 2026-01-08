@@ -10,10 +10,10 @@ Example:
 """
 
 import argparse
-import sqlite3
-import struct
+import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -22,15 +22,37 @@ from tqdm import tqdm
 MODEL_NAME = "all-MiniLM-L6-v2"  # 384 dimensions, fast, good quality
 
 
+def get_db_connection():
+    """Get database connection from DATABASE_URL or fall back to SQLite."""
+    db_url = os.environ.get('DATABASE_URL', '')
+
+    if db_url.startswith('postgres'):
+        import psycopg2
+        # Parse postgres URL
+        parsed = urlparse(db_url)
+        conn = psycopg2.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            user=parsed.username,
+            password=parsed.password,
+            dbname=parsed.path.lstrip('/')
+        )
+        return conn, 'postgres'
+    else:
+        import sqlite3
+        cache_dir = os.environ.get('ARXIV_CACHE', '/data/arxiv')
+        db_path = Path(cache_dir) / "index.db"
+        return sqlite3.connect(str(db_path)), 'sqlite'
+
+
+def embedding_to_pgvector(embedding):
+    """Convert numpy array to pgvector string format: [0.1,0.2,...]"""
+    return '[' + ','.join(map(str, embedding.astype(np.float32))) + ']'
+
+
 def serialize_embedding(embedding):
-    """Serialize numpy array to bytes (little-endian float32)."""
+    """Serialize numpy array to bytes (little-endian float32) for SQLite."""
     return embedding.astype('float32').tobytes()
-
-
-def deserialize_embedding(data):
-    """Deserialize bytes to numpy array."""
-    import numpy as np
-    return np.frombuffer(data, dtype='float32')
 
 
 def generate_single_embedding(query, model_name=MODEL_NAME):
@@ -49,75 +71,46 @@ def generate_single_embedding(query, model_name=MODEL_NAME):
 
 def generate_embeddings(cache_dir, model_name=MODEL_NAME, limit=None, batch_size=32, query=None):
     """Generate embeddings for papers in cache."""
-    
+
     # If query is provided, generate single embedding
     if query:
         generate_single_embedding(query, model_name)
         return
-    
-    cache_path = Path(cache_dir)
-    db_path = cache_path / "index.db"
-    
-    if not db_path.exists():
-        print(f"Error: Database not found at {db_path}")
-        sys.exit(1)
-    
+
     print(f"Loading model: {model_name}")
     model = SentenceTransformer(model_name)
     print(f"Model loaded. Embedding dimension: {model.get_sentence_embedding_dimension()}")
-    
+
     # Connect to database
-    conn = sqlite3.connect(str(db_path))
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
-    
-    # If query is provided, generate single embedding
-    if query:
-        generate_single_embedding(query, model_name)
-        return
-    
-    # Check if embeddings table exists
-    cursor.execute("""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name='embeddings'
-    """)
-    if not cursor.fetchone():
-        print("Creating embeddings table...")
-        cursor.execute("""
-            CREATE TABLE embeddings (
-                paper_id TEXT PRIMARY KEY,
-                model TEXT,
-                vector BLOB,
-                created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-    
+
     # Get papers without embeddings
-    query = """
-        SELECT id, title, abstract 
-        FROM papers 
+    query_sql = """
+        SELECT id, title, abstract
+        FROM papers
         WHERE title != '' AND abstract != ''
-        AND id NOT IN (SELECT paper_id FROM embeddings)
+        AND id NOT IN (SELECT paper_id FROM embeddings WHERE vector IS NOT NULL)
     """
     if limit:
-        query += f" LIMIT {limit}"
-    
-    cursor.execute(query)
+        query_sql += f" LIMIT {limit}"
+
+    cursor.execute(query_sql)
     papers = cursor.fetchall()
-    
+
     if not papers:
         print("No papers need embeddings.")
         return
-    
+
     total_papers = len(papers)
     print(f"Found {total_papers} papers to process")
     sys.stdout.flush()
-    
+
     # Process in batches
     processed = 0
     for i in range(0, total_papers, batch_size):
         batch = papers[i:i+batch_size]
-        
+
         # Prepare texts (title + abstract)
         texts = []
         paper_ids = []
@@ -126,83 +119,84 @@ def generate_embeddings(cache_dir, model_name=MODEL_NAME, limit=None, batch_size
             text = f"{title}. {abstract}" if title and abstract else (title or abstract)
             texts.append(text)
             paper_ids.append(paper_id)
-        
+
         # Generate embeddings
         embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
-        
+
         # Store embeddings
         for paper_id, embedding in zip(paper_ids, embeddings):
-            vector_bytes = serialize_embedding(embedding)
-            cursor.execute("""
-                INSERT OR REPLACE INTO embeddings (paper_id, model, vector, created)
-                VALUES (?, ?, ?, datetime('now'))
-            """, (paper_id, model_name, vector_bytes))
-        
+            if db_type == 'postgres':
+                vec_str = embedding_to_pgvector(embedding)
+                cursor.execute("""
+                    INSERT INTO embeddings (paper_id, model, vector, created)
+                    VALUES (%s, %s, %s::vector, NOW())
+                    ON CONFLICT (paper_id) DO UPDATE SET model = %s, vector = %s::vector, created = NOW()
+                """, (paper_id, model_name, vec_str, model_name, vec_str))
+            else:
+                vector_bytes = serialize_embedding(embedding)
+                cursor.execute("""
+                    INSERT OR REPLACE INTO embeddings (paper_id, model, vector, created)
+                    VALUES (?, ?, ?, datetime('now'))
+                """, (paper_id, model_name, vector_bytes))
+
         processed += len(batch)
-        
+
         # Output progress in format expected by SSE handler
         percent = (processed / total_papers) * 100
         print(f"Processed {processed}/{total_papers} papers ({percent:.1f}% complete)")
         sys.stdout.flush()
-        
+
         if processed % 100 == 0:
             conn.commit()
-    
+
     conn.commit()
     conn.close()
-    
+
     print(f"Done! Generated embeddings for {processed} papers.")
 
 
 def generate_paper_embedding(cache_dir, paper_id, model_name=MODEL_NAME):
     """Generate embedding for a single paper by ID."""
-    cache_path = Path(cache_dir)
-    db_path = cache_path / "index.db"
-    
-    if not db_path.exists():
-        print(f"ERROR: Database not found at {db_path}")
-        sys.exit(1)
-    
-    conn = sqlite3.connect(str(db_path))
+    conn, db_type = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT id, title, abstract FROM papers WHERE id = ?", (paper_id,))
+
+    if db_type == 'postgres':
+        cursor.execute("SELECT id, title, abstract FROM papers WHERE id = %s", (paper_id,))
+    else:
+        cursor.execute("SELECT id, title, abstract FROM papers WHERE id = ?", (paper_id,))
+
     row = cursor.fetchone()
-    
+
     if not row:
         print(f"ERROR: Paper {paper_id} not found")
         conn.close()
         sys.exit(1)
-    
+
     paper_id, title, abstract = row
-    
+
     if not title and not abstract:
         print(f"ERROR: Paper {paper_id} has no title or abstract")
         conn.close()
         sys.exit(1)
-    
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='embeddings'")
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE embeddings (
-                paper_id TEXT PRIMARY KEY,
-                model TEXT,
-                vector BLOB,
-                created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-    
+
     model = SentenceTransformer(model_name)
     text = f"{title}. {abstract}" if title and abstract else (title or abstract)
     embedding = model.encode([text], convert_to_numpy=True)[0]
-    vector_bytes = serialize_embedding(embedding)
-    
-    cursor.execute("""
-        INSERT OR REPLACE INTO embeddings (paper_id, model, vector, created)
-        VALUES (?, ?, ?, datetime('now'))
-    """, (paper_id, model_name, vector_bytes))
-    
+
+    if db_type == 'postgres':
+        vec_str = embedding_to_pgvector(embedding)
+        cursor.execute("""
+            INSERT INTO embeddings (paper_id, model, vector, created)
+            VALUES (%s, %s, %s::vector, NOW())
+            ON CONFLICT (paper_id) DO UPDATE SET model = %s, vector = %s::vector, created = NOW()
+        """, (paper_id, model_name, vec_str, model_name, vec_str))
+    else:
+        vector_bytes = serialize_embedding(embedding)
+        cursor.execute("""
+            INSERT OR REPLACE INTO embeddings (paper_id, model, vector, created)
+            VALUES (?, ?, ?, datetime('now'))
+        """, (paper_id, model_name, vector_bytes))
+
     conn.commit()
     conn.close()
     print(f"OK: Generated embedding for {paper_id}")
@@ -211,7 +205,7 @@ def generate_paper_embedding(cache_dir, paper_id, model_name=MODEL_NAME):
 def main():
     parser = argparse.ArgumentParser(description="Generate embeddings for arXiv papers")
     parser.add_argument("cache_dir", help="Path to arXiv cache directory")
-    parser.add_argument("--model", default=MODEL_NAME, 
+    parser.add_argument("--model", default=MODEL_NAME,
                        help=f"Embedding model to use (default: {MODEL_NAME})")
     parser.add_argument("--limit", type=int, default=None,
                        help="Limit number of papers to process")
@@ -221,9 +215,9 @@ def main():
                        help="Generate embedding for a query string (prints comma-separated floats)")
     parser.add_argument("--paper-id", type=str, default=None,
                        help="Generate embedding for a single paper by ID")
-    
+
     args = parser.parse_args()
-    
+
     if args.query:
         generate_single_embedding(args.query, args.model)
     elif args.paper_id:
@@ -239,4 +233,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

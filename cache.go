@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -24,41 +25,82 @@ func getEmbeddingScriptPath() string {
 	return "/app/tools/generate_embeddings.py"
 }
 
+// DBType indicates which database backend is in use
+type DBType string
+
+const (
+	DBTypeSQLite   DBType = "sqlite"
+	DBTypePostgres DBType = "postgres"
+)
+
 // Cache manages a local offline cache of arXiv papers.
 type Cache struct {
 	root     string
 	db       *gorm.DB
+	dbType   DBType
 	paperLRU *LRUCache
 }
 
+// DBType returns the database type in use.
+func (c *Cache) DBType() DBType {
+	return c.dbType
+}
+
 // Open opens or creates an arXiv cache at the given root directory.
+// If DATABASE_URL env var is set, uses PostgreSQL; otherwise uses SQLite.
 func Open(root string) (*Cache, error) {
 	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, fmt.Errorf("create cache dir: %w", err)
 	}
 
-	// Create subdirectories
+	// Create subdirectories for PDFs and source files
 	for _, dir := range []string{"pdf", "src", "meta"} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
 			return nil, fmt.Errorf("create %s dir: %w", dir, err)
 		}
 	}
 
-	dbPath := filepath.Join(root, "index.db")
-	db, err := gorm.Open(sqlite.Open(dbPath+"?_pragma=foreign_keys(1)&_pragma=journal_mode=WAL&_pragma=synchronous=NORMAL"), &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+	var db *gorm.DB
+	var dbType DBType
+	var err error
+
+	// Check for PostgreSQL connection string
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		db, err = gorm.Open(postgres.Open(dbURL), &gorm.Config{
+			DisableForeignKeyConstraintWhenMigrating: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("open postgres database: %w", err)
+		}
+		dbType = DBTypePostgres
+		fmt.Println("Connected to PostgreSQL database")
+	} else {
+		// Fall back to SQLite
+		dbPath := filepath.Join(root, "index.db")
+		db, err = gorm.Open(sqlite.Open(dbPath+"?_pragma=foreign_keys(1)&_pragma=journal_mode=WAL&_pragma=synchronous=NORMAL"), &gorm.Config{
+			DisableForeignKeyConstraintWhenMigrating: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("open sqlite database: %w", err)
+		}
+		dbType = DBTypeSQLite
+		fmt.Println("Using SQLite database")
+	}
+
+	// Configure connection pool for PostgreSQL
+	if dbType == DBTypePostgres {
+		sqlDB, _ := db.DB()
+		sqlDB.SetMaxIdleConns(10)
+		sqlDB.SetMaxOpenConns(100)
 	}
 
 	// LRU cache size: with 15GB+ RAM, we can cache hundreds of thousands of papers
-	// Each Paper struct is ~1-2KB, so 500k entries = ~500MB-1GB memory (still <10% of RAM)
 	lruSize := 500000
 	c := &Cache{
 		root:     root,
 		db:       db,
-		paperLRU: NewLRUCache(lruSize), // Cache 500k most recent papers (~500MB-1GB)
+		dbType:   dbType,
+		paperLRU: NewLRUCache(lruSize),
 	}
 	if err := c.initSchema(); err != nil {
 		return nil, fmt.Errorf("init schema: %w", err)
@@ -81,11 +123,18 @@ func (c *Cache) Root() string {
 }
 
 func (c *Cache) initSchema() error {
-	// GORM AutoMigrate handles all regular tables (Paper, Citation, SyncState, DownloadQueueItem, Embedding)
+	// GORM AutoMigrate handles all regular tables
 	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 
+	if c.dbType == DBTypePostgres {
+		return c.initPostgresSchema()
+	}
+	return c.initSQLiteSchema()
+}
+
+func (c *Cache) initSQLiteSchema() error {
 	// Add indexes for common queries (idempotent - IF NOT EXISTS)
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_papers_src_downloaded ON papers(src_downloaded)",
@@ -99,8 +148,7 @@ func (c *Cache) initSchema() error {
 		c.db.Exec(idx)
 	}
 
-	// FTS5 virtual tables and triggers MUST use raw SQL - GORM doesn't support FTS5
-	// We use GORM's Exec() method to stay consistent with GORM patterns
+	// FTS5 virtual tables and triggers for SQLite
 	ftsSchema := `
 	CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
 		title,
@@ -127,9 +175,57 @@ func (c *Cache) initSchema() error {
 	END;
 	`
 	if err := c.db.Exec(ftsSchema).Error; err != nil {
-		// FTS5 not available - log but don't fail (search will fall back to LIKE queries)
 		fmt.Printf("Warning: FTS5 not available (%v), full-text search will use fallback methods\n", err)
 	}
+	return nil
+}
+
+func (c *Cache) initPostgresSchema() error {
+	// Add indexes for common queries
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_papers_src_downloaded ON papers(src_downloaded)",
+		"CREATE INDEX IF NOT EXISTS idx_papers_pdf_downloaded ON papers(pdf_downloaded)",
+		"CREATE INDEX IF NOT EXISTS idx_papers_fetched_at ON papers(fetched_at DESC NULLS LAST)",
+		"CREATE INDEX IF NOT EXISTS idx_papers_src_fetched ON papers(src_downloaded, fetched_at DESC NULLS LAST)",
+		"CREATE INDEX IF NOT EXISTS idx_citations_to_id ON citations(to_id)",
+		"CREATE INDEX IF NOT EXISTS idx_citations_from_id ON citations(from_id)",
+	}
+	for _, idx := range indexes {
+		c.db.Exec(idx)
+	}
+
+	// Add tsvector column for full-text search if it doesn't exist
+	c.db.Exec(`
+		DO $$ BEGIN
+			ALTER TABLE papers ADD COLUMN IF NOT EXISTS search_vector tsvector;
+		EXCEPTION WHEN duplicate_column THEN NULL;
+		END $$;
+	`)
+
+	// Create GIN index on search_vector
+	c.db.Exec(`CREATE INDEX IF NOT EXISTS idx_papers_search ON papers USING GIN(search_vector)`)
+
+	// Create function to update search_vector
+	c.db.Exec(`
+		CREATE OR REPLACE FUNCTION papers_search_trigger() RETURNS trigger AS $$
+		BEGIN
+			NEW.search_vector :=
+				setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+				setweight(to_tsvector('english', COALESCE(NEW.abstract, '')), 'B');
+			RETURN NEW;
+		END
+		$$ LANGUAGE plpgsql;
+	`)
+
+	// Create trigger for automatic updates
+	c.db.Exec(`
+		DROP TRIGGER IF EXISTS papers_search_update ON papers;
+		CREATE TRIGGER papers_search_update
+			BEFORE INSERT OR UPDATE ON papers
+			FOR EACH ROW EXECUTE FUNCTION papers_search_trigger();
+	`)
+
+	fmt.Println("PostgreSQL schema initialized with full-text search")
 	return nil
 }
 
@@ -218,4 +314,18 @@ func (c *Cache) GenerateEmbeddingForPaper(ctx context.Context, paperID string) e
 	}
 
 	return nil
+}
+
+// RebuildSearchIndex rebuilds the full-text search index.
+func (c *Cache) RebuildSearchIndex(ctx context.Context) error {
+	if c.dbType == DBTypePostgres {
+		fmt.Println("Rebuilding PostgreSQL search vectors...")
+		return c.db.WithContext(ctx).Exec(`
+			UPDATE papers SET search_vector =
+				setweight(to_tsvector('english', COALESCE(title, '')), 'A') ||
+				setweight(to_tsvector('english', COALESCE(abstract, '')), 'B')
+		`).Error
+	}
+	// SQLite FTS rebuild
+	return c.RebuildFTSIndex(ctx)
 }

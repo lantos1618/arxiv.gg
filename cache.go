@@ -124,7 +124,7 @@ func (c *Cache) Root() string {
 
 func (c *Cache) initSchema() error {
 	// GORM AutoMigrate handles all regular tables
-	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}); err != nil {
+	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}, &EmbeddingJob{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 
@@ -225,7 +225,18 @@ func (c *Cache) initPostgresSchema() error {
 			FOR EACH ROW EXECUTE FUNCTION papers_search_trigger();
 	`)
 
-	fmt.Println("PostgreSQL schema initialized with full-text search")
+	// Create HNSW index for fast vector similarity search (pgvector)
+	// This dramatically improves semantic search performance at scale
+	c.db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw
+		ON embeddings USING hnsw (vector vector_cosine_ops)
+		WITH (m = 16, ef_construction = 64);
+	`)
+
+	// Create index on embedding_jobs for efficient queue processing
+	c.db.Exec(`CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_priority ON embedding_jobs(status, priority DESC, created_at)`)
+
+	fmt.Println("PostgreSQL schema initialized with full-text search and pgvector HNSW index")
 	return nil
 }
 

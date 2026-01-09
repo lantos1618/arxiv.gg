@@ -111,3 +111,28 @@ type Embedding struct {
 func (Embedding) TableName() string {
 	return "embeddings"
 }
+
+// EmbeddingJobStatus represents the status of an embedding job.
+type EmbeddingJobStatus string
+
+const (
+	EmbeddingJobPending    EmbeddingJobStatus = "pending"
+	EmbeddingJobProcessing EmbeddingJobStatus = "processing"
+	EmbeddingJobCompleted  EmbeddingJobStatus = "completed"
+	EmbeddingJobFailed     EmbeddingJobStatus = "failed"
+)
+
+// EmbeddingJob represents a queued embedding generation job.
+type EmbeddingJob struct {
+	PaperID   string             `gorm:"primaryKey;column:paper_id"`
+	Status    EmbeddingJobStatus `gorm:"column:status;default:pending;index"`
+	Priority  int                `gorm:"column:priority;default:0;index"`
+	Attempts  int                `gorm:"column:attempts;default:0"`
+	LastError string             `gorm:"column:last_error"`
+	CreatedAt time.Time          `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time          `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (EmbeddingJob) TableName() string {
+	return "embedding_jobs"
+}

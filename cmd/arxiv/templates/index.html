@@ -1,20 +1,19 @@
 {{define "index"}}
 {{template "head" .}}
 <h1>arXiv.gg</h1>
-<form class="search-form" action="/search" method="get" id="search-form" role="search">
-	<label for="search-input" class="sr-only">Search papers</label>
-	<input type="text" name="q" id="search-input" placeholder="Search or paste arXiv ID/URL..." value="{{.Query}}" autocomplete="off" aria-label="Search papers or enter arXiv ID">
-	<button type="submit" aria-label="Search">Search</button>
-</form>
-<div class="search-mode-toggle">
-	<label class="toggle-label">
-		<input type="radio" name="search-mode" value="keyword" checked id="mode-keyword">
-		<span class="toggle-text">Keyword</span>
-	</label>
-	<label class="toggle-label">
-		<input type="radio" name="search-mode" value="semantic" id="mode-semantic">
-		<span class="toggle-text">Semantic</span>
-	</label>
+<div class="search-container">
+	<form class="search-bar" action="/search" method="get" id="search-form" role="search">
+		<input type="text" name="q" id="search-input" class="search-input" placeholder="Search or paste arXiv ID/URL..." value="{{.Query}}" autocomplete="off" aria-label="Search papers">
+		<div class="search-buttons">
+			<button type="submit" class="search-btn search-btn-keyword" id="btn-keyword">
+				<span class="btn-icon">🔍</span><span>Keyword</span>
+			</button>
+			<button type="button" class="search-btn search-btn-semantic" id="btn-semantic">
+				<span class="btn-icon">🧠</span><span>Semantic</span>
+			</button>
+		</div>
+	</form>
+	<div class="search-dropdown" id="search-dropdown"></div>
 </div>
 <div id="search-results" class="search-results"></div>
 <p id="stats-line"><span id="stat-total">{{.Stats.TotalPapers}}</span> papers cached (<span id="stat-source">{{.Stats.SourcesDownloaded}}</span> with source, <span id="stat-pdf">{{.Stats.PDFsDownloaded}}</span> with PDF, <span id="stat-embed">{{.Stats.EmbeddingsCount}}</span> with embeddings)</p>
@@ -28,26 +27,27 @@
 <script>
 (function() {
 	const input = document.getElementById('search-input');
+	const searchBar = document.querySelector('.search-bar');
+	const dropdown = document.getElementById('search-dropdown');
 	const results = document.getElementById('search-results');
 	const recent = document.getElementById('recent-papers');
 	const recentList = document.getElementById('recent-papers-list');
+	const btnKeyword = document.getElementById('btn-keyword');
+	const btnSemantic = document.getElementById('btn-semantic');
 	const statTotal = document.getElementById('stat-total');
 	const statSource = document.getElementById('stat-source');
 	const statPdf = document.getElementById('stat-pdf');
 	const statEmbed = document.getElementById('stat-embed');
 	let timeout = null;
+	let selectedIndex = -1;
+	let dropdownItems = [];
+	let searchController = null;
+	let searchRequestId = 0;
 
 	function updateStats(paper) {
-		// Increment total
 		statTotal.textContent = parseInt(statTotal.textContent) + 1;
-		// Increment source if downloaded
-		if (paper.SourceDownloaded) {
-			statSource.textContent = parseInt(statSource.textContent) + 1;
-		}
-		// Increment pdf if downloaded
-		if (paper.PDFDownloaded) {
-			statPdf.textContent = parseInt(statPdf.textContent) + 1;
-		}
+		if (paper.SourceDownloaded) statSource.textContent = parseInt(statSource.textContent) + 1;
+		if (paper.PDFDownloaded) statPdf.textContent = parseInt(statPdf.textContent) + 1;
 	}
 
 	function renderRecentPaper(p) {
@@ -58,101 +58,47 @@
 		const hasSource = p.SourceDownloaded || p.src;
 		const hasPdf = p.PDFDownloaded || p.pdf;
 		const hasEmbed = p.hasEmbedding || p.HasEmbedding;
-
 		const cats = categories.split(' ').filter(c => c).map(c =>
 			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>'
 		).join(' ');
 		const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
 		               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
 		               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
-		return '<div class="paper">' +
-			'<span class="paper-id">' + id + '</span> ' + badges +
+		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
 			'<div class="paper-authors">' + escapeHtml(authors) + '</div>' +
-			'<div class="paper-categories">' + cats + '</div>' +
-		'</div>';
+			'<div class="paper-categories">' + cats + '</div></div>';
 	}
 
-	// Load recent papers via SSE with real-time updates
 	function loadRecentPapers() {
 		const eventSource = new EventSource('/api/v1/papers/recent/stream?limit=50');
 		let paperCount = 0;
 		let initialLoadComplete = false;
-
 		eventSource.onmessage = function(e) {
 			const data = JSON.parse(e.data);
-
 			switch (data.type) {
-				case 'start':
-					recentList.innerHTML = '';
-					break;
-				case 'paper':
-					paperCount++;
-					recentList.insertAdjacentHTML('beforeend', renderRecentPaper(data.paper));
-					break;
+				case 'start': recentList.innerHTML = ''; break;
+				case 'paper': paperCount++; recentList.insertAdjacentHTML('beforeend', renderRecentPaper(data.paper)); break;
 				case 'complete':
 					initialLoadComplete = true;
-					if (paperCount === 0) {
-						recentList.innerHTML = '<p>No papers cached yet. Use <code>arxiv fetch</code> or <code>arxiv sync</code> to add papers.</p>';
-					}
-					// Keep connection open for real-time updates
+					if (paperCount === 0) recentList.innerHTML = '<p>No papers cached yet.</p>';
 					break;
 				case 'new':
-					// New paper fetched in real-time - prepend to top with highlight
 					paperCount++;
-					const paperHtml = renderRecentPaper(data.paper).replace('class="paper"', 'class="paper paper-new"');
-					recentList.insertAdjacentHTML('afterbegin', paperHtml);
+					recentList.insertAdjacentHTML('afterbegin', renderRecentPaper(data.paper).replace('class="paper"', 'class="paper paper-new"'));
 					updateStats(data.paper);
 					break;
-				case 'timeout':
-					// Server closed connection after 10 min, reconnect
-					eventSource.close();
-					setTimeout(loadRecentPapers, 100);
-					break;
-				case 'error':
-					recentList.innerHTML = '<p class="error">Error loading papers: ' + escapeHtml(data.error) + '</p>';
-					eventSource.close();
-					break;
+				case 'timeout': eventSource.close(); setTimeout(loadRecentPapers, 100); break;
+				case 'error': recentList.innerHTML = '<p class="error">Error: ' + escapeHtml(data.error) + '</p>'; eventSource.close(); break;
 			}
 		};
-
 		eventSource.onerror = function() {
-			if (!initialLoadComplete && paperCount === 0) {
-				recentList.innerHTML = '<p class="error">Failed to load recent papers.</p>';
-			}
+			if (!initialLoadComplete && paperCount === 0) recentList.innerHTML = '<p class="error">Failed to load.</p>';
 			eventSource.close();
-			// Reconnect after 5 seconds
 			setTimeout(loadRecentPapers, 5000);
 		};
 	}
-
-	// Load recent papers on page load
 	loadRecentPapers();
-
-	function renderPaper(p, similarity = null) {
-		// Handle both API formats: lowercase (keyword search) and capitalized (semantic search)
-		const id = p.id || p.ID;
-		const title = p.title || p.Title || '';
-		const authors = p.authors || p.Authors || '';
-		const categories = p.categories || p.Categories || '';
-		const hasSource = p.src || p.SourceDownloaded;
-		const hasPdf = p.pdf || p.PDFDownloaded;
-		const hasEmbed = p.hasEmbedding || p.HasEmbedding;
-
-		const cats = categories.split(' ').filter(c => c).map(c =>
-			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>'
-		).join(' ');
-		const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
-		               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
-		               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
-		const similarityBadge = similarity !== null ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '% match</span>' : '';
-		return '<div class="paper">' +
-			'<span class="paper-id">' + id + '</span> ' + badges + ' ' + similarityBadge +
-			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
-			'<div class="paper-authors">' + escapeHtml(authors) + '</div>' +
-			'<div class="paper-categories">' + cats + '</div>' +
-		'</div>';
-	}
 
 	function escapeHtml(s) {
 		const div = document.createElement('div');
@@ -160,72 +106,136 @@
 		return div.innerHTML;
 	}
 
-	// Check if input looks like an arXiv ID or URL
 	function extractArxivID(input) {
 		input = input.trim();
-		// New format: YYMM.NNNNN or YYMM.NNNNNN
 		const newFormat = /^(\d{4}\.\d{4,6})$/;
 		if (newFormat.test(input)) return input;
-		// Old format: category/NNNNNNN
 		const oldFormat = /^([a-z-]+\/\d{7,})$/i;
 		if (oldFormat.test(input)) return input;
-		// URL patterns
 		const urlPattern = /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,6}|[a-z-]+\/\d{7,})/i;
 		const match = input.match(urlPattern);
-		if (match) {
-			let id = match[1];
-			// Remove version suffix
-			id = id.replace(/v\d+$/, '');
-			return id;
-		}
+		if (match) return match[1].replace(/v\d+$/, '');
 		return null;
 	}
 
-	let activeEventSource = null;
+	function showDropdown() {
+		dropdown.classList.add('open');
+		searchBar.classList.add('dropdown-open');
+	}
 
-	function doSearch(query) {
+	function hideDropdown() {
+		dropdown.classList.remove('open');
+		searchBar.classList.remove('dropdown-open');
+		selectedIndex = -1;
+	}
+
+	function updateSelection() {
+		dropdownItems.forEach((item, i) => {
+			item.classList.toggle('selected', i === selectedIndex);
+		});
+	}
+
+	// Live dropdown search with abort + request tracking
+	function doDropdownSearch(query) {
+		// Cancel any pending request
+		if (searchController) {
+			searchController.abort();
+			searchController = null;
+		}
+
 		if (!query.trim()) {
-			results.innerHTML = '';
-			recent.style.display = '';
-			if (activeEventSource) {
-				activeEventSource.close();
-				activeEventSource = null;
-			}
+			hideDropdown();
 			return;
 		}
 
 		const arxivID = extractArxivID(query);
 		if (arxivID) {
-			results.innerHTML = '<p class="search-status">Loading paper ' + escapeHtml(arxivID) + '...</p>';
-			recent.style.display = 'none';
+			dropdown.innerHTML = '<a class="dropdown-item" href="/paper/' + arxivID + '">' +
+				'<div class="dropdown-item-id">' + escapeHtml(arxivID) + '</div>' +
+				'<div class="dropdown-item-title">Go to paper →</div></a>';
+			showDropdown();
+			dropdownItems = Array.from(dropdown.querySelectorAll('.dropdown-item'));
+			return;
+		}
+
+		dropdown.innerHTML = '<div class="dropdown-status">Searching...</div>';
+		showDropdown();
+
+		// Track this request
+		const thisRequestId = ++searchRequestId;
+		searchController = new AbortController();
+
+		fetch('/api/v1/search/quick?q=' + encodeURIComponent(query) + '&limit=10', {
+			signal: searchController.signal
+		})
+			.then(r => r.json())
+			.then(resp => {
+				// Ignore if a newer request was made
+				if (thisRequestId !== searchRequestId) return;
+
+				// API returns {success, data: {count, papers}}
+				const papers = resp.data?.papers || [];
+				const total = resp.data?.count || papers.length;
+
+				if (papers.length === 0) {
+					dropdown.innerHTML = '<div class="dropdown-status">No results found</div>';
+					dropdownItems = [];
+					return;
+				}
+				let html = '';
+				papers.forEach(p => {
+					const id = p.id || p.ID;
+					const title = p.title || p.Title || '';
+					const authors = p.authors || p.Authors || '';
+					html += '<a class="dropdown-item" href="/paper/' + id + '">' +
+						'<div class="dropdown-item-id">' + id + '</div>' +
+						'<div class="dropdown-item-title">' + escapeHtml(title) + '</div>' +
+						'<div class="dropdown-item-authors">' + escapeHtml(authors) + '</div></a>';
+				});
+				if (total > 10) {
+					html += '<div class="dropdown-footer"><span>' + total + ' total results</span>' +
+						'<a href="/search?q=' + encodeURIComponent(query) + '">View all →</a></div>';
+				}
+				dropdown.innerHTML = html;
+				dropdownItems = Array.from(dropdown.querySelectorAll('.dropdown-item'));
+				selectedIndex = -1;
+			})
+			.catch(err => {
+				// Ignore aborted requests
+				if (err.name === 'AbortError') return;
+				// Only show error if this is still the current request
+				if (thisRequestId === searchRequestId) {
+					dropdown.innerHTML = '<div class="dropdown-status">Search failed</div>';
+					dropdownItems = [];
+				}
+			});
+	}
+
+	// Full page search (for Keyword button / Enter on results page)
+	let activeEventSource = null;
+	function doFullSearch(query, isSemantic) {
+		hideDropdown();
+		if (!query.trim()) {
+			results.innerHTML = '';
+			recent.style.display = '';
+			return;
+		}
+
+		const arxivID = extractArxivID(query);
+		if (arxivID) {
 			window.location.href = '/paper/' + arxivID;
 			return;
 		}
 
-		if (activeEventSource) {
-			activeEventSource.close();
-			activeEventSource = null;
-		}
+		if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
 
-		const searchMode = document.querySelector('input[name="search-mode"]:checked').value;
-		const isSemantic = searchMode === 'semantic';
-		
 		if (isSemantic) {
-			results.innerHTML = `
-				<div class="terminal active" id="search-terminal">
-					<div class="terminal-header">
-						<span class="terminal-dot red"></span>
-						<span class="terminal-dot yellow"></span>
-						<span class="terminal-dot green"></span>
-						<span class="terminal-title">semantic search</span>
-					</div>
-					<div class="terminal-body">
-						<div class="terminal-line prompt">search --semantic "${escapeHtml(query)}"</div>
-						<div class="terminal-line info" id="terminal-status">Generating query embedding...<span class="terminal-cursor"></span></div>
-					</div>
-				</div>
-				<p class="search-status" id="search-status" style="display:none;"></p>
-				<div id="paper-results"></div>`;
+			results.innerHTML = '<div class="terminal active" id="search-terminal">' +
+				'<div class="terminal-header"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span>' +
+				'<span class="terminal-dot green"></span><span class="terminal-title">semantic search</span></div>' +
+				'<div class="terminal-body"><div class="terminal-line prompt">search --semantic "' + escapeHtml(query) + '"</div>' +
+				'<div class="terminal-line info" id="terminal-status">Generating embedding...<span class="terminal-cursor"></span></div></div></div>' +
+				'<p class="search-status" id="search-status" style="display:none;"></p><div id="paper-results"></div>';
 		} else {
 			results.innerHTML = '<p class="search-status" id="search-status">Searching...</p><div id="paper-results"></div>';
 		}
@@ -243,81 +253,103 @@
 
 		activeEventSource.onmessage = function(e) {
 			const data = JSON.parse(e.data);
-			
 			switch (data.type) {
 				case 'start':
-					if (isSemantic && terminalStatus) {
-						terminalStatus.innerHTML = 'Generating query embedding...<span class="terminal-cursor"></span>';
-					} else {
-						statusEl.textContent = 'Searching...';
-					}
+					if (isSemantic && terminalStatus) terminalStatus.innerHTML = 'Generating embedding...<span class="terminal-cursor"></span>';
+					else statusEl.textContent = 'Searching...';
 					break;
 				case 'status':
-					if (isSemantic && terminalStatus) {
-						terminalStatus.innerHTML = data.message + '<span class="terminal-cursor"></span>';
-					} else {
-						statusEl.textContent = data.message;
-					}
+					if (isSemantic && terminalStatus) terminalStatus.innerHTML = data.message + '<span class="terminal-cursor"></span>';
+					else statusEl.textContent = data.message;
 					break;
 				case 'result':
 					resultCount++;
 					if (terminal) terminal.classList.remove('active');
 					statusEl.style.display = '';
-					const paper = data.paper;
-					const similarity = data.similarity || null;
-					paperContainer.insertAdjacentHTML('beforeend', renderPaper(paper, similarity));
-					statusEl.textContent = resultCount + ' results found...';
+					const p = data.paper;
+					const id = p.id || p.ID;
+					const title = p.title || p.Title || '';
+					const authors = p.authors || p.Authors || '';
+					const categories = p.categories || p.Categories || '';
+					const hasSource = p.src || p.SourceDownloaded;
+					const hasPdf = p.pdf || p.PDFDownloaded;
+					const hasEmbed = p.hasEmbedding || p.HasEmbedding;
+					const similarity = data.similarity;
+					const cats = categories.split(' ').filter(c => c).map(c =>
+						'<a class="cat-link" href="/category/' + c + '">' + c + '</a>').join(' ');
+					const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
+					               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
+					               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
+					const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
+					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><span class="paper-id">' + id + '</span> ' +
+						badges + ' ' + simBadge + '<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
+						'<div class="paper-authors">' + escapeHtml(authors) + '</div><div class="paper-categories">' + cats + '</div></div>');
+					statusEl.textContent = resultCount + ' results...';
 					break;
 				case 'complete':
 					if (terminal) terminal.classList.remove('active');
 					statusEl.style.display = '';
-					const modeLabel = data.mode === 'semantic' ? 'semantic' : 'keyword';
-					statusEl.textContent = data.count + ' ' + modeLabel + ' results for "' + escapeHtml(query) + '"';
-					activeEventSource.close();
-					activeEventSource = null;
+					statusEl.textContent = data.count + ' ' + (data.mode === 'semantic' ? 'semantic' : 'keyword') + ' results for "' + escapeHtml(query) + '"';
+					activeEventSource.close(); activeEventSource = null;
 					break;
 				case 'error':
 					if (terminal) terminal.classList.remove('active');
 					statusEl.style.display = '';
 					statusEl.textContent = data.error;
 					statusEl.style.color = '#dc2626';
-					activeEventSource.close();
-					activeEventSource = null;
+					activeEventSource.close(); activeEventSource = null;
 					break;
 			}
 		};
-
 		activeEventSource.onerror = function() {
-			if (resultCount === 0) {
-				statusEl.textContent = 'Search failed - please try again';
-				statusEl.style.color = '#dc2626';
-			}
-			if (activeEventSource) {
-				activeEventSource.close();
-				activeEventSource = null;
-			}
+			if (resultCount === 0) { statusEl.textContent = 'Search failed'; statusEl.style.color = '#dc2626'; }
+			if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
 		};
 	}
 
+	// Event handlers - 100ms debounce for responsive fzf-like feel
 	input.addEventListener('input', function() {
 		clearTimeout(timeout);
-		const searchMode = document.querySelector('input[name="search-mode"]:checked').value;
-		if (searchMode === 'keyword') {
-			timeout = setTimeout(() => doSearch(input.value), 300);
+		timeout = setTimeout(() => doDropdownSearch(input.value), 100);
+	});
+
+	input.addEventListener('focus', function() {
+		if (input.value.trim()) doDropdownSearch(input.value);
+	});
+
+	input.addEventListener('keydown', function(e) {
+		if (!dropdown.classList.contains('open')) return;
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			selectedIndex = Math.min(selectedIndex + 1, dropdownItems.length - 1);
+			updateSelection();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			selectedIndex = Math.max(selectedIndex - 1, -1);
+			updateSelection();
+		} else if (e.key === 'Enter' && selectedIndex >= 0) {
+			e.preventDefault();
+			dropdownItems[selectedIndex].click();
+		} else if (e.key === 'Escape') {
+			hideDropdown();
 		}
+	});
+
+	document.addEventListener('click', function(e) {
+		if (!e.target.closest('.search-container')) hideDropdown();
 	});
 
 	document.getElementById('search-form').addEventListener('submit', function(e) {
 		e.preventDefault();
-		const arxivID = extractArxivID(input.value);
-		if (arxivID) {
-			window.location.href = '/paper/' + arxivID;
-			return;
-		}
-		doSearch(input.value);
+		hideDropdown();
+		window.location.href = '/search?q=' + encodeURIComponent(input.value);
+	});
+
+	btnSemantic.addEventListener('click', function() {
+		doFullSearch(input.value, true);
 	});
 
 })();
- </script>
+</script>
 {{template "foot" .}}
 {{end}}

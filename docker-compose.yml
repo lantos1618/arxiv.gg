@@ -1,39 +1,35 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: arxiv-postgres
-    restart: unless-stopped
     environment:
       POSTGRES_USER: arxiv
       POSTGRES_PASSWORD: arxiv
       POSTGRES_DB: arxiv
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - arxiv_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U arxiv -d arxiv"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   arxiv:
     build: .
     container_name: arxiv-container
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    ports:
+      - "80:80"
     environment:
       DATABASE_URL: postgres://arxiv:arxiv@postgres:5432/arxiv?sslmode=disable
       ARXIV_CACHE: /data/arxiv
     volumes:
       - /data/arxiv:/data/arxiv
-    ports:
-      - "80:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
-    driver: local
+  arxiv_postgres_data:
+    external: true

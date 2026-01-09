@@ -7,21 +7,17 @@
 	@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 </style>
 <h1>Search Results</h1>
-<form class="search-form" action="/search" method="get" id="search-form" role="search">
-	<label for="search-input" class="sr-only">Search papers</label>
-	<input type="text" name="q" id="search-input" placeholder="Search papers..." value="{{.Query}}" aria-label="Search papers">
-	<button type="submit" aria-label="Search">Search</button>
+<form class="search-bar" action="/search" method="get" id="search-form" role="search">
+	<input type="text" name="q" id="search-input" class="search-input" placeholder="Search or paste arXiv ID/URL..." value="{{.Query}}" autocomplete="off" aria-label="Search papers">
+	<div class="search-buttons">
+		<button type="submit" class="search-btn search-btn-keyword" id="btn-keyword">
+			<span class="btn-icon">🔍</span><span>Keyword</span>
+		</button>
+		<button type="button" class="search-btn search-btn-semantic" id="btn-semantic">
+			<span class="btn-icon">🧠</span><span>Semantic</span>
+		</button>
+	</div>
 </form>
-<div class="search-mode-toggle">
-	<label class="toggle-label">
-		<input type="radio" name="search-mode" value="keyword" {{if not .IsSemantic}}checked{{end}} id="mode-keyword">
-		<span class="toggle-text">Keyword</span>
-	</label>
-	<label class="toggle-label">
-		<input type="radio" name="search-mode" value="semantic" {{if .IsSemantic}}checked{{end}} id="mode-semantic">
-		<span class="toggle-text">Semantic</span>
-	</label>
-</div>
 
 <p id="search-status"></p>
 <div id="paper-results">
@@ -75,13 +71,13 @@
 	const input = document.getElementById('search-input');
 	const statusEl = document.getElementById('search-status');
 	const paperContainer = document.getElementById('paper-results');
-	const modeInputs = document.querySelectorAll('input[name="search-mode"]');
+	const btnSemantic = document.getElementById('btn-semantic');
 	let activeEventSource = null;
-	
+
 	const initialQuery = '{{.Query}}';
 	const initialMode = '{{if .IsSemantic}}semantic{{else}}keyword{{end}}';
 	const initialCount = {{if .IsSemantic}}{{len .SemanticResults}}{{else}}{{len .Papers}}{{end}};
-	
+
 	if (initialQuery && initialCount > 0) {
 		statusEl.textContent = initialCount + ' ' + initialMode + ' results for "' + initialQuery + '"';
 	}
@@ -100,53 +96,33 @@
 		const hasSource = p.SourceDownloaded || p.src;
 		const hasPdf = p.PDFDownloaded || p.pdf;
 		const hasEmbed = p.HasEmbedding || p.hasEmbedding;
-
 		const cats = categories.split(' ').filter(c => c).map(c =>
-			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>'
-		).join(' ');
+			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>').join(' ');
 		const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
 		               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
 		               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
-		const similarityBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '% match</span>' : '';
-
-		return '<div class="paper">' +
-			'<span class="paper-id">' + id + '</span> ' + badges + ' ' + similarityBadge +
+		const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
+		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges + ' ' + simBadge +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
-			'<div class="paper-authors">' + escapeHtml(authors) + '</div>' +
-			'<div class="paper-categories">' + cats + '</div>' +
-		'</div>';
+			'<div class="paper-authors">' + escapeHtml(authors) + '</div><div class="paper-categories">' + cats + '</div></div>';
 	}
 
-	function doStreamSearch(query, mode) {
-		if (activeEventSource) {
-			activeEventSource.close();
-			activeEventSource = null;
-		}
-
-		const isSemantic = mode === 'semantic';
+	function doStreamSearch(query, isSemantic) {
+		if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
 		statusEl.style.color = '';
 
 		let terminalEl = document.getElementById('search-terminal');
 		if (isSemantic) {
 			if (!terminalEl) {
-				const terminalHtml = `
-					<div class="terminal active" id="search-terminal">
-						<div class="terminal-header">
-							<span class="terminal-dot red"></span>
-							<span class="terminal-dot yellow"></span>
-							<span class="terminal-dot green"></span>
-							<span class="terminal-title">semantic search</span>
-						</div>
-						<div class="terminal-body">
-							<div class="terminal-line prompt">search --semantic "${escapeHtml(query)}"</div>
-							<div class="terminal-line info" id="terminal-status">Generating query embedding...<span class="terminal-cursor"></span></div>
-						</div>
-					</div>`;
-				paperContainer.insertAdjacentHTML('beforebegin', terminalHtml);
+				paperContainer.insertAdjacentHTML('beforebegin', '<div class="terminal active" id="search-terminal">' +
+					'<div class="terminal-header"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span>' +
+					'<span class="terminal-dot green"></span><span class="terminal-title">semantic search</span></div>' +
+					'<div class="terminal-body"><div class="terminal-line prompt">search --semantic "' + escapeHtml(query) + '"</div>' +
+					'<div class="terminal-line info" id="terminal-status">Generating embedding...<span class="terminal-cursor"></span></div></div></div>');
 				terminalEl = document.getElementById('search-terminal');
 			} else {
 				terminalEl.classList.add('active');
-				document.getElementById('terminal-status').innerHTML = 'Generating query embedding...<span class="terminal-cursor"></span>';
+				document.getElementById('terminal-status').innerHTML = 'Generating embedding...<span class="terminal-cursor"></span>';
 			}
 			statusEl.style.display = 'none';
 		} else {
@@ -165,76 +141,57 @@
 
 		activeEventSource.onmessage = function(e) {
 			const data = JSON.parse(e.data);
-			
 			switch (data.type) {
 				case 'start':
-					if (isSemantic && terminalStatus) {
-						terminalStatus.innerHTML = 'Generating query embedding...<span class="terminal-cursor"></span>';
-					} else {
-						statusEl.textContent = 'Searching...';
-					}
+					if (isSemantic && terminalStatus) terminalStatus.innerHTML = 'Generating embedding...<span class="terminal-cursor"></span>';
+					else statusEl.textContent = 'Searching...';
 					break;
 				case 'status':
-					if (isSemantic && terminalStatus) {
-						terminalStatus.innerHTML = data.message + '<span class="terminal-cursor"></span>';
-					} else {
-						statusEl.textContent = data.message;
-					}
+					if (isSemantic && terminalStatus) terminalStatus.innerHTML = data.message + '<span class="terminal-cursor"></span>';
+					else statusEl.textContent = data.message;
 					break;
 				case 'result':
 					resultCount++;
 					if (terminalEl) terminalEl.classList.remove('active');
 					statusEl.style.display = '';
 					paperContainer.insertAdjacentHTML('beforeend', renderPaper(data.paper, data.similarity));
-					statusEl.textContent = resultCount + ' results found...';
+					statusEl.textContent = resultCount + ' results...';
 					break;
 				case 'complete':
 					if (terminalEl) terminalEl.classList.remove('active');
 					statusEl.style.display = '';
-					const modeLabel = data.mode === 'semantic' ? 'semantic' : 'keyword';
-					statusEl.textContent = data.count + ' ' + modeLabel + ' results for "' + escapeHtml(query) + '"';
-					activeEventSource.close();
-					activeEventSource = null;
+					statusEl.textContent = data.count + ' ' + (data.mode === 'semantic' ? 'semantic' : 'keyword') + ' results for "' + escapeHtml(query) + '"';
+					activeEventSource.close(); activeEventSource = null;
 					break;
 				case 'error':
 					if (terminalEl) terminalEl.classList.remove('active');
 					statusEl.style.display = '';
 					statusEl.textContent = data.error;
 					statusEl.style.color = '#dc2626';
-					activeEventSource.close();
-					activeEventSource = null;
+					activeEventSource.close(); activeEventSource = null;
 					break;
 			}
 		};
-
 		activeEventSource.onerror = function() {
-			if (resultCount === 0) {
-				statusEl.textContent = 'Search failed - please try again';
-				statusEl.style.color = '#dc2626';
-			}
-			if (activeEventSource) {
-				activeEventSource.close();
-				activeEventSource = null;
-			}
+			if (resultCount === 0) { statusEl.textContent = 'Search failed'; statusEl.style.color = '#dc2626'; }
+			if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
 		};
 	}
-
-	modeInputs.forEach(function(radio) {
-		radio.addEventListener('change', function() {
-			const query = input.value.trim();
-			if (query) {
-				doStreamSearch(query, this.value);
-			}
-		});
-	});
 
 	form.addEventListener('submit', function(e) {
 		e.preventDefault();
 		const query = input.value.trim();
-		const mode = document.querySelector('input[name="search-mode"]:checked').value;
 		if (query) {
-			history.pushState(null, '', '/search?q=' + encodeURIComponent(query) + '&search-mode=' + mode);
-			doStreamSearch(query, mode);
+			history.pushState(null, '', '/search?q=' + encodeURIComponent(query));
+			doStreamSearch(query, false);
+		}
+	});
+
+	btnSemantic.addEventListener('click', function() {
+		const query = input.value.trim();
+		if (query) {
+			history.pushState(null, '', '/search?q=' + encodeURIComponent(query) + '&mode=semantic');
+			doStreamSearch(query, true);
 		}
 	});
 
@@ -247,10 +204,9 @@
 			genStatus.dataset.generating = 'true';
 			genStatus.textContent = 'Generating embeddings...';
 			genBtn.disabled = true;
-
 			try {
 				const response = await fetch('/api/v1/embeddings/generate', { method: 'POST' });
-				if (!response.ok) throw new Error('Failed to generate embeddings');
+				if (!response.ok) throw new Error('Failed');
 				const data = await response.json();
 				genStatus.textContent = 'Generated ' + (data.data?.count || 0) + ' embeddings!';
 				setTimeout(() => window.location.reload(), 1500);

@@ -58,7 +58,15 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 8080, "Port to listen on")
 	localMode := fs.Bool("local", false, "Enable local PDF/source caching (downloads files locally instead of redirecting to arxiv.org)")
+	embeddingService := fs.String("embedding-service", "", "URL of embedding service (e.g., http://localhost:8001)")
+	enableEmbeddingWorker := fs.Bool("embedding-worker", false, "Enable background embedding worker")
 	fs.Parse(args)
+
+	// Check environment variable for embedding service URL if not provided via flag
+	embeddingServiceURL := *embeddingService
+	if embeddingServiceURL == "" {
+		embeddingServiceURL = os.Getenv("EMBEDDING_SERVICE_URL")
+	}
 
 	cache, err := arxiv.Open(cacheDir)
 	if err != nil {
@@ -66,10 +74,20 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	}
 
 	srv := &server{
-		cache:          cache,
-		cacheDir:       cacheDir,
-		localMode:      *localMode,
-		paperBroadcast: newPaperBroadcaster(),
+		cache:               cache,
+		cacheDir:            cacheDir,
+		localMode:           *localMode,
+		paperBroadcast:      newPaperBroadcaster(),
+		embeddingServiceURL: embeddingServiceURL,
+	}
+
+	// Start embedding worker if enabled
+	if *enableEmbeddingWorker && embeddingServiceURL != "" {
+		config := arxiv.DefaultEmbeddingWorkerConfig()
+		config.ServiceURL = embeddingServiceURL
+		srv.embeddingWorker = arxiv.NewEmbeddingWorker(cache, config)
+		srv.embeddingWorker.Start(ctx)
+		defer srv.embeddingWorker.Stop()
 	}
 	mux := http.NewServeMux()
 
@@ -80,12 +98,14 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/api/v1/", srv.handleAPIRoot)
 	mux.HandleFunc("/api/v1/papers/", srv.handleAPIPaper)
 	mux.HandleFunc("/api/v1/search", srv.handleAPISearch)
+	mux.HandleFunc("/api/v1/search/quick", srv.handleAPISearchQuick)
 	mux.HandleFunc("/api/v1/search/stream", srv.handleAPISearchStream)
 	mux.HandleFunc("/api/v1/search/semantic", srv.handleAPISearchSemantic)
 	mux.HandleFunc("/api/v1/search/pdf", srv.handleAPISearchPDF)
 	mux.HandleFunc("/api/v1/categories", srv.handleAPICategories)
 	mux.HandleFunc("/api/v1/stats", srv.handleAPIStats)
 	mux.HandleFunc("/api/v1/embeddings/generate", srv.handleAPIGenerateEmbeddings)
+	mux.HandleFunc("/api/v1/embeddings/status", srv.handleAPIEmbeddingWorkerStatus)
 	mux.HandleFunc("/api/v1/papers/recent/stream", srv.handleAPIRecentPapersStream)
 
 	// Web routes
@@ -134,6 +154,10 @@ type server struct {
 
 	// Real-time paper broadcast
 	paperBroadcast *paperBroadcaster
+
+	// Embedding service configuration
+	embeddingServiceURL string
+	embeddingWorker     *arxiv.EmbeddingWorker
 }
 
 // paperBroadcaster manages real-time paper update subscriptions

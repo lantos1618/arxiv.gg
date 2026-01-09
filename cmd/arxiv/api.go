@@ -2,8 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -232,6 +235,50 @@ func (s *server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]interface{}{
 			"papers": papers,
 			"count":  len(papers),
+		},
+	})
+}
+
+// handleAPISearchQuick handles quick multi-field search for dropdown/autocomplete
+func (s *server) handleAPISearchQuick(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "query parameter 'q' required",
+		})
+		return
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 10
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 50 {
+			limit = l
+		}
+	}
+
+	ctx := r.Context()
+	papers, total, err := s.cache.QuickSearch(ctx, query, limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"papers": papers,
+			"count":  len(papers),
+			"total":  total,
 		},
 	})
 }
@@ -987,7 +1034,114 @@ func toJSON(data interface{}) string {
 	return string(jsonBytes)
 }
 
+// handleAPIEmbeddingWorkerStatus returns the embedding worker status
+func (s *server) handleAPIEmbeddingWorkerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get basic embedding stats
+	embeddingCount, _ := s.cache.CountEmbeddings(ctx)
+	stats, _ := s.cache.Stats(ctx)
+	pendingCount := stats.TotalPapers - embeddingCount
+	if pendingCount < 0 {
+		pendingCount = 0
+	}
+
+	response := map[string]interface{}{
+		"embeddingCount": embeddingCount,
+		"totalPapers":    stats.TotalPapers,
+		"pendingCount":   pendingCount,
+		"serviceURL":     s.embeddingServiceURL,
+	}
+
+	// Add worker stats if worker is running
+	if s.embeddingWorker != nil {
+		workerStats := s.embeddingWorker.Stats()
+		response["worker"] = workerStats
+	} else {
+		response["worker"] = nil
+		response["workerEnabled"] = false
+	}
+
+	// Check embedding service health
+	if s.embeddingServiceURL != "" {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, "GET", s.embeddingServiceURL+"/health", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			response["serviceUp"] = false
+		} else {
+			response["serviceUp"] = true
+			resp.Body.Close()
+		}
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    response,
+	})
+}
+
 func (s *server) generateQueryEmbedding(query string) ([]float32, error) {
+	// Try HTTP embedding service first (fast path)
+	if s.embeddingServiceURL != "" {
+		embedding, err := s.generateQueryEmbeddingHTTP(query)
+		if err == nil {
+			return embedding, nil
+		}
+		// Log error but fall through to Python fallback
+		fmt.Printf("Embedding service error (falling back to Python): %v\n", err)
+	}
+
+	// Fallback to Python script (slow path - loads model each time)
+	return s.generateQueryEmbeddingPython(query)
+}
+
+// generateQueryEmbeddingHTTP calls the FastAPI embedding service.
+func (s *server) generateQueryEmbeddingHTTP(query string) ([]float32, error) {
+	reqBody := map[string]string{"text": query}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.embeddingServiceURL+"/embed", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("embedding service request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("embedding service error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode embedding response: %w", err)
+	}
+
+	return result.Embedding, nil
+}
+
+// generateQueryEmbeddingPython falls back to the Python script.
+func (s *server) generateQueryEmbeddingPython(query string) ([]float32, error) {
 	cmd := exec.Command("python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--query", query)
 
 	output, err := cmd.CombinedOutput()

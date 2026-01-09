@@ -19,6 +19,57 @@ func (c *Cache) Search(ctx context.Context, query, category string, limit int) (
 	return c.searchSQLite(ctx, query, category, limit)
 }
 
+// QuickSearch does a fast multi-field search for dropdown/autocomplete.
+// Searches ID, title, authors, and categories with LIKE matching.
+func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Paper, int, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, 0, nil
+	}
+
+	likePattern := "%" + query + "%"
+
+	// Use raw SQL for proper LIKE and ordering
+	var sql string
+	var countSQL string
+	var args []any
+
+	if c.dbType == DBTypePostgres {
+		countSQL = `SELECT COUNT(*) FROM papers WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1`
+		sql = `SELECT * FROM papers
+			WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1
+			ORDER BY CASE WHEN id ILIKE $1 THEN 0 WHEN title ILIKE $1 THEN 1 ELSE 2 END, created DESC
+			LIMIT $2`
+		args = []any{likePattern, limit}
+	} else {
+		countSQL = `SELECT COUNT(*) FROM papers WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?`
+		sql = `SELECT * FROM papers
+			WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?
+			ORDER BY CASE WHEN id LIKE ? THEN 0 WHEN title LIKE ? THEN 1 ELSE 2 END, created DESC
+			LIMIT ?`
+		args = []any{likePattern, likePattern, likePattern, likePattern, likePattern, likePattern, limit}
+	}
+
+	// Get count
+	var total int64
+	sqlDB, _ := c.db.DB()
+	if c.dbType == DBTypePostgres {
+		sqlDB.QueryRowContext(ctx, countSQL, likePattern).Scan(&total)
+	} else {
+		sqlDB.QueryRowContext(ctx, countSQL, likePattern, likePattern, likePattern, likePattern).Scan(&total)
+	}
+
+	// Get results
+	var papers []Paper
+	err := c.db.WithContext(ctx).Raw(sql, args...).Scan(&papers).Error
+
+	return papers, int(total), err
+}
+
 // searchSQLite uses FTS5 for full-text search
 func (c *Cache) searchSQLite(ctx context.Context, query, category string, limit int) ([]Paper, error) {
 	sql := `

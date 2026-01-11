@@ -51,7 +51,7 @@
 	<div class="paper">
 		<span class="paper-id">{{.ID}}</span>
 		<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
-		<div class="paper-authors">{{.Authors}}</div>
+		<div class="paper-authors">{{range $i, $a := parseAuthors .Authors}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}</div>
 		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
 	</div>
 	{{else}}

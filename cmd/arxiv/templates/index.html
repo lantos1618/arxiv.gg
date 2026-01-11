@@ -46,6 +46,12 @@
 		statTotal.textContent = parseInt(statTotal.textContent) + 1;
 	}
 
+	function renderAuthors(authors) {
+		return authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a).map(a =>
+			'<a href="/author/' + encodeURIComponent(a) + '">' + escapeHtml(a) + '</a>'
+		).join(', ');
+	}
+
 	function renderRecentPaper(p) {
 		const id = p.ID || p.id;
 		const title = p.Title || p.title || '';
@@ -58,7 +64,7 @@
 		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
-			'<div class="paper-authors">' + escapeHtml(authors) + '</div>' +
+			'<div class="paper-authors">' + renderAuthors(authors) + '</div>' +
 			'<div class="paper-categories">' + cats + '</div></div>';
 	}
 
@@ -271,7 +277,7 @@
 					const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><span class="paper-id">' + id + '</span> ' +
 						badges + ' ' + simBadge + '<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
-						'<div class="paper-authors">' + escapeHtml(authors) + '</div><div class="paper-categories">' + cats + '</div></div>');
+						'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-categories">' + cats + '</div></div>');
 					statusEl.textContent = resultCount + ' results...';
 					break;
 				case 'complete':

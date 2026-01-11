@@ -40,7 +40,7 @@
 	<span class="paper-id">{{.PaperID}}</span>
 	<span class="badge badge-similarity">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
 	<div class="paper-title"><a href="/paper/{{.PaperID}}">{{.Paper.Title}}</a></div>
-	<div class="paper-authors">{{.Paper.Authors}}</div>
+	<div class="paper-authors">{{range $i, $a := parseAuthors .Paper.Authors}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}</div>
 	<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
 </div>
 {{else}}
@@ -52,7 +52,7 @@
 <div class="paper">
 	<span class="paper-id">{{.ID}}</span>
 	<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
-	<div class="paper-authors">{{.Authors}}</div>
+	<div class="paper-authors">{{range $i, $a := parseAuthors .Authors}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}</div>
 	<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
 </div>
 {{else}}
@@ -84,6 +84,12 @@
 		return div.innerHTML;
 	}
 
+	function renderAuthors(authors) {
+		return authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a).map(a =>
+			'<a href="/author/' + encodeURIComponent(a) + '">' + escapeHtml(a) + '</a>'
+		).join(', ');
+	}
+
 	function renderPaper(p, similarity) {
 		const id = p.ID || p.id;
 		const title = p.Title || p.title || '';
@@ -96,7 +102,7 @@
 		const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges + ' ' + simBadge +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
-			'<div class="paper-authors">' + escapeHtml(authors) + '</div><div class="paper-categories">' + cats + '</div></div>';
+			'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-categories">' + cats + '</div></div>';
 	}
 
 	function doStreamSearch(query, isSemantic) {

@@ -185,11 +185,23 @@ func (c *Cache) SearchByAuthor(ctx context.Context, author string, limit int) ([
 		likeOp = "ILIKE"
 	}
 
-	err := c.db.WithContext(ctx).
-		Where("authors "+likeOp+" ?", "%"+author+"%").
-		Order("created DESC").
-		Limit(limit).
-		Find(&papers).Error
+	// Search for both "First Last" and "Last, First" formats
+	flipped := flipAuthorName(author)
+
+	var err error
+	if flipped != "" {
+		err = c.db.WithContext(ctx).
+			Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").
+			Order("created DESC").
+			Limit(limit).
+			Find(&papers).Error
+	} else {
+		err = c.db.WithContext(ctx).
+			Where("authors "+likeOp+" ?", "%"+author+"%").
+			Order("created DESC").
+			Limit(limit).
+			Find(&papers).Error
+	}
 	return papers, err
 }
 

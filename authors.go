@@ -44,43 +44,142 @@ type SimilarAuthor struct {
 	PaperCount int     `json:"paper_count"`
 }
 
+// flipAuthorName converts between "First Last" and "Last, First" formats.
+// Returns the flipped version, or empty string if it can't be flipped.
+func flipAuthorName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+
+	// Check if it's "Last, First" format
+	if idx := strings.Index(name, ", "); idx > 0 {
+		last := name[:idx]
+		first := name[idx+2:]
+		return first + " " + last
+	}
+
+	// It's "First Last" format - find the last space
+	if idx := strings.LastIndex(name, " "); idx > 0 {
+		first := name[:idx]
+		last := name[idx+1:]
+		return last + ", " + first
+	}
+
+	return ""
+}
+
+// normalizeToFirstLast converts "Last, First" to "First Last" format.
+func normalizeToFirstLast(name string) string {
+	name = strings.TrimSpace(name)
+	if idx := strings.Index(name, ", "); idx > 0 {
+		last := name[:idx]
+		first := name[idx+2:]
+		return first + " " + last
+	}
+	return name
+}
+
 // GetCollaborators returns collaborators for an author sorted by paper count.
+// Computes directly from papers table for real-time accuracy.
 func (c *Cache) GetCollaborators(ctx context.Context, author string, limit int) ([]CollaboratorInfo, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 
-	var collabs []AuthorCollaboration
-	// Search both directions since collaboration is symmetric
-	err := c.db.WithContext(ctx).
-		Where("author1 = ? OR author2 = ?", author, author).
-		Order("paper_count DESC").
-		Limit(limit).
-		Find(&collabs).Error
-	if err != nil {
-		return nil, fmt.Errorf("get collaborators: %w", err)
+	// Compute collaborators directly from papers
+	likeOp := "LIKE"
+	if c.dbType == DBTypePostgres {
+		likeOp = "ILIKE"
 	}
 
-	result := make([]CollaboratorInfo, 0, len(collabs))
-	for _, collab := range collabs {
-		// Get the other author
-		otherAuthor := collab.Author2
-		if collab.Author1 != author {
-			otherAuthor = collab.Author1
-		}
+	// Search for both "First Last" and "Last, First" formats
+	flipped := flipAuthorName(author)
 
-		var paperIDs []string
-		if collab.PaperIDs != "" {
-			json.Unmarshal([]byte(collab.PaperIDs), &paperIDs)
-		}
+	// Get all papers by this author (try both name formats)
+	var papers []Paper
+	var err error
+	if flipped != "" {
+		err = c.db.WithContext(ctx).
+			Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").
+			Select("id", "authors", "created").
+			Find(&papers).Error
+	} else {
+		err = c.db.WithContext(ctx).
+			Where("authors "+likeOp+" ?", "%"+author+"%").
+			Select("id", "authors", "created").
+			Find(&papers).Error
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get author papers: %w", err)
+	}
 
-		result = append(result, CollaboratorInfo{
-			Author:      otherAuthor,
-			PaperCount:  collab.PaperCount,
-			PaperIDs:    paperIDs,
-			FirstCollab: collab.FirstCollab,
-			LastCollab:  collab.LastCollab,
-		})
+	// Track seen papers to avoid duplicates from OR query
+	seenPapers := make(map[string]bool)
+
+	// Count co-authors across all papers
+	collabMap := make(map[string]*CollaboratorInfo)
+	authorNorm := normalizeToFirstLast(author)
+	authorFlipped := flipAuthorName(author)
+
+	for _, paper := range papers {
+		// Skip if we've already processed this paper (dedup from OR query)
+		if seenPapers[paper.ID] {
+			continue
+		}
+		seenPapers[paper.ID] = true
+
+		coauthors := ParseAuthors(paper.Authors)
+		for _, coauthor := range coauthors {
+			// Normalize coauthor to "First Last" format for consistent keys
+			coauthorNorm := normalizeToFirstLast(coauthor)
+
+			// Skip self (check both formats)
+			if strings.EqualFold(coauthorNorm, authorNorm) ||
+				strings.EqualFold(coauthor, author) ||
+				(authorFlipped != "" && strings.EqualFold(coauthor, authorFlipped)) {
+				continue
+			}
+
+			if existing, ok := collabMap[coauthorNorm]; ok {
+				existing.PaperCount++
+				existing.PaperIDs = append(existing.PaperIDs, paper.ID)
+				if paper.Created.After(existing.LastCollab) {
+					existing.LastCollab = paper.Created
+				}
+				if paper.Created.Before(existing.FirstCollab) {
+					existing.FirstCollab = paper.Created
+				}
+			} else {
+				collabMap[coauthorNorm] = &CollaboratorInfo{
+					Author:      coauthorNorm,
+					PaperCount:  1,
+					PaperIDs:    []string{paper.ID},
+					FirstCollab: paper.Created,
+					LastCollab:  paper.Created,
+				}
+			}
+		}
+	}
+
+	// Convert to slice and sort by paper count
+	result := make([]CollaboratorInfo, 0, len(collabMap))
+	for _, collab := range collabMap {
+		result = append(result, *collab)
+	}
+
+	// Sort by paper count descending
+	for i := 0; i < len(result)-1; i++ {
+		for j := i + 1; j < len(result); j++ {
+			if result[j].PaperCount > result[i].PaperCount {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+
+	// Limit results
+	if len(result) > limit {
+		result = result[:limit]
 	}
 
 	return result, nil
@@ -290,18 +389,30 @@ type AuthorStats struct {
 	HasEmbedding     bool `json:"has_embedding"`
 }
 
-// GetAuthorStats returns statistics for an author.
-func (c *Cache) GetAuthorStats(ctx context.Context, author string) (*AuthorStats, error) {
-	stats := &AuthorStats{}
-
-	// Count papers
+// getAuthorPaperCount returns the number of papers by an author, searching both name formats.
+func (c *Cache) getAuthorPaperCount(ctx context.Context, author string) int64 {
 	likeOp := "LIKE"
 	if c.dbType == DBTypePostgres {
 		likeOp = "ILIKE"
 	}
-	var paperCount int64
-	c.db.WithContext(ctx).Model(&Paper{}).Where("authors "+likeOp+" ?", "%"+author+"%").Count(&paperCount)
-	stats.PaperCount = int(paperCount)
+
+	flipped := flipAuthorName(author)
+
+	var count int64
+	if flipped != "" {
+		c.db.WithContext(ctx).Model(&Paper{}).Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").Count(&count)
+	} else {
+		c.db.WithContext(ctx).Model(&Paper{}).Where("authors "+likeOp+" ?", "%"+author+"%").Count(&count)
+	}
+	return count
+}
+
+// GetAuthorStats returns statistics for an author.
+func (c *Cache) GetAuthorStats(ctx context.Context, author string) (*AuthorStats, error) {
+	stats := &AuthorStats{}
+
+	// Count papers using helper that searches both name formats
+	stats.PaperCount = int(c.getAuthorPaperCount(ctx, author))
 
 	// Count unique collaborators
 	var collabCount int64
@@ -353,13 +464,8 @@ func (c *Cache) GetAuthorGraph(ctx context.Context, author string, depth int) (*
 	nodeSet := make(map[string]bool)
 	edgeSet := make(map[string]bool)
 
-	// Get center author's paper count
-	likeOp := "LIKE"
-	if c.dbType == DBTypePostgres {
-		likeOp = "ILIKE"
-	}
-	var centerPaperCount int64
-	c.db.WithContext(ctx).Model(&Paper{}).Where("authors "+likeOp+" ?", "%"+author+"%").Count(&centerPaperCount)
+	// Get center author's paper count using helper that searches both name formats
+	centerPaperCount := c.getAuthorPaperCount(ctx, author)
 
 	// Add center node
 	graph.Nodes = append(graph.Nodes, CollabGraphNode{
@@ -379,8 +485,7 @@ func (c *Cache) GetAuthorGraph(ctx context.Context, author string, depth int) (*
 	for _, collab := range collabs {
 		// Add collaborator node
 		if !nodeSet[collab.Author] {
-			var pc int64
-			c.db.WithContext(ctx).Model(&Paper{}).Where("authors "+likeOp+" ?", "%"+collab.Author+"%").Count(&pc)
+			pc := c.getAuthorPaperCount(ctx, collab.Author)
 			graph.Nodes = append(graph.Nodes, CollabGraphNode{
 				ID:         collab.Author,
 				Name:       collab.Author,
@@ -420,8 +525,7 @@ func (c *Cache) GetAuthorGraph(ctx context.Context, author string, depth int) (*
 
 				// Add node if new
 				if !nodeSet[collab.Author] {
-					var pc int64
-					c.db.WithContext(ctx).Model(&Paper{}).Where("authors "+likeOp+" ?", "%"+collab.Author+"%").Count(&pc)
+					pc := c.getAuthorPaperCount(ctx, collab.Author)
 					graph.Nodes = append(graph.Nodes, CollabGraphNode{
 						ID:         collab.Author,
 						Name:       collab.Author,
@@ -487,13 +591,24 @@ func (c *Cache) GetAuthorProfile(ctx context.Context, author string) (*AuthorPro
 		likeOp = "ILIKE"
 	}
 
+	// Search for both "First Last" and "Last, First" formats
+	flipped := flipAuthorName(author)
+
 	// Get all papers by author
 	var papers []Paper
-	c.db.WithContext(ctx).
-		Select("id", "categories", "created").
-		Where("authors "+likeOp+" ?", "%"+author+"%").
-		Order("created ASC").
-		Find(&papers)
+	if flipped != "" {
+		c.db.WithContext(ctx).
+			Select("id", "categories", "created").
+			Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").
+			Order("created ASC").
+			Find(&papers)
+	} else {
+		c.db.WithContext(ctx).
+			Select("id", "categories", "created").
+			Where("authors "+likeOp+" ?", "%"+author+"%").
+			Order("created ASC").
+			Find(&papers)
+	}
 
 	profile.TotalPapers = len(papers)
 

@@ -53,6 +53,16 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+// setSSEHeaders sets headers for Server-Sent Events, including buffering controls
+func setSSEHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+}
+
 // handleAPIPaper returns paper metadata as JSON
 // Handles: /api/v1/papers/{id}, /api/v1/papers/{id}/citations, /api/v1/papers/{id}/cited-by, /api/v1/papers/{id}/graph, /api/v1/papers/{id}/fetch, /api/v1/papers/{id}/export/{format}
 func (s *server) handleAPIPaper(w http.ResponseWriter, r *http.Request) {
@@ -311,10 +321,7 @@ func (s *server) handleAPISearchStream(w http.ResponseWriter, r *http.Request) {
 	searchMode := r.URL.Query().Get("mode")
 	isSemantic := searchMode == "semantic"
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setSSEHeaders(w)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -914,10 +921,7 @@ func (s *server) handleAPIGenerateEmbeddings(w http.ResponseWriter, r *http.Requ
 // handleGenerateEmbeddingsSSE provides real-time progress for embedding generation
 func (s *server) handleGenerateEmbeddingsSSE(w http.ResponseWriter, r *http.Request, limit int) {
 	// Set SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setSSEHeaders(w)
 	w.Header().Set("Access-Control-Allow-Headers", "Cache-Control")
 
 	flusher, ok := w.(http.Flusher)
@@ -1198,10 +1202,7 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setSSEHeaders(w)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -1310,4 +1311,223 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+// handleAPIAuthorCollaborators returns collaborators for an author
+func (s *server) handleAPIAuthorCollaborators(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	ctx := r.Context()
+	collabs, err := s.cache.GetCollaborators(ctx, author, limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"author":        author,
+			"collaborators": collabs,
+			"count":         len(collabs),
+		},
+	})
+}
+
+// handleAPIAuthorSimilar returns authors with similar research interests
+func (s *server) handleAPIAuthorSimilar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	limit := 10
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
+			limit = parsed
+		}
+	}
+
+	ctx := r.Context()
+	similar, err := s.cache.GetSimilarAuthors(ctx, author, limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"author":  author,
+			"similar": similar,
+			"count":   len(similar),
+		},
+	})
+}
+
+// handleAPIAuthorStats returns statistics for an author
+func (s *server) handleAPIAuthorStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	stats, err := s.cache.GetAuthorStats(ctx, author)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"author": author,
+			"stats":  stats,
+		},
+	})
+}
+
+// handleAPIBuildAuthorGraph triggers building the author collaboration graph
+func (s *server) handleAPIBuildAuthorGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Run in background
+	go func() {
+		bgCtx := context.Background()
+		if err := s.cache.BuildAuthorGraph(bgCtx); err != nil {
+			fmt.Printf("Error building author graph: %v\n", err)
+		}
+		if err := s.cache.BuildAuthorEmbeddings(bgCtx); err != nil {
+			fmt.Printf("Error building author embeddings: %v\n", err)
+		}
+	}()
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"message": "Author graph build started in background",
+		},
+	})
+	_ = ctx // context used for request
+}
+
+// handleAPIAuthorGraph returns collaboration graph data for visualization
+func (s *server) handleAPIAuthorGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	depth := 1
+	if d := r.URL.Query().Get("depth"); d == "2" {
+		depth = 2
+	}
+
+	ctx := r.Context()
+	graph, err := s.cache.GetAuthorGraph(ctx, author, depth)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    graph,
+	})
+}
+
+// handleAPIAuthorProfile returns comprehensive author profile
+func (s *server) handleAPIAuthorProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	profile, err := s.cache.GetAuthorProfile(ctx, author)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    profile,
+	})
 }

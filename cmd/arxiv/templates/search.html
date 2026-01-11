@@ -38,8 +38,6 @@
 {{range .SemanticResults}}
 <div class="paper">
 	<span class="paper-id">{{.PaperID}}</span>
-	{{if .Paper.SourceDownloaded}}<span class="badge badge-src">src</span>{{end}}
-	{{if .Paper.PDFDownloaded}}<span class="badge badge-pdf">pdf</span>{{end}}
 	<span class="badge badge-similarity">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
 	<div class="paper-title"><a href="/paper/{{.PaperID}}">{{.Paper.Title}}</a></div>
 	<div class="paper-authors">{{.Paper.Authors}}</div>
@@ -53,8 +51,6 @@
 {{range .Papers}}
 <div class="paper">
 	<span class="paper-id">{{.ID}}</span>
-	{{if .SourceDownloaded}}<span class="badge badge-src">src</span>{{end}}
-	{{if .PDFDownloaded}}<span class="badge badge-pdf">pdf</span>{{end}}
 	<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
 	<div class="paper-authors">{{.Authors}}</div>
 	<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
@@ -93,14 +89,10 @@
 		const title = p.Title || p.title || '';
 		const authors = p.Authors || p.authors || '';
 		const categories = p.Categories || p.categories || '';
-		const hasSource = p.SourceDownloaded || p.src;
-		const hasPdf = p.PDFDownloaded || p.pdf;
 		const hasEmbed = p.HasEmbedding || p.hasEmbedding;
 		const cats = categories.split(' ').filter(c => c).map(c =>
 			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>').join(' ');
-		const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
-		               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
-		               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
+		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges + ' ' + simBadge +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +

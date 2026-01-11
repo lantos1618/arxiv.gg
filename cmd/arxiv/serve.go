@@ -107,6 +107,12 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/api/v1/embeddings/generate", srv.handleAPIGenerateEmbeddings)
 	mux.HandleFunc("/api/v1/embeddings/status", srv.handleAPIEmbeddingWorkerStatus)
 	mux.HandleFunc("/api/v1/papers/recent/stream", srv.handleAPIRecentPapersStream)
+	mux.HandleFunc("/api/v1/authors/collaborators", srv.handleAPIAuthorCollaborators)
+	mux.HandleFunc("/api/v1/authors/similar", srv.handleAPIAuthorSimilar)
+	mux.HandleFunc("/api/v1/authors/stats", srv.handleAPIAuthorStats)
+	mux.HandleFunc("/api/v1/authors/graph", srv.handleAPIAuthorGraph)
+	mux.HandleFunc("/api/v1/authors/profile", srv.handleAPIAuthorProfile)
+	mux.HandleFunc("/api/v1/authors/build-graph", srv.handleAPIBuildAuthorGraph)
 
 	// Web routes
 	mux.HandleFunc("/", srv.handleIndex)
@@ -469,8 +475,8 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(path, "/fetch") {
 		paperID := strings.TrimSuffix(path, "/fetch")
 
-		// Fetch metadata and source
-		opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
+		// Fetch metadata only (source only in local mode for arXiv ToS compliance)
+		opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: s.localMode}
 		paper, err := s.cache.FetchAndDownload(ctx, paperID, opts)
 		if err != nil {
 			http.Error(w, "failed to fetch paper: "+err.Error(), http.StatusInternalServerError)
@@ -525,8 +531,12 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle /paper/:id/fetch-source - fetch source and extract citations
+	// Handle /paper/:id/fetch-source - fetch source and extract citations (local mode only)
 	if strings.HasSuffix(path, "/fetch-source") {
+		if !s.localMode {
+			http.Error(w, "source downloading disabled on public site", http.StatusForbidden)
+			return
+		}
 		paperID := strings.TrimSuffix(path, "/fetch-source")
 		if r.Method == http.MethodPost {
 			// Download source only (not PDF)
@@ -656,8 +666,8 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 	if err != nil {
 		// Paper not in cache - check if it looks like a valid arXiv ID and auto-fetch
 		if isArxivID(id) {
-			// Fetch metadata and source
-			opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
+			// Fetch metadata only (source downloading disabled for public site)
+			opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: s.localMode}
 			paper, err = s.cache.FetchAndDownload(ctx, id, opts)
 			if err != nil {
 				http.Error(w, "Paper not found: "+err.Error(), http.StatusNotFound)
@@ -700,16 +710,9 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 		}
 	}
 
-	// Auto-fetch source in background if not downloaded
+	// Source downloading disabled for public site (arXiv ToS compliance)
+	// Only available in local mode for personal use
 	fetchingSource := false
-	if !paper.SourceDownloaded {
-		fetchingSource = true
-		go func() {
-			bgCtx := context.Background()
-			opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
-			s.cache.DownloadPaper(bgCtx, id, opts)
-		}()
-	}
 	// Note: Client handles prefetch via /prefetch-refs endpoint
 
 	hasEmbedding := s.cache.HasEmbedding(ctx, id)
@@ -742,10 +745,12 @@ func (s *server) handleAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only load basic stats - collaborators/similar loaded via JS for faster page load
 	data := map[string]any{
-		"Title":  "Author: " + author,
-		"Author": author,
-		"Papers": papers,
+		"Title":      "Author: " + author,
+		"Author":     author,
+		"Papers":     papers,
+		"PaperCount": len(papers),
 	}
 	templates.ExecuteTemplate(w, "author", data)
 }

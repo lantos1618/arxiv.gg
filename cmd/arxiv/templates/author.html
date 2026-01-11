@@ -1,18 +1,328 @@
 {{define "author"}}
 {{template "head" .}}
-<h1>Papers by {{.Author}}</h1>
-<p>{{len .Papers}} papers found</p>
-{{range .Papers}}
-<div class="paper">
-	<span class="paper-id">{{.ID}}</span>
-	{{if .SourceDownloaded}}<span class="badge badge-src">src</span>{{end}}
-	{{if .PDFDownloaded}}<span class="badge badge-pdf">pdf</span>{{end}}
-	<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
-	<div class="paper-authors">{{.Authors}}</div>
-	<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+<h1>{{.Author}}</h1>
+
+<div class="author-stats">
+	<span class="stat">{{.PaperCount}} papers</span>
+	<span class="stat" id="collab-count"></span>
+	<span id="embed-badge"></span>
 </div>
-{{else}}
-<p>No papers found for this author.</p>
-{{end}}
+
+<!-- Profile Section -->
+<div class="profile-section" id="profile-section">
+	<div class="profile-grid">
+		<div class="profile-card" id="research-areas">
+			<h3>Research Areas</h3>
+			<div class="area-bars" id="area-bars"></div>
+		</div>
+		<div class="profile-card" id="timeline">
+			<h3>Publication Timeline</h3>
+			<div class="timeline-chart" id="timeline-chart"></div>
+		</div>
+	</div>
+</div>
+
+<!-- Collaboration Graph -->
+<div class="author-section">
+	<h2>Collaboration Network</h2>
+	<div class="graph-controls">
+		<label><input type="checkbox" id="depth-toggle"> Show 2nd degree connections</label>
+	</div>
+	<div class="graph-container" id="graph-container">
+		<svg id="collab-graph"></svg>
+	</div>
+	<p class="graph-hint">Drag nodes to rearrange. Click a node to visit that author's page.</p>
+</div>
+
+<div class="author-section" id="collaborators-section" style="display:none;">
+	<h2>Frequent Collaborators</h2>
+	<div class="collaborator-list" id="collaborator-list"></div>
+</div>
+
+<div class="author-section" id="similar-section" style="display:none;">
+	<h2>Similar Researchers</h2>
+	<p class="section-desc">Authors working on similar topics (by embedding similarity)</p>
+	<div class="similar-list" id="similar-list"></div>
+</div>
+
+<div class="author-section">
+	<h2>Papers ({{len .Papers}})</h2>
+	{{range .Papers}}
+	<div class="paper">
+		<span class="paper-id">{{.ID}}</span>
+		<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
+		<div class="paper-authors">{{.Authors}}</div>
+		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+	</div>
+	{{else}}
+	<p>No papers found for this author.</p>
+	{{end}}
+</div>
+
+<style>
+.author-stats { margin: 0.5rem 0 1.5rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.author-stats .stat { color: #666; font-size: 0.95rem; }
+.author-section { margin: 2rem 0; }
+.author-section h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: #333; }
+.section-desc { font-size: 0.85rem; color: #666; margin: -0.5rem 0 0.75rem; }
+
+/* Profile Grid */
+.profile-section { margin: 1.5rem 0; }
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.profile-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 1rem; }
+.profile-card h3 { font-size: 0.9rem; color: #666; margin: 0 0 0.75rem; font-weight: 500; }
+
+/* Research Area Bars */
+.area-bars { display: flex; flex-direction: column; gap: 0.4rem; }
+.area-bar { display: flex; align-items: center; gap: 0.5rem; }
+.area-bar-label { font-size: 0.75rem; color: #0066cc; min-width: 80px; text-decoration: none; }
+.area-bar-label:hover { text-decoration: underline; }
+.area-bar-track { flex: 1; height: 16px; background: #e9ecef; border-radius: 3px; overflow: hidden; }
+.area-bar-fill { height: 100%; background: linear-gradient(90deg, #0066cc, #4d94ff); border-radius: 3px; }
+.area-bar-count { font-size: 0.7rem; color: #666; min-width: 30px; text-align: right; }
+
+/* Timeline Chart */
+.timeline-chart { height: 120px; display: flex; align-items: flex-end; gap: 2px; }
+.timeline-bar { flex: 1; background: #0066cc; border-radius: 2px 2px 0 0; min-width: 8px; position: relative; cursor: default; }
+.timeline-bar:hover { background: #0052a3; }
+.timeline-bar::after { content: attr(data-year); position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-size: 0.6rem; color: #999; white-space: nowrap; }
+.timeline-bar:nth-child(5n)::after { color: #666; }
+
+/* Graph */
+.graph-container { background: #fafafa; border: 1px solid #e9ecef; border-radius: 8px; overflow: hidden; }
+#collab-graph { width: 100%; height: 400px; }
+.graph-controls { margin-bottom: 0.5rem; font-size: 0.85rem; }
+.graph-controls label { cursor: pointer; color: #666; }
+.graph-hint { font-size: 0.75rem; color: #999; margin-top: 0.5rem; }
+
+/* Collaborator/Similar cards */
+.collaborator-list, .similar-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.collaborator-card, .similar-card {
+	display: flex; flex-direction: column; padding: 0.6rem 0.9rem;
+	background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px;
+	text-decoration: none; color: inherit; transition: all 0.15s;
+}
+.collaborator-card:hover, .similar-card:hover { background: #e9ecef; border-color: #dee2e6; }
+.collab-name, .similar-name { font-weight: 500; color: #0066cc; font-size: 0.9rem; }
+.collab-count { font-size: 0.75rem; color: #666; margin-top: 0.2rem; }
+.similar-score { font-size: 0.75rem; color: #856404; background: #fff3cd; padding: 0.1rem 0.4rem; border-radius: 3px; margin-top: 0.2rem; display: inline-block; }
+.similar-papers { font-size: 0.75rem; color: #666; margin-top: 0.2rem; }
+
+@media (max-width: 600px) {
+	.profile-grid { grid-template-columns: 1fr; }
+	.collaborator-card, .similar-card { flex: 1 1 calc(50% - 0.5rem); min-width: 140px; }
+	#collab-graph { height: 300px; }
+}
+</style>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+(function() {
+	const authorName = {{.Author}};
+	let currentDepth = 1;
+
+	// Load profile data
+	fetch('/api/v1/authors/profile?author=' + encodeURIComponent(authorName))
+		.then(r => r.json())
+		.then(resp => {
+			if (!resp.success || !resp.data) return;
+			const profile = resp.data;
+
+			// Update stats
+			if (profile.total_collaborators > 0) {
+				document.getElementById('collab-count').textContent = profile.total_collaborators + ' collaborators';
+			}
+			if (profile.has_embedding) {
+				document.getElementById('embed-badge').innerHTML = '<span class="badge badge-embed">embedding</span>';
+			}
+
+			// Render research areas
+			const areaBars = document.getElementById('area-bars');
+			if (profile.research_areas && profile.research_areas.length > 0) {
+				const maxCount = Math.max(...profile.research_areas.map(a => a.paper_count));
+				areaBars.innerHTML = profile.research_areas.slice(0, 6).map(area => `
+					<div class="area-bar">
+						<a href="/category/${area.category}" class="area-bar-label">${area.category}</a>
+						<div class="area-bar-track">
+							<div class="area-bar-fill" style="width: ${(area.paper_count / maxCount * 100)}%"></div>
+						</div>
+						<span class="area-bar-count">${area.paper_count}</span>
+					</div>
+				`).join('');
+			} else {
+				areaBars.innerHTML = '<p style="color:#999;font-size:0.85rem;">No research areas data</p>';
+			}
+
+			// Render timeline
+			const timelineChart = document.getElementById('timeline-chart');
+			if (profile.yearly_output && profile.yearly_output.length > 0) {
+				const maxPapers = Math.max(...profile.yearly_output.map(y => y.paper_count));
+				timelineChart.innerHTML = profile.yearly_output.map(y => `
+					<div class="timeline-bar" style="height: ${Math.max(4, y.paper_count / maxPapers * 100)}%"
+						 data-year="${y.year}" title="${y.year}: ${y.paper_count} papers"></div>
+				`).join('');
+			} else {
+				timelineChart.innerHTML = '<p style="color:#999;font-size:0.85rem;">No timeline data</p>';
+			}
+		})
+		.catch(err => console.error('Failed to load profile:', err));
+
+	// Load collaborators
+	fetch('/api/v1/authors/collaborators?author=' + encodeURIComponent(authorName) + '&limit=15')
+		.then(r => r.json())
+		.then(resp => {
+			if (!resp.success || !resp.data || !resp.data.collaborators) return;
+			const collabs = resp.data.collaborators;
+			if (collabs.length === 0) return;
+			const section = document.getElementById('collaborators-section');
+			const list = document.getElementById('collaborator-list');
+			list.innerHTML = collabs.map(c => `
+				<a href="/author/${encodeURIComponent(c.author)}" class="collaborator-card">
+					<span class="collab-name">${c.author}</span>
+					<span class="collab-count">${c.paper_count} papers together</span>
+				</a>
+			`).join('');
+			section.style.display = 'block';
+		})
+		.catch(err => console.error('Failed to load collaborators:', err));
+
+	// Load similar authors
+	fetch('/api/v1/authors/similar?author=' + encodeURIComponent(authorName) + '&limit=10')
+		.then(r => r.json())
+		.then(resp => {
+			if (!resp.success || !resp.data || !resp.data.similar) return;
+			const similar = resp.data.similar;
+			if (similar.length === 0) return;
+			const section = document.getElementById('similar-section');
+			const list = document.getElementById('similar-list');
+			list.innerHTML = similar.map(s => `
+				<a href="/author/${encodeURIComponent(s.author)}" class="similar-card">
+					<span class="similar-name">${s.author}</span>
+					<span class="similar-score">${Math.round(s.similarity * 100)}% similar</span>
+					<span class="similar-papers">${s.paper_count} papers</span>
+				</a>
+			`).join('');
+			section.style.display = 'block';
+		})
+		.catch(err => console.error('Failed to load similar:', err));
+
+	// Load and render collaboration graph
+	function loadGraph(depth) {
+		fetch('/api/v1/authors/graph?author=' + encodeURIComponent(authorName) + '&depth=' + depth)
+			.then(r => r.json())
+			.then(resp => {
+				if (!resp.success || !resp.data) return;
+				renderGraph(resp.data);
+			})
+			.catch(err => console.error('Failed to load graph:', err));
+	}
+
+	function renderGraph(data) {
+		const container = document.getElementById('graph-container');
+		const svg = d3.select('#collab-graph');
+		svg.selectAll('*').remove();
+
+		const width = container.clientWidth;
+		const height = 400;
+		svg.attr('viewBox', [0, 0, width, height]);
+
+		if (!data.nodes || data.nodes.length === 0) {
+			svg.append('text')
+				.attr('x', width / 2)
+				.attr('y', height / 2)
+				.attr('text-anchor', 'middle')
+				.attr('fill', '#999')
+				.text('No collaboration data yet. Build the author graph first.');
+			return;
+		}
+
+		// Create simulation
+		const simulation = d3.forceSimulation(data.nodes)
+			.force('link', d3.forceLink(data.edges).id(d => d.id).distance(100))
+			.force('charge', d3.forceManyBody().strength(-300))
+			.force('center', d3.forceCenter(width / 2, height / 2))
+			.force('collision', d3.forceCollide().radius(40));
+
+		// Draw edges
+		const link = svg.append('g')
+			.selectAll('line')
+			.data(data.edges)
+			.join('line')
+			.attr('stroke', '#ccc')
+			.attr('stroke-width', d => Math.min(4, Math.max(1, d.weight / 2)));
+
+		// Draw nodes
+		const node = svg.append('g')
+			.selectAll('g')
+			.data(data.nodes)
+			.join('g')
+			.attr('cursor', 'pointer')
+			.call(d3.drag()
+				.on('start', dragstarted)
+				.on('drag', dragged)
+				.on('end', dragended));
+
+		// Node circles
+		node.append('circle')
+			.attr('r', d => d.isCenter ? 20 : Math.min(15, Math.max(8, Math.sqrt(d.paperCount) * 2)))
+			.attr('fill', d => d.isCenter ? '#0066cc' : '#4d94ff')
+			.attr('stroke', '#fff')
+			.attr('stroke-width', 2);
+
+		// Node labels
+		node.append('text')
+			.text(d => {
+				const name = d.name;
+				return name.length > 15 ? name.slice(0, 12) + '...' : name;
+			})
+			.attr('font-size', d => d.isCenter ? '11px' : '9px')
+			.attr('font-weight', d => d.isCenter ? '600' : '400')
+			.attr('fill', '#333')
+			.attr('text-anchor', 'middle')
+			.attr('dy', d => d.isCenter ? 32 : 24);
+
+		// Click to navigate
+		node.on('click', (event, d) => {
+			window.location.href = '/author/' + encodeURIComponent(d.name);
+		});
+
+		// Simulation tick
+		simulation.on('tick', () => {
+			link
+				.attr('x1', d => d.source.x)
+				.attr('y1', d => d.source.y)
+				.attr('x2', d => d.target.x)
+				.attr('y2', d => d.target.y);
+			node.attr('transform', d => `translate(${d.x},${d.y})`);
+		});
+
+		function dragstarted(event) {
+			if (!event.active) simulation.alphaTarget(0.3).restart();
+			event.subject.fx = event.subject.x;
+			event.subject.fy = event.subject.y;
+		}
+
+		function dragged(event) {
+			event.subject.fx = event.x;
+			event.subject.fy = event.y;
+		}
+
+		function dragended(event) {
+			if (!event.active) simulation.alphaTarget(0);
+			event.subject.fx = null;
+			event.subject.fy = null;
+		}
+	}
+
+	// Depth toggle
+	document.getElementById('depth-toggle').addEventListener('change', function() {
+		currentDepth = this.checked ? 2 : 1;
+		loadGraph(currentDepth);
+	});
+
+	// Initial load
+	loadGraph(1);
+})();
+</script>
 {{template "foot" .}}
 {{end}}

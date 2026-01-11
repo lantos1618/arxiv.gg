@@ -16,7 +16,7 @@
 	<div class="search-dropdown" id="search-dropdown"></div>
 </div>
 <div id="search-results" class="search-results"></div>
-<p id="stats-line"><span id="stat-total">{{.Stats.TotalPapers}}</span> papers cached (<span id="stat-source">{{.Stats.SourcesDownloaded}}</span> with source, <span id="stat-pdf">{{.Stats.PDFsDownloaded}}</span> with PDF, <span id="stat-embed">{{.Stats.EmbeddingsCount}}</span> with embeddings)</p>
+<p id="stats-line"><span id="stat-total">{{.Stats.TotalPapers}}</span> papers indexed (<span id="stat-embed">{{.Stats.EmbeddingsCount}}</span> with embeddings)</p>
 
 <div id="recent-papers">
 <h2>Recent Papers</h2>
@@ -35,8 +35,6 @@
 	const btnKeyword = document.getElementById('btn-keyword');
 	const btnSemantic = document.getElementById('btn-semantic');
 	const statTotal = document.getElementById('stat-total');
-	const statSource = document.getElementById('stat-source');
-	const statPdf = document.getElementById('stat-pdf');
 	const statEmbed = document.getElementById('stat-embed');
 	let timeout = null;
 	let selectedIndex = -1;
@@ -46,8 +44,6 @@
 
 	function updateStats(paper) {
 		statTotal.textContent = parseInt(statTotal.textContent) + 1;
-		if (paper.SourceDownloaded) statSource.textContent = parseInt(statSource.textContent) + 1;
-		if (paper.PDFDownloaded) statPdf.textContent = parseInt(statPdf.textContent) + 1;
 	}
 
 	function renderRecentPaper(p) {
@@ -55,15 +51,11 @@
 		const title = p.Title || p.title || '';
 		const authors = p.Authors || p.authors || '';
 		const categories = p.Categories || p.categories || '';
-		const hasSource = p.SourceDownloaded || p.src;
-		const hasPdf = p.PDFDownloaded || p.pdf;
 		const hasEmbed = p.hasEmbedding || p.HasEmbedding;
 		const cats = categories.split(' ').filter(c => c).map(c =>
 			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>'
 		).join(' ');
-		const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
-		               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
-		               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
+		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
 			'<div class="paper-authors">' + escapeHtml(authors) + '</div>' +
@@ -271,15 +263,11 @@
 					const title = p.title || p.Title || '';
 					const authors = p.authors || p.Authors || '';
 					const categories = p.categories || p.Categories || '';
-					const hasSource = p.src || p.SourceDownloaded;
-					const hasPdf = p.pdf || p.PDFDownloaded;
 					const hasEmbed = p.hasEmbedding || p.HasEmbedding;
 					const similarity = data.similarity;
 					const cats = categories.split(' ').filter(c => c).map(c =>
 						'<a class="cat-link" href="/category/' + c + '">' + c + '</a>').join(' ');
-					const badges = (hasSource ? '<span class="badge badge-src">src</span>' : '') +
-					               (hasPdf ? '<span class="badge badge-pdf">pdf</span>' : '') +
-					               (hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '');
+					const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 					const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><span class="paper-id">' + id + '</span> ' +
 						badges + ' ' + simBadge + '<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
@@ -307,14 +295,28 @@
 		};
 	}
 
-	// Event handlers - 100ms debounce for responsive fzf-like feel
+	// Event handlers - 300ms debounce to prevent request spam
+	let lastQuery = '';
 	input.addEventListener('input', function() {
 		clearTimeout(timeout);
-		timeout = setTimeout(() => doDropdownSearch(input.value), 100);
+		const query = input.value;
+		// Don't search if query hasn't changed
+		if (query === lastQuery) return;
+		timeout = setTimeout(() => {
+			if (query === input.value) { // Double-check query hasn't changed
+				lastQuery = query;
+				doDropdownSearch(query);
+			}
+		}, 300);
 	});
 
 	input.addEventListener('focus', function() {
-		if (input.value.trim()) doDropdownSearch(input.value);
+		// Only search on focus if we haven't already searched this query
+		const query = input.value.trim();
+		if (query && query !== lastQuery) {
+			lastQuery = query;
+			doDropdownSearch(query);
+		}
 	});
 
 	input.addEventListener('keydown', function(e) {

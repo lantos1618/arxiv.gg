@@ -124,7 +124,7 @@ func (c *Cache) Root() string {
 
 func (c *Cache) initSchema() error {
 	// GORM AutoMigrate handles all regular tables
-	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}, &EmbeddingJob{}); err != nil {
+	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}, &EmbeddingJob{}, &AuthorCollaboration{}, &AuthorEmbedding{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 
@@ -235,6 +235,14 @@ func (c *Cache) initPostgresSchema() error {
 
 	// Create index on embedding_jobs for efficient queue processing
 	c.db.Exec(`CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_priority ON embedding_jobs(status, priority DESC, created_at)`)
+
+	// Add vector column to author_embeddings for pgvector
+	c.db.Exec(`ALTER TABLE author_embeddings ADD COLUMN IF NOT EXISTS vector vector(384)`)
+	c.db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_author_embeddings_vector_hnsw
+		ON author_embeddings USING hnsw (vector vector_cosine_ops)
+		WITH (m = 16, ef_construction = 64);
+	`)
 
 	fmt.Println("PostgreSQL schema initialized with full-text search and pgvector HNSW index")
 	return nil

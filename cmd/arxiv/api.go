@@ -1329,9 +1329,9 @@ func (s *server) handleAPIAuthorCollaborators(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	limit := 50
+	limit := 100
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 500 {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 5000 {
 			limit = parsed
 		}
 	}

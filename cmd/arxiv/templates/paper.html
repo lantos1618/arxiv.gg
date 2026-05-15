@@ -236,7 +236,7 @@
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
 	{{if .Cached}}<a class="ref-title" href="/abs/{{.ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
-	{{else}}<span class="ref-uncached">{{.ID}}</span> <span class="ref-date">({{arxivIDToDate .ID}})</span> <a href="/paper/{{.ID}}/fetch">[fetch]</a>{{end}}
+	{{else}}<span class="ref-uncached">{{.ID}}</span> <span class="ref-date">({{arxivIDToDate .ID}})</span> <a href="/paper/{{.ID}}">[open]</a>{{end}}
 </li>
 {{end}}{{end}}
 </ul>
@@ -362,15 +362,11 @@
 		const id = li.dataset.id;
 		if (!id) return;
 
-		// Find if this is cached (has a link) or uncached
-		const link = li.querySelector('a.ref-title');
-		const fetchLink = li.querySelector('a[href$="/fetch"]');
-
 		li.addEventListener('click', (e) => {
 			// Don't intercept if clicking directly on a link
 			if (e.target.tagName === 'A') return;
 
-			const url = link ? '/paper/' + id : '/paper/' + id + '/fetch';
+			const url = '/paper/' + id;
 			navigateWithTransition(li, url);
 		});
 	});
@@ -539,13 +535,13 @@
 
 				// Re-apply event handlers
 				nodes.on('click', (e, d) => {
-					const url = d.cached ? '/paper/' + d.id : '/paper/' + d.id + '/fetch';
+					const url = '/paper/' + d.id;
 					navigateWithTransition(e.target, url);
 				});
 
 				nodes.on('mouseover', (e, d) => {
 					tooltip.style.display = 'block';
-					tooltip.innerHTML = '<strong>' + d.id + '</strong><br>' + d.title + '<br>' + d.year + ' · ' + d.citations + ' citations';
+					tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' + escapeHtml(d.title) + '<br>' + escapeHtml(d.year) + ' · ' + escapeHtml(d.citations) + ' citations';
 					highlightNode(d.id, true);
 					document.querySelectorAll('.refs li[data-id="' + d.id + '"]').forEach(el => el.style.background = '#eff6ff');
 				});
@@ -598,10 +594,11 @@
 					li.dataset.id = r.id;
 					const dateStr = arxivIDToDate(r.id);
 					const datePart = dateStr ? ' <span class="ref-date">(' + dateStr + ')</span>' : '';
+					const paperURL = encodeURI('/paper/' + r.id);
 					if (r.hasTitle) {
-						li.innerHTML = '<span class="ref-id">' + r.id + '</span> <a class="ref-title" href="/paper/' + r.id + '">' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + r.citedBy + ' cites</span>' : '');
+						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <a class="ref-title" href="' + paperURL + '">' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + escapeHtml(r.citedBy) + ' cites</span>' : '');
 					} else {
-						li.innerHTML = '<span class="ref-id">' + r.id + '</span> <span class="ref-uncached">' + r.id + '</span>' + datePart + ' <a href="/paper/' + r.id + '/fetch">[fetch]</a>';
+						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <span class="ref-uncached">' + escapeHtml(r.id) + '</span>' + datePart + ' <a href="' + paperURL + '">[open]</a>';
 					}
 					refsList.appendChild(li);
 				});
@@ -651,8 +648,7 @@
 			if (!id) return;
 			li.addEventListener('click', (e) => {
 				if (e.target.tagName === 'A') return;
-				const link = li.querySelector('a.ref-title');
-				const url = link ? '/paper/' + id : '/paper/' + id + '/fetch';
+				const url = '/paper/' + id;
 				navigateWithTransition(li, url);
 			});
 		});
@@ -805,7 +801,7 @@
 			});
 	}
 
-	{{if .UncachedCount}}
+	{{if and .LocalMode .UncachedCount}}
 	// Prefetch titles for uncached refs on page load
 	prefetchAndRefresh();
 	{{end}}

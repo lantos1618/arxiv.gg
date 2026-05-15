@@ -121,6 +121,16 @@
 	const authorName = {{.Author}};
 	let currentDepth = 1;
 
+	function escapeHtml(s) {
+		const div = document.createElement('div');
+		div.textContent = s ?? '';
+		return div.innerHTML;
+	}
+
+	function escapeAttr(s) {
+		return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+	}
+
 	// Load profile data
 	fetch('/api/v1/authors/profile?author=' + encodeURIComponent(authorName))
 		.then(r => r.json())
@@ -139,14 +149,14 @@
 			// Render research areas
 			const areaBars = document.getElementById('area-bars');
 			if (profile.research_areas && profile.research_areas.length > 0) {
-				const maxCount = Math.max(...profile.research_areas.map(a => a.paper_count));
+				const maxCount = Math.max(...profile.research_areas.map(a => Number(a.paper_count) || 0)) || 1;
 				areaBars.innerHTML = profile.research_areas.slice(0, 6).map(area => `
 					<div class="area-bar">
-						<a href="/category/${area.category}" class="area-bar-label">${area.category}</a>
+						<a href="/category/${encodeURIComponent(area.category)}" class="area-bar-label">${escapeHtml(area.category)}</a>
 						<div class="area-bar-track">
-							<div class="area-bar-fill" style="width: ${(area.paper_count / maxCount * 100)}%"></div>
+							<div class="area-bar-fill" style="width: ${(Number(area.paper_count) / maxCount * 100)}%"></div>
 						</div>
-						<span class="area-bar-count">${area.paper_count}</span>
+						<span class="area-bar-count">${escapeHtml(area.paper_count)}</span>
 					</div>
 				`).join('');
 			} else {
@@ -156,10 +166,10 @@
 			// Render timeline
 			const timelineChart = document.getElementById('timeline-chart');
 			if (profile.yearly_output && profile.yearly_output.length > 0) {
-				const maxPapers = Math.max(...profile.yearly_output.map(y => y.paper_count));
+				const maxPapers = Math.max(...profile.yearly_output.map(y => Number(y.paper_count) || 0)) || 1;
 				timelineChart.innerHTML = profile.yearly_output.map(y => `
-					<div class="timeline-bar" style="height: ${Math.max(4, y.paper_count / maxPapers * 100)}%"
-						 data-year="${y.year}" title="${y.year}: ${y.paper_count} papers"></div>
+					<div class="timeline-bar" style="height: ${Math.max(4, (Number(y.paper_count) || 0) / maxPapers * 100)}%"
+						 data-year="${escapeAttr(y.year)}" title="${escapeAttr(y.year)}: ${escapeAttr(y.paper_count)} papers"></div>
 				`).join('');
 			} else {
 				timelineChart.innerHTML = '<p style="color:#999;font-size:0.85rem;">No timeline data</p>';
@@ -178,8 +188,8 @@
 			const list = document.getElementById('collaborator-list');
 			list.innerHTML = collabs.map(c => `
 				<a href="/author/${encodeURIComponent(c.author)}" class="collaborator-card">
-					<span class="collab-name">${c.author}</span>
-					<span class="collab-count">${c.paper_count} papers together</span>
+					<span class="collab-name">${escapeHtml(c.author)}</span>
+					<span class="collab-count">${escapeHtml(c.paper_count)} papers together</span>
 				</a>
 			`).join('');
 			section.style.display = 'block';
@@ -197,9 +207,9 @@
 			const list = document.getElementById('similar-list');
 			list.innerHTML = similar.map(s => `
 				<a href="/author/${encodeURIComponent(s.author)}" class="similar-card">
-					<span class="similar-name">${s.author}</span>
-					<span class="similar-score">${Math.round(s.similarity * 100)}% similar</span>
-					<span class="similar-papers">${s.paper_count} papers</span>
+					<span class="similar-name">${escapeHtml(s.author)}</span>
+					<span class="similar-score">${escapeHtml(Math.round(s.similarity * 100))}% similar</span>
+					<span class="similar-papers">${escapeHtml(s.paper_count)} papers</span>
 				</a>
 			`).join('');
 			section.style.display = 'block';

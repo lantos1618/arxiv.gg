@@ -147,12 +147,13 @@ func (s *server) handleAPISearchSemantic(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 20
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 20, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -222,12 +223,13 @@ func (s *server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	category := r.URL.Query().Get("category")
-	limitStr := r.URL.Query().Get("limit")
-	limit := 20
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 20, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -265,12 +267,13 @@ func (s *server) handleAPISearchQuick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 10
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 50 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 10, 50)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -310,12 +313,13 @@ func (s *server) handleAPISearchStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	category := r.URL.Query().Get("category")
-	limitStr := r.URL.Query().Get("limit")
-	limit := 100
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 100, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	searchMode := r.URL.Query().Get("mode")
@@ -490,12 +494,13 @@ func (s *server) handleAPICitedBy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 50, 200)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -609,6 +614,9 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
 
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/papers/")
 	path = strings.TrimSuffix(path, "/fetch")
@@ -616,6 +624,13 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, APIResponse{
 			Success: false,
 			Error:   "paper ID required",
+		})
+		return
+	}
+	if !isArxivID(path) {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "invalid paper ID",
 		})
 		return
 	}
@@ -750,12 +765,13 @@ func (s *server) handleAPISearchPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 50, 50)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	fuzzyMode := r.URL.Query().Get("fuzzy") == "true"
@@ -801,6 +817,9 @@ func (s *server) handleAPISearchPDF(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.localMode && !s.requireAdmin(w, r) {
 		return
 	}
 
@@ -860,19 +879,17 @@ func (s *server) handleAPIGenerateEmbeddings(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 0
-	if limitStr != "" {
-		var err error
-		limit, err = strconv.Atoi(limitStr)
-		if err != nil {
-			respondJSON(w, http.StatusBadRequest, APIResponse{
-				Success: false,
-				Error:   "invalid limit parameter",
-			})
-			return
-		}
+	limit, err := parseLimit(r, 0, 10000)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	// Check if this is an SSE request
@@ -1194,12 +1211,13 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 50, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	setSSEHeaders(w)
@@ -1226,8 +1244,8 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Fetch initial recent papers
-	papers, err := s.cache.ListPapers(ctx, "", 0, limit)
+	// Fetch initial recent papers (lite: only ID, Title, Authors, Categories)
+	papers, err := s.cache.ListRecentPapersLite(ctx, limit)
 	if err != nil {
 		<-sseInitSemaphore // Release semaphore
 		fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
@@ -1238,22 +1256,31 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Batch fetch embedding IDs (one query instead of 50)
-	embeddingIDs, _ := s.cache.GetEmbeddingIDs(ctx)
+	// Batch fetch embedding IDs only for these papers (not ALL embeddings)
+	paperIDs := make([]string, len(papers))
+	for i, p := range papers {
+		paperIDs[i] = p.ID
+	}
+	embeddingIDs, _ := s.cache.GetEmbeddingIDsFor(ctx, paperIDs)
 
 	// Release semaphore - DB queries done
 	<-sseInitSemaphore
 
-	// Stream initial papers
+	// Stream initial papers with minimal payload (only fields the client uses)
 	for i, paper := range papers {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
-				"type":         "paper",
-				"index":        i,
-				"paper":        paper,
+				"type":  "paper",
+				"index": i,
+				"paper": map[string]interface{}{
+					"ID":         paper.ID,
+					"Title":      paper.Title,
+					"Authors":    paper.Authors,
+					"Categories": paper.Categories,
+				},
 				"hasEmbedding": embeddingIDs[paper.ID],
 			}))
 			flusher.Flush()
@@ -1313,6 +1340,25 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
+func parseLimit(r *http.Request, defaultLimit, maxLimit int) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return defaultLimit, nil
+	}
+
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 0 {
+		return 0, fmt.Errorf("invalid limit parameter")
+	}
+	if limit == 0 {
+		return defaultLimit, nil
+	}
+	if maxLimit > 0 && limit > maxLimit {
+		return 0, fmt.Errorf("limit must be <= %d", maxLimit)
+	}
+	return limit, nil
+}
+
 // handleAPIAuthorCollaborators returns collaborators for an author
 func (s *server) handleAPIAuthorCollaborators(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -1329,11 +1375,13 @@ func (s *server) handleAPIAuthorCollaborators(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	limit := 100
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 5000 {
-			limit = parsed
-		}
+	limit, err := parseLimit(r, 100, 200)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -1372,11 +1420,13 @@ func (s *server) handleAPIAuthorSimilar(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	limit := 10
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
-			limit = parsed
-		}
+	limit, err := parseLimit(r, 10, 50)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -1438,6 +1488,9 @@ func (s *server) handleAPIAuthorStats(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleAPIBuildAuthorGraph(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.localMode && !s.requireAdmin(w, r) {
 		return
 	}
 

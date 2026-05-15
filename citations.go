@@ -2,6 +2,7 @@ package arxiv
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -80,6 +81,7 @@ func (c *Cache) References(ctx context.Context, paperID string) ([]Reference, er
 
 	var rows []refRow
 	sqlDB, _ := c.db.DB()
+	placeholder := c.bindVar(1)
 	err := c.db.WithContext(ctx).
 		Table("citations").
 		Select("citations.to_id as id, COALESCE(papers.title, '') as title, "+
@@ -95,11 +97,11 @@ func (c *Cache) References(ctx context.Context, paperID string) ([]Reference, er
 			SELECT c.to_id, COALESCE(p.title, ''),
 			       CASE WHEN p.id IS NOT NULL AND p.title != '' THEN 1 ELSE 0 END,
 			       CASE WHEN p.src_downloaded = true THEN 1 ELSE 0 END
-			FROM citations c
-			LEFT JOIN papers p ON c.to_id = p.id
-			WHERE c.from_id = ?
-			ORDER BY c.to_id DESC
-		`, paperID)
+				FROM citations c
+				LEFT JOIN papers p ON c.to_id = p.id
+				WHERE c.from_id = `+placeholder+`
+				ORDER BY c.to_id DESC
+			`, paperID)
 		if err != nil {
 			return nil, err
 		}
@@ -135,10 +137,11 @@ func (c *Cache) References(ctx context.Context, paperID string) ([]Reference, er
 func (c *Cache) UncachedReferenceCount(ctx context.Context, paperID string) (int, error) {
 	var count int64
 	sqlDB, _ := c.db.DB()
+	placeholder := c.bindVar(1)
 	err := sqlDB.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM citations c
 		LEFT JOIN papers p ON c.to_id = p.id
-		WHERE c.from_id = ? AND (p.id IS NULL OR p.title = '')
+		WHERE c.from_id = `+placeholder+` AND (p.id IS NULL OR p.title = '')
 	`, paperID).Scan(&count)
 	return int(count), err
 }
@@ -358,19 +361,26 @@ func (c *Cache) GetCitationGraph(ctx context.Context, paperID string) (*Citation
 	if len(refIDs) > 0 {
 		// Complex citation graph query - use raw SQL for efficiency
 		sqlDB, _ := c.db.DB()
+		p1 := c.bindVar(1)
+		p2 := c.bindVar(2)
 		rows, err := sqlDB.QueryContext(ctx, `
 			SELECT from_id, to_id FROM citations
-			WHERE from_id IN (SELECT to_id FROM citations WHERE from_id = ?)
-			  AND to_id IN (SELECT to_id FROM citations WHERE from_id = ?)
+			WHERE from_id IN (SELECT to_id FROM citations WHERE from_id = `+p1+`)
+			  AND to_id IN (SELECT to_id FROM citations WHERE from_id = `+p2+`)
 		`, paperID, paperID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var from, to string
-				if err := rows.Scan(&from, &to); err == nil {
-					addEdge(from, to)
-				}
+		if err != nil {
+			return nil, fmt.Errorf("query reference citation edges: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var from, to string
+			if err := rows.Scan(&from, &to); err != nil {
+				return nil, fmt.Errorf("scan reference citation edge: %w", err)
 			}
+			addEdge(from, to)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate reference citation edges: %w", err)
 		}
 	}
 

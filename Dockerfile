@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 EXPOSE 80
 ENV ARXIV_CACHE=/data/arxiv
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD curl -fsS http://127.0.0.1/health || exit 1
 
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh

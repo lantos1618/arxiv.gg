@@ -80,51 +80,49 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			key += "?" + r.URL.RawQuery
 		}
 
-		// Check if client has cached version
-		ifNoneMatch := r.Header.Get("If-None-Match")
-		if ifModifiedSince := r.Header.Get("If-Modified-Since"); ifModifiedSince != "" {
-			cm.mu.RLock()
-			entry, exists := cm.cache[key]
-			cm.mu.RUnlock()
+		// Check for a valid cached response
+		cm.mu.RLock()
+		entry, exists := cm.cache[key]
+		cm.mu.RUnlock()
 
-			if exists {
-				if ifNoneMatch == entry.etag {
-					w.Header().Set("ETag", entry.etag)
-					w.Header().Set("Last-Modified", entry.lastMod.Format(http.TimeFormat))
-					w.WriteHeader(http.StatusNotModified)
-					return
-				}
+		if exists && time.Now().Before(entry.expiresAt) {
+			// Conditional request - return 304 Not Modified
+			if r.Header.Get("If-None-Match") == entry.etag {
+				w.Header().Set("ETag", entry.etag)
+				w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cm.maxAge.Seconds())))
+				w.WriteHeader(http.StatusNotModified)
+				return
 			}
+
+			// Serve directly from cache
+			w.Header().Set("ETag", entry.etag)
+			w.Header().Set("Last-Modified", entry.lastMod.Format(http.TimeFormat))
+			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cm.maxAge.Seconds())))
+			w.Write(entry.data)
+			return
 		}
 
-		// Create a response writer that captures the response
+		// Cache miss - capture response while writing to client
 		cw := &cachingResponseWriter{
 			ResponseWriter: w,
 			statusCode:     http.StatusOK,
-			data:           make([]byte, 0),
 		}
 
 		next.ServeHTTP(cw, r)
 
-		// Cache successful GET responses
+		// Store successful responses in cache for future requests
 		if cw.statusCode == http.StatusOK && len(cw.data) > 0 {
 			etag := generateETag(cw.data)
 			now := time.Now()
-			entry := &cacheEntry{
+
+			cm.mu.Lock()
+			cm.cache[key] = &cacheEntry{
 				etag:      etag,
 				lastMod:   now,
 				data:      cw.data,
 				expiresAt: now.Add(cm.maxAge),
 			}
-
-			cm.mu.Lock()
-			cm.cache[key] = entry
 			cm.mu.Unlock()
-
-			// Set cache headers
-			w.Header().Set("ETag", etag)
-			w.Header().Set("Last-Modified", now.Format(http.TimeFormat))
-			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cm.maxAge.Seconds())))
 		}
 	})
 }
@@ -148,10 +146,11 @@ func (cw *cachingResponseWriter) Write(b []byte) (int, error) {
 
 // rateLimiter provides simple rate limiting
 type rateLimiter struct {
-	visitors map[string]*visitor
-	mu       sync.RWMutex
-	rate     int           // requests per window
-	window   time.Duration // time window
+	visitors          map[string]*visitor
+	mu                sync.RWMutex
+	rate              int           // requests per window
+	window            time.Duration // time window
+	trustProxyHeaders bool
 }
 
 type visitor struct {
@@ -160,11 +159,12 @@ type visitor struct {
 }
 
 // newRateLimiter creates a new rate limiter
-func newRateLimiter(rate int, window time.Duration) *rateLimiter {
+func newRateLimiter(rate int, window time.Duration, trustProxyHeaders bool) *rateLimiter {
 	rl := &rateLimiter{
-		visitors: make(map[string]*visitor),
-		rate:     rate,
-		window:   window,
+		visitors:          make(map[string]*visitor),
+		rate:              rate,
+		window:            window,
+		trustProxyHeaders: trustProxyHeaders,
 	}
 	go rl.cleanup()
 	return rl
@@ -190,19 +190,11 @@ func (rl *rateLimiter) cleanup() {
 func (rl *rateLimiter) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Bypass rate limiting for SSE endpoints to support streaming
-		if strings.Contains(r.URL.Path, "/stream") || strings.Contains(r.URL.Path, "/generate") {
+		if strings.Contains(r.URL.Path, "/stream") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip := r.RemoteAddr
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			parts := strings.Split(forwarded, ",")
-			if len(parts) > 0 {
-				ip = strings.TrimSpace(parts[0])
-			}
-		} else if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			ip = host
-		}
+		ip := rl.clientIP(r)
 
 		rl.mu.Lock()
 		v, exists := rl.visitors[ip]
@@ -249,4 +241,33 @@ func (rl *rateLimiter) Handler(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (rl *rateLimiter) clientIP(r *http.Request) string {
+	host := r.RemoteAddr
+	if parsedHost, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		host = parsedHost
+	}
+
+	if !rl.trustProxyHeaders {
+		return host
+	}
+
+	if cfIP := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cfIP != "" {
+		if net.ParseIP(cfIP) != nil {
+			return cfIP
+		}
+	}
+
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+
+	return host
 }

@@ -5,6 +5,7 @@
 *.test
 /bin/
 /test_data/
+.env
 
 # IDE
 .vscode/

@@ -1,5 +1,6 @@
 # Cache data
 data/
+.env
 
 # Python cache
 tools/__pycache__/

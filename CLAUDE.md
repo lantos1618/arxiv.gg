@@ -21,8 +21,20 @@ make check              # Run fmt + vet + test
 
 # Docker
 make docker             # Build Docker image (arxiv-cache)
-docker stop arxiv-container && docker rm arxiv-container && docker run -d --name arxiv-container -p 80:80 -v /data/arxiv:/data/arxiv arxiv-cache:latest
 ```
+
+## Production Deploy
+
+**IMPORTANT: Production uses PostgreSQL with the external `arxiv_postgres_data` Docker volume. This volume contains the cached papers and embeddings. Never deploy with commands that remove volumes or recreate Postgres storage.**
+
+```bash
+cp -n .env.example .env
+# Fill .env with production POSTGRES_PASSWORD, DATABASE_URL, and ADMIN_TOKEN.
+docker compose build arxiv
+docker compose up -d --no-deps arxiv
+```
+
+Use `docs/DEPLOYMENT_RUNBOOK_2026-05-15.md` for the full app-only deploy flow and DB safety checks.
 
 ## Architecture Overview
 
@@ -55,7 +67,7 @@ Single flat package (`package arxiv`) at root with 20+ files:
 
 ### Database
 
-SQLite with WAL mode. Main tables: `papers`, `citations`, `embeddings`, `sync_state`, `download_queue`. FTS5 virtual table `papers_fts` for full-text search.
+Production: **PostgreSQL with pgvector** (`arxiv-postgres` container). Fallback: SQLite with WAL mode (local dev only). Main tables: `papers`, `citations`, `embeddings`, `sync_state`, `download_queue`. PostgreSQL uses tsvector + GIN for full-text search and HNSW index for vector similarity. SQLite uses FTS5 virtual table `papers_fts`.
 
 ### Web Server
 

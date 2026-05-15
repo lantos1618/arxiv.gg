@@ -53,13 +53,13 @@ type EmbeddingWorker struct {
 
 // EmbeddingWorkerStats tracks worker statistics.
 type EmbeddingWorkerStats struct {
-	Processed   int64     `json:"processed"`
-	Failed      int64     `json:"failed"`
-	Pending     int64     `json:"pending"`
-	LastRun     time.Time `json:"lastRun"`
-	LastError   string    `json:"lastError,omitempty"`
-	IsRunning   bool      `json:"isRunning"`
-	ServiceUp   bool      `json:"serviceUp"`
+	Processed int64     `json:"processed"`
+	Failed    int64     `json:"failed"`
+	Pending   int64     `json:"pending"`
+	LastRun   time.Time `json:"lastRun"`
+	LastError string    `json:"lastError,omitempty"`
+	IsRunning bool      `json:"isRunning"`
+	ServiceUp bool      `json:"serviceUp"`
 }
 
 // NewEmbeddingWorker creates a new embedding worker.
@@ -128,33 +128,35 @@ func (w *EmbeddingWorker) Stats() EmbeddingWorkerStats {
 func (w *EmbeddingWorker) run(ctx context.Context) {
 	defer close(w.doneChan)
 
-	ticker := time.NewTicker(w.config.PollInterval)
-	defer ticker.Stop()
-
-	// Initial check
-	w.processBatch(ctx)
-
 	for {
+		processed := w.processBatch(ctx)
+		nextPoll := w.config.PollInterval
+		if !processed {
+			nextPoll = 5 * time.Minute
+		}
+
+		timer := time.NewTimer(nextPoll)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-w.stopChan:
+			timer.Stop()
 			return
-		case <-ticker.C:
-			w.processBatch(ctx)
+		case <-timer.C:
 		}
 	}
 }
 
 // processBatch processes a batch of papers without embeddings.
-func (w *EmbeddingWorker) processBatch(ctx context.Context) {
+func (w *EmbeddingWorker) processBatch(ctx context.Context) bool {
 	// Check if embedding service is available
 	if !w.checkServiceHealth() {
 		w.mu.Lock()
 		w.stats.ServiceUp = false
 		w.stats.LastError = "embedding service unavailable"
 		w.mu.Unlock()
-		return
+		return false
 	}
 
 	w.mu.Lock()
@@ -169,11 +171,15 @@ func (w *EmbeddingWorker) processBatch(ctx context.Context) {
 		w.mu.Lock()
 		w.stats.LastError = err.Error()
 		w.mu.Unlock()
-		return
+		return false
 	}
 
 	if len(papers) == 0 {
-		return
+		w.mu.Lock()
+		w.stats.Pending = 0
+		w.stats.LastError = ""
+		w.mu.Unlock()
+		return false
 	}
 
 	// Update pending count
@@ -198,6 +204,7 @@ func (w *EmbeddingWorker) processBatch(ctx context.Context) {
 	if success > 0 {
 		log.Printf("Embedded %d papers (%d failed, %d pending)", success, failed, pendingCount-int64(success))
 	}
+	return true
 }
 
 // checkServiceHealth checks if the embedding service is responding.
@@ -234,10 +241,10 @@ func (w *EmbeddingWorker) checkServiceHealth() bool {
 func (w *EmbeddingWorker) getPendingPapers(ctx context.Context, limit int) ([]Paper, error) {
 	var papers []Paper
 
-	// Get papers without embeddings (using subquery)
+	// Get only the columns needed by the embedding service.
 	err := w.cache.db.WithContext(ctx).
 		Raw(`
-			SELECT p.* FROM papers p
+			SELECT p.id, p.title, p.abstract FROM papers p
 			WHERE p.title != '' AND p.abstract != ''
 			AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.paper_id = p.id)
 			ORDER BY p.fetched_at DESC NULLS LAST

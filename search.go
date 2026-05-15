@@ -251,6 +251,31 @@ func (c *Cache) ListCategories(ctx context.Context) ([]CategoryCount, error) {
 	return result, nil
 }
 
+// ListRecentPapersLite lists recent papers with only the columns needed for
+// homepage display (ID, Title, Authors, Categories). This avoids fetching large
+// text fields like Abstract and PDFText, dramatically reducing DB I/O.
+func (c *Cache) ListRecentPapersLite(ctx context.Context, limit int) ([]Paper, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var papers []Paper
+	orderClause := "fetched_at DESC, id DESC"
+	if c.dbType == DBTypePostgres {
+		orderClause = "fetched_at DESC NULLS LAST, id DESC"
+	}
+
+	err := c.db.WithContext(ctx).
+		Model(&Paper{}).
+		Select("id, title, authors, categories").
+		Where("src_downloaded = ?", true).
+		Order(orderClause).
+		Limit(limit).
+		Find(&papers).Error
+
+	return papers, err
+}
+
 // ListPapers lists papers, optionally filtered by category.
 // Sorted by FetchedAt (most recently fetched first), with fallback to ID for legacy papers.
 func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit int) ([]Paper, error) {

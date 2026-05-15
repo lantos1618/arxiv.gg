@@ -67,11 +67,15 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	if embeddingServiceURL == "" {
 		embeddingServiceURL = os.Getenv("EMBEDDING_SERVICE_URL")
 	}
+	trustProxyHeaders := os.Getenv("TRUST_PROXY_HEADERS") == "true"
 
 	cache, err := arxiv.Open(cacheDir)
 	if err != nil {
 		log.Fatalf("open cache: %v", err)
 	}
+
+	// Start background stats refresh so homepage never blocks on COUNT(*) queries
+	cache.StartStatsRefresh(ctx)
 
 	srv := &server{
 		cache:               cache,
@@ -127,13 +131,14 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/robots.txt", srv.handleRobots)
 	mux.HandleFunc("/sitemap.xml", srv.handleSitemap)
 	mux.HandleFunc("/BingSiteAuth.xml", srv.handleBingSiteAuth)
+	mux.HandleFunc("/health", srv.handleHealth)
 
 	// Admin routes (unlisted, secret)
 	mux.HandleFunc("/admin/embeddings", srv.handleAdminEmbeddings)
 
 	// Setup middleware
-	cacheMW := newCacheMiddleware(5 * time.Minute)   // Cache for 5 minutes
-	rateLimiter := newRateLimiter(1000, time.Minute) // Allow higher burst per IP
+	cacheMW := newCacheMiddleware(5 * time.Minute)                      // Cache for 5 minutes
+	rateLimiter := newRateLimiter(1000, time.Minute, trustProxyHeaders) // Allow higher burst per IP
 
 	// Apply middleware: rate limiting first, then caching
 	handler := rateLimiter.Handler(cacheMW.Handler(mux))
@@ -308,6 +313,32 @@ func (s *server) handleSitemap(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := s.cache.Ping(ctx); err != nil {
+		respondJSON(w, http.StatusServiceUnavailable, APIResponse{
+			Success: false,
+			Error:   "database unavailable",
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]any{
+			"status": "ok",
+			"db":     s.cache.DBType(),
+		},
+	})
+}
+
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -474,6 +505,17 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 	// Handle /paper/:id/fetch - fetch paper on demand
 	if strings.HasSuffix(path, "/fetch") {
 		paperID := strings.TrimSuffix(path, "/fetch")
+		if r.Method != http.MethodPost {
+			http.Redirect(w, r, "/paper/"+paperID, http.StatusSeeOther)
+			return
+		}
+		if !s.localMode && !s.requireAdmin(w, r) {
+			return
+		}
+		if !isArxivID(paperID) {
+			http.NotFound(w, r)
+			return
+		}
 
 		// Fetch metadata only (source only in local mode for arXiv ToS compliance)
 		opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: s.localMode}
@@ -511,6 +553,9 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(path, "/prefetch-refs") {
 		paperID := strings.TrimSuffix(path, "/prefetch-refs")
 		if r.Method == http.MethodPost {
+			if !s.localMode && !s.requireAdmin(w, r) {
+				return
+			}
 			// Synchronous prefetch - blocks until all titles are fetched
 			err := s.cache.PrefetchReferenceTitles(ctx, paperID)
 			if err != nil {
@@ -771,6 +816,9 @@ func (s *server) handlePDF(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if !s.localMode && !s.requireAdmin(w, r) {
+			return
+		}
 
 		paperID := strings.TrimSuffix(path, "/fetch")
 		returnTo := r.URL.Query().Get("return")
@@ -867,9 +915,18 @@ func (s *server) handleSource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fullPath := filepath.Join(paper.SourcePath, filePath)
-		fullPath = filepath.Clean(fullPath)
-		if !strings.HasPrefix(fullPath, paper.SourcePath) {
+		sourceRoot, err := filepath.Abs(paper.SourcePath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		fullPath, err := filepath.Abs(filepath.Join(sourceRoot, filePath))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		relPath, err := filepath.Rel(sourceRoot, fullPath)
+		if err != nil || relPath == ".." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
 			http.NotFound(w, r)
 			return
 		}
@@ -1124,6 +1181,14 @@ func (s *server) handleCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleAdminEmbeddings(w http.ResponseWriter, r *http.Request) {
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
+	if r.URL.Query().Get("admin_token") != "" {
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+
 	ctx := r.Context()
 	stats, err := s.cache.Stats(ctx)
 	if err != nil {

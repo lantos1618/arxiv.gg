@@ -3,13 +3,13 @@ services:
     image: pgvector/pgvector:pg16
     container_name: arxiv-postgres
     environment:
-      POSTGRES_USER: arxiv
-      POSTGRES_PASSWORD: arxiv
-      POSTGRES_DB: arxiv
+      POSTGRES_USER: ${POSTGRES_USER:-arxiv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-arxiv}
     volumes:
       - arxiv_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U arxiv -d arxiv"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-arxiv} -d $${POSTGRES_DB:-arxiv}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -19,17 +19,30 @@ services:
     build: .
     container_name: arxiv-container
     ports:
-      - "80:80"
+      - "127.0.0.1:80:80"
     environment:
-      DATABASE_URL: postgres://arxiv:arxiv@postgres:5432/arxiv?sslmode=disable
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       ARXIV_CACHE: /data/arxiv
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
     volumes:
       - /data/arxiv:/data/arxiv
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 volumes:
   arxiv_postgres_data:
+    external: true
+
+networks:
+  default:
+    name: arxiv-network
     external: true

@@ -35,26 +35,28 @@
 	</div>
 </div>
 {{else}}
-{{range .SemanticResults}}
-<div class="paper">
-	<span class="paper-id">{{.PaperID}}</span>
-	<span class="badge badge-similarity">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
-	<div class="paper-title"><a href="/paper/{{.PaperID}}">{{.Paper.Title}}</a></div>
-	<div class="paper-authors">{{range $i, $a := parseAuthors .Paper.Authors}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}</div>
-	<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
-</div>
+	{{range .SemanticResults}}
+	<div class="paper">
+		<span class="paper-id">{{.PaperID}}</span>
+		<span class="badge badge-similarity">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
+		<div class="paper-title"><a href="/paper/{{.PaperID}}">{{.Paper.Title}}</a></div>
+		{{$authors := limitAuthors .Paper.Authors 12}}
+		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+		<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+	</div>
 {{else}}
 <p>No semantic results found.</p>
 {{end}}
 {{end}}
 {{else}}
 {{range .Papers}}
-<div class="paper">
-	<span class="paper-id">{{.ID}}</span>
-	<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
-	<div class="paper-authors">{{range $i, $a := parseAuthors .Authors}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}</div>
-	<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
-</div>
+	<div class="paper">
+		<span class="paper-id">{{.ID}}</span>
+		<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
+		{{$authors := limitAuthors .Authors 12}}
+		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+	</div>
 {{else}}
 <p>No results found.</p>
 {{end}}
@@ -71,8 +73,9 @@
 	let activeEventSource = null;
 
 	const initialQuery = '{{.Query}}';
-	const initialMode = '{{if .IsSemantic}}semantic{{else}}keyword{{end}}';
-	const initialCount = {{if .IsSemantic}}{{len .SemanticResults}}{{else}}{{len .Papers}}{{end}};
+		const initialMode = '{{if .IsSemantic}}semantic{{else}}keyword{{end}}';
+		const initialCount = {{if .IsSemantic}}{{len .SemanticResults}}{{else}}{{len .Papers}}{{end}};
+		const authorDisplayLimit = 12;
 
 	if (initialQuery && initialCount > 0) {
 		statusEl.textContent = initialCount + ' ' + initialMode + ' results for "' + initialQuery + '"';
@@ -84,20 +87,24 @@
 		return div.innerHTML;
 	}
 
-	function renderAuthors(authors) {
-		return authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a).map(a =>
-			'<a href="/author/' + encodeURIComponent(a) + '">' + escapeHtml(a) + '</a>'
-		).join(', ');
-	}
+		function renderAuthors(authors) {
+			const allAuthors = authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a);
+			const visibleAuthors = allAuthors.slice(0, authorDisplayLimit);
+			const links = visibleAuthors.map(a =>
+				'<a href="/author/' + encodeURIComponent(a) + '">' + escapeHtml(a) + '</a>'
+			).join(', ');
+			const extra = allAuthors.length - visibleAuthors.length;
+			return links + (extra > 0 ? ' <span class="more-authors">+' + extra + ' more</span>' : '');
+		}
 
 	function renderPaper(p, similarity) {
 		const id = p.ID || p.id;
 		const title = p.Title || p.title || '';
 		const authors = p.Authors || p.authors || '';
-		const categories = p.Categories || p.categories || '';
-		const hasEmbed = p.HasEmbedding || p.hasEmbedding;
-		const cats = categories.split(' ').filter(c => c).map(c =>
-			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>').join(' ');
+			const categories = p.Categories || p.categories || '';
+			const hasEmbed = p.HasEmbedding || p.hasEmbedding;
+			const cats = categories.split(' ').filter(c => c).map(c =>
+				'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '">' + escapeHtml(c) + '</a>').join(' ');
 		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges + ' ' + simBadge +

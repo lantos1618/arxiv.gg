@@ -56,6 +56,27 @@ Important Lighthouse metrics:
 | Root document response time | 30 ms |
 | Total byte weight | 475 KiB |
 
+After the follow-up fixes, the homepage Lighthouse baseline improved to:
+
+| Category | Score |
+|---|---:|
+| Performance | 100 |
+| Accessibility | 100 |
+| Best Practices | 100 |
+| SEO | 91 |
+
+| Metric | Value |
+|---|---:|
+| First Contentful Paint | 0.8 s |
+| Largest Contentful Paint | 1.4 s |
+| Speed Index | 0.8 s |
+| Total Blocking Time | 60 ms |
+| Time to Interactive | 1.4 s |
+| Cumulative Layout Shift | 0 |
+| Root document response time | 20 ms |
+| Total byte weight | 53 KiB |
+| DOM size | 786 elements |
+
 ## Fix Applied During This Pass
 
 Search logs exposed a real production bug:
@@ -75,6 +96,22 @@ Observed impact for `q=transformer&limit=10`:
 
 - Before: roughly 126-179 ms total, 371 KB observed response, and production error log noise.
 - After: roughly 83-95 ms total, 18.5 KB observed response, no placeholder error in the follow-up log scan.
+
+## Follow-Up Fixes
+
+The next pass applied low-risk fixes from the findings above:
+
+- Lazy-loaded Google Analytics after page load/idle time.
+- Lazy-loaded MathJax only when page text appears to contain TeX-style math.
+- Added `lang`, meta description, favicon route, and favicon link.
+- Increased author/category tap targets.
+- Capped author links in list cards to 12 visible authors with a `+N more` indicator.
+- Reduced category/list page DB payloads by selecting only fields needed for list rendering.
+- Added Postgres indexes for category trigram matching, recent source-backed listing, and pending embedding scans.
+- Fixed response-cache header preservation and bypassed response caching for admin/authenticated requests.
+- Reordered the Dockerfile runtime stage so Go/template-only rebuilds can reuse the expensive Python dependency layer.
+
+The category query sampled in the original report improved from roughly 630 ms in logs to about 19 ms in `EXPLAIN ANALYZE` after `idx_papers_categories_trgm`.
 
 ## Main Findings
 
@@ -135,11 +172,9 @@ Other log-side hot spots:
 
 ### Quick Wins
 
-1. Add favicon, `html lang`, meta description, and tap-target spacing.
-2. Lazy-load MathJax only when visible content contains TeX-like syntax.
-3. Cap visible author links in list views and show a `+N more` affordance.
-4. Consider removing Google Analytics from the critical path, or rely more on Cloudflare/server analytics.
-5. Add cache headers for local static assets; consider self-hosting versioned MathJax if it stays.
+1. Consider removing Google Analytics from the critical path entirely, or rely more on Cloudflare/server analytics.
+2. Add cache headers for local static assets; consider self-hosting versioned MathJax if it stays.
+3. Re-run Lighthouse from an external region after Cloudflare caches settle.
 
 ### Data/DB Work
 
@@ -153,4 +188,3 @@ Other log-side hot spots:
 1. Add structured request timing logs: path, status, duration, DB duration if possible.
 2. Add uptime/latency monitoring for `/health`, homepage, search, and one paper page.
 3. Add real-user timing beacons for navigation/load metrics if we want user-region data.
-

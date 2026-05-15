@@ -15,12 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /build/arxiv-server .
-COPY --from=builder /build/arxiv-migrate .
-
 COPY tools/ /app/tools/
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r /app/tools/requirements.txt
+
+COPY --from=builder /build/arxiv-server .
+COPY --from=builder /build/arxiv-migrate .
 
 EXPOSE 80
 ENV ARXIV_CACHE=/data/arxiv

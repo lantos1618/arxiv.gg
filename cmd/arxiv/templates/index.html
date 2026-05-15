@@ -38,29 +38,34 @@
 	const statEmbed = document.getElementById('stat-embed');
 	let timeout = null;
 	let selectedIndex = -1;
-	let dropdownItems = [];
-	let searchController = null;
-	let searchRequestId = 0;
+		let dropdownItems = [];
+		let searchController = null;
+		let searchRequestId = 0;
+		const authorDisplayLimit = 12;
 
 	function updateStats(paper) {
 		statTotal.textContent = parseInt(statTotal.textContent) + 1;
 	}
 
-	function renderAuthors(authors) {
-		return authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a).map(a =>
-			'<a href="/author/' + encodeURIComponent(a) + '">' + escapeHtml(a) + '</a>'
-		).join(', ');
-	}
+		function renderAuthors(authors) {
+			const allAuthors = authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a);
+			const visibleAuthors = allAuthors.slice(0, authorDisplayLimit);
+			const links = visibleAuthors.map(a =>
+				'<a href="/author/' + encodeURIComponent(a) + '">' + escapeHtml(a) + '</a>'
+			).join(', ');
+			const extra = allAuthors.length - visibleAuthors.length;
+			return links + (extra > 0 ? ' <span class="more-authors">+' + extra + ' more</span>' : '');
+		}
 
 	function renderRecentPaper(p) {
 		const id = p.ID || p.id;
 		const title = p.Title || p.title || '';
 		const authors = p.Authors || p.authors || '';
 		const categories = p.Categories || p.categories || '';
-		const hasEmbed = p.hasEmbedding || p.HasEmbedding;
-		const cats = categories.split(' ').filter(c => c).map(c =>
-			'<a class="cat-link" href="/category/' + c + '">' + c + '</a>'
-		).join(' ');
+			const hasEmbed = p.hasEmbedding || p.HasEmbedding;
+			const cats = categories.split(' ').filter(c => c).map(c =>
+				'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '">' + escapeHtml(c) + '</a>'
+			).join(' ');
 		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges +
 			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
@@ -267,12 +272,12 @@
 					const p = data.paper;
 					const id = p.id || p.ID;
 					const title = p.title || p.Title || '';
-					const authors = p.authors || p.Authors || '';
-					const categories = p.categories || p.Categories || '';
-					const hasEmbed = p.hasEmbedding || p.HasEmbedding;
-					const similarity = data.similarity;
-					const cats = categories.split(' ').filter(c => c).map(c =>
-						'<a class="cat-link" href="/category/' + c + '">' + c + '</a>').join(' ');
+						const authors = p.authors || p.Authors || '';
+						const categories = p.categories || p.Categories || '';
+						const hasEmbed = p.hasEmbedding || p.HasEmbedding;
+						const similarity = data.similarity;
+						const cats = categories.split(' ').filter(c => c).map(c =>
+							'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '">' + escapeHtml(c) + '</a>').join(' ');
 					const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 					const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><span class="paper-id">' + id + '</span> ' +

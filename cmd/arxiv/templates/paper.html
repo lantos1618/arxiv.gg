@@ -1,17 +1,38 @@
 {{define "paper"}}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="{{truncate .Paper.Abstract 160}}">
 	<meta name="view-transition" content="same-origin">
+	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Paper.Title}} - arXiv.gg</title>
 	<script>
-	MathJax = {
-		tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
-	};
+	(function() {
+		function hasMath(root) {
+			const text = root ? root.textContent || '' : '';
+			return /(\$[^$\n]{1,120}\$|\\\(|\\\[|\\begin\{)/.test(text);
+		}
+		window.loadMathJax = function() {
+			if (window.__arxivMathJaxLoading) return;
+			window.__arxivMathJaxLoading = true;
+			window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };
+			const script = document.createElement('script');
+			script.async = true;
+			script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
+			document.head.appendChild(script);
+		};
+		function scheduleMathJax() {
+			if (!hasMath(document.body)) return;
+			const load = window.loadMathJax;
+			if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 1500 });
+			else setTimeout(load, 500);
+		}
+		if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleMathJax, { once: true });
+		else scheduleMathJax();
+	})();
 	</script>
-	<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 	<script src="https://d3js.org/d3.v7.min.js"></script>
 	<style>
 		/* View Transitions */
@@ -50,8 +71,9 @@
 		.meta { font-size: 0.875rem; color: #64748b; margin-bottom: 0.5rem; min-height: 1.5rem; }
 		.meta code { font-family: monospace; background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 3px; }
 		.authors { margin-bottom: 0.5rem; }
+		.authors a { display: inline-flex; align-items: center; min-height: 24px; margin-right: 0.15rem; }
 		.categories { margin-bottom: 1rem; min-height: 1.5rem; }
-		.cat-link { display: inline-block; font-family: monospace; font-size: 0.8rem; background: #f1f5f9; padding: 0.15rem 0.5rem; border-radius: 3px; margin-right: 0.25rem; margin-bottom: 0.25rem; }
+		.cat-link { display: inline-flex; align-items: center; min-height: 24px; font-family: monospace; font-size: 0.8rem; background: #f1f5f9; padding: 0 0.5rem; border-radius: 3px; margin-right: 0.25rem; margin-bottom: 0.25rem; }
 		/* Abstract - contain layout for MathJax rendering */
 		.abstract { white-space: pre-wrap; color: #334155; margin-bottom: 1rem; contain: layout style; }
 		/* Actions bar - fixed min-height prevents CLS */
@@ -608,7 +630,9 @@
 				setupRefListClicks();
 
 				// Re-render any math in titles
-				if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
+				if (window.loadMathJax) {
+					window.loadMathJax();
+				} else if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
 					MathJax.typesetPromise();
 				}
 			});

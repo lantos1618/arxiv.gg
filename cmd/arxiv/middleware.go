@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ type cacheEntry struct {
 	etag      string
 	lastMod   time.Time
 	data      []byte
+	headers   http.Header
 	expiresAt time.Time
 }
 
@@ -75,6 +77,11 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
+		if shouldBypassResponseCache(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		key := r.URL.Path
 		if r.URL.RawQuery != "" {
 			key += "?" + r.URL.RawQuery
@@ -95,9 +102,12 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			}
 
 			// Serve directly from cache
+			copyHeader(w.Header(), entry.headers)
 			w.Header().Set("ETag", entry.etag)
 			w.Header().Set("Last-Modified", entry.lastMod.Format(http.TimeFormat))
-			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cm.maxAge.Seconds())))
+			if w.Header().Get("Cache-Control") == "" {
+				w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cm.maxAge.Seconds())))
+			}
 			w.Write(entry.data)
 			return
 		}
@@ -114,17 +124,54 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 		if cw.statusCode == http.StatusOK && len(cw.data) > 0 {
 			etag := generateETag(cw.data)
 			now := time.Now()
+			headers := cw.Header().Clone()
+			if headers.Get("Content-Type") == "" {
+				headers.Set("Content-Type", detectContentType(cw.data))
+			}
 
 			cm.mu.Lock()
 			cm.cache[key] = &cacheEntry{
 				etag:      etag,
 				lastMod:   now,
 				data:      cw.data,
+				headers:   headers,
 				expiresAt: now.Add(cm.maxAge),
 			}
 			cm.mu.Unlock()
 		}
 	})
+}
+
+func shouldBypassResponseCache(r *http.Request) bool {
+	if strings.HasPrefix(r.URL.Path, "/admin") {
+		return true
+	}
+	if r.URL.Query().Get("admin_token") != "" ||
+		r.Header.Get("Authorization") != "" ||
+		r.Header.Get("X-Admin-Token") != "" {
+		return true
+	}
+	if _, err := r.Cookie(adminCookieName); err == nil {
+		return true
+	}
+	return false
+}
+
+func copyHeader(dst, src http.Header) {
+	for key, values := range src {
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+func detectContentType(data []byte) string {
+	trimmed := bytes.TrimSpace(data)
+	if bytes.HasPrefix(trimmed, []byte("<!DOCTYPE html")) ||
+		bytes.HasPrefix(trimmed, []byte("<html")) {
+		return "text/html; charset=utf-8"
+	}
+	return http.DetectContentType(data)
 }
 
 // cachingResponseWriter captures response data

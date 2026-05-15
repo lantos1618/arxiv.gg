@@ -281,7 +281,8 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 		limit = 100
 	}
 
-	query := c.db.WithContext(ctx).Model(&Paper{})
+	query := c.db.WithContext(ctx).Model(&Paper{}).
+		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded, fetched_at")
 	if category != "" {
 		// Use ILIKE for PostgreSQL
 		if c.dbType == DBTypePostgres {

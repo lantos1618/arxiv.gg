@@ -30,6 +30,7 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 		return s[:n] + "..."
 	},
 	"parseAuthors":    parseAuthors,
+	"limitAuthors":    limitAuthors,
 	"parseCategories": parseCategories,
 	"arxivIDToDate":   arxivIDToDate,
 	"mul": func(a, b interface{}) float64 {
@@ -131,6 +132,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/robots.txt", srv.handleRobots)
 	mux.HandleFunc("/sitemap.xml", srv.handleSitemap)
 	mux.HandleFunc("/BingSiteAuth.xml", srv.handleBingSiteAuth)
+	mux.HandleFunc("/favicon.ico", srv.handleFavicon)
+	mux.HandleFunc("/favicon.svg", srv.handleFavicon)
 	mux.HandleFunc("/health", srv.handleHealth)
 
 	// Admin routes (unlisted, secret)
@@ -946,6 +949,19 @@ func (s *server) handleSource(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, arxivURL, http.StatusFound)
 }
 
+const faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0066cc"/><text x="32" y="41" text-anchor="middle" font-family="Arial,sans-serif" font-size="32" font-weight="700" fill="#fff">a</text></svg>`
+
+func (s *server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write([]byte(faviconSVG))
+}
+
 // handleRobots serves a static robots.txt file from the project root
 // if it exists, otherwise returns a minimal default that points to
 // the sitemap.
@@ -995,6 +1011,22 @@ func parseAuthors(authors string) []string {
 		}
 	}
 	return result
+}
+
+type authorList struct {
+	Names []string
+	Extra int
+}
+
+func limitAuthors(authors string, limit int) authorList {
+	names := parseAuthors(authors)
+	if limit <= 0 || len(names) <= limit {
+		return authorList{Names: names}
+	}
+	return authorList{
+		Names: names[:limit],
+		Extra: len(names) - limit,
+	}
 }
 
 // parseCategories splits a space-separated category string.

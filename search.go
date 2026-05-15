@@ -41,10 +41,10 @@ func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Pap
 	if c.dbType == DBTypePostgres {
 		countSQL = `SELECT COUNT(*) FROM papers WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1`
 		sql = `SELECT * FROM papers
-			WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1
-			ORDER BY CASE WHEN id ILIKE $1 THEN 0 WHEN title ILIKE $1 THEN 1 ELSE 2 END, created DESC
-			LIMIT $2`
-		args = []any{likePattern, limit}
+			WHERE id ILIKE ? OR title ILIKE ? OR authors ILIKE ? OR categories ILIKE ?
+			ORDER BY CASE WHEN id ILIKE ? THEN 0 WHEN title ILIKE ? THEN 1 ELSE 2 END, created DESC
+			LIMIT ?`
+		args = []any{likePattern, likePattern, likePattern, likePattern, likePattern, likePattern, limit}
 	} else {
 		countSQL = `SELECT COUNT(*) FROM papers WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?`
 		sql = `SELECT * FROM papers
@@ -127,20 +127,18 @@ func (c *Cache) searchPostgres(ctx context.Context, query, category string, limi
 	sql := `
 		SELECT id, created, updated, title, abstract, authors, categories,
 		       comments, journal_ref, doi, license, pdf_downloaded, src_downloaded,
-		       ts_rank(search_vector, plainto_tsquery('english', $1)) AS rank
+		       ts_rank(search_vector, plainto_tsquery('english', ?)) AS rank
 		FROM papers
-		WHERE search_vector @@ plainto_tsquery('english', $1)
+		WHERE search_vector @@ plainto_tsquery('english', ?)
 	`
-	args := []any{query}
-	argNum := 2
+	args := []any{query, query}
 
 	if category != "" {
-		sql += " AND categories ILIKE '%' || $" + string(rune('0'+argNum)) + " || '%'"
+		sql += " AND categories ILIKE '%' || ? || '%'"
 		args = append(args, category)
-		argNum++
 	}
 
-	sql += " ORDER BY rank DESC LIMIT $" + string(rune('0'+argNum))
+	sql += " ORDER BY rank DESC LIMIT ?"
 	args = append(args, limit)
 
 	var papers []Paper

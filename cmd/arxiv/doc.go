@@ -1,8 +1,8 @@
 /*
-arxiv is an offline arXiv paper cache manager.
+arxiv powers arxiv.gg and also works as a local arXiv paper cache manager.
 
-It provides tools to fetch, cache, search, and browse arXiv papers locally,
-including TeX source files, PDFs, and extracted citation graphs.
+It provides tools to fetch, cache, search, and browse arXiv papers with
+metadata, PDFs, TeX source files, semantic embeddings, and citation graphs.
 
 # Usage
 
@@ -106,9 +106,9 @@ The cache is stored in ARXIV_CACHE (default ~/.cache/arxiv):
 */
 package main
 
-//go:generate go run github.com/tmc/misc/gocmddoc@master -output ../../README.md
+//go:generate go run github.com/tmc/misc/gocmddoc@master -output ../../docs/CLI.md
 
-const usageText = `arxiv - offline arXiv paper cache manager
+const usageText = `arxiv - arXiv discovery, cache, and search toolkit
 
 Usage: arxiv <command> [options]
 

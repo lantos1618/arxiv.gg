@@ -17,6 +17,13 @@
 </div>
 <div id="search-results" class="search-results"></div>
 <p id="stats-line"><span id="stat-total">{{.Stats.TotalPapers}}</span> papers indexed (<span id="stat-embed">{{.Stats.EmbeddingsCount}}</span> with embeddings)</p>
+{{with .Coverage}}
+<div class="coverage-signal" aria-label="arxiv.gg corpus coverage">
+	<div class="coverage-row"><strong>{{.Percent}}%</strong> of arXiv.org indexed on arxiv.gg</div>
+	<div class="coverage-bar" aria-hidden="true"><span style="width: {{.Percent}}%;"></span></div>
+	<div class="coverage-detail">{{.LocalTotal}} indexed / {{.OfficialTotal}} official articles available as of {{.AsOf}}</div>
+</div>
+{{end}}
 
 <div id="recent-papers">
 <h2>Recent Papers</h2>

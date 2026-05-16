@@ -62,6 +62,8 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 }).ParseFS(templateFS, "templates/*.html"))
 
 const defaultIndexNowKey = "34af0c26368622541e3ca8aa555c3ad7"
+const defaultOfficialArxivPapers = 3045638
+const defaultOfficialArxivPapersAsOf = "2026-05-16"
 
 func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
@@ -78,6 +80,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	}
 	trustProxyHeaders := os.Getenv("TRUST_PROXY_HEADERS") == "true"
 	indexNowKey := configuredIndexNowKey()
+	officialArxivPapers := configuredOfficialArxivPapers()
+	officialArxivPapersAsOf := configuredOfficialArxivPapersAsOf()
 
 	cache, err := arxiv.Open(cacheDir)
 	if err != nil {
@@ -94,6 +98,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		paperBroadcast:      newPaperBroadcaster(),
 		embeddingServiceURL: embeddingServiceURL,
 		indexNowKey:         indexNowKey,
+		officialArxivPapers: officialArxivPapers,
+		officialArxivAsOf:   officialArxivPapersAsOf,
 	}
 
 	// Start embedding worker if enabled
@@ -188,6 +194,8 @@ type server struct {
 	embeddingServiceURL string
 	embeddingWorker     *arxiv.EmbeddingWorker
 	indexNowKey         string
+	officialArxivPapers int64
+	officialArxivAsOf   string
 }
 
 func configuredIndexNowKey() string {
@@ -213,6 +221,48 @@ func isSafeIndexNowKey(key string) bool {
 		return false
 	}
 	return true
+}
+
+func configuredOfficialArxivPapers() int64 {
+	value := strings.TrimSpace(os.Getenv("ARXIV_OFFICIAL_TOTAL_PAPERS"))
+	if value == "" {
+		return defaultOfficialArxivPapers
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n <= 0 {
+		log.Printf("ARXIV_OFFICIAL_TOTAL_PAPERS is invalid; using default %d", defaultOfficialArxivPapers)
+		return defaultOfficialArxivPapers
+	}
+	return n
+}
+
+func configuredOfficialArxivPapersAsOf() string {
+	value := strings.TrimSpace(os.Getenv("ARXIV_OFFICIAL_TOTAL_PAPERS_AS_OF"))
+	if value == "" {
+		return defaultOfficialArxivPapersAsOf
+	}
+	return value
+}
+
+type coverageSignal struct {
+	LocalTotal    int64
+	OfficialTotal int64
+	Percent       string
+	AsOf          string
+}
+
+func (s *server) coverageSignal(stats *arxiv.CacheStats) coverageSignal {
+	coverage := coverageSignal{
+		OfficialTotal: s.officialArxivPapers,
+		AsOf:          s.officialArxivAsOf,
+	}
+	if stats != nil {
+		coverage.LocalTotal = stats.TotalPapers
+	}
+	if coverage.OfficialTotal > 0 {
+		coverage.Percent = fmt.Sprintf("%.1f", float64(coverage.LocalTotal)/float64(coverage.OfficialTotal)*100)
+	}
+	return coverage
 }
 
 // paperBroadcaster manages real-time paper update subscriptions
@@ -500,9 +550,10 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	// Papers are now loaded via SSE in the client
 	data := map[string]any{
-		"Title": "Home",
-		"Stats": stats,
-		"Query": "",
+		"Title":    "Home",
+		"Stats":    stats,
+		"Coverage": s.coverageSignal(stats),
+		"Query":    "",
 	}
 	templates.ExecuteTemplate(w, "index", data)
 }

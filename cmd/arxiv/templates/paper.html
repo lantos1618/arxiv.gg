@@ -4,10 +4,22 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="{{truncate .Paper.Abstract 160}}">
+	{{$description := .Description}}{{if not $description}}{{$description = (truncate .Paper.Abstract 160)}}{{end}}
+	<meta name="description" content="{{$description}}">
+	<meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large">
+	<link rel="canonical" href="{{.CanonicalURL}}">
+	<meta property="og:site_name" content="arXiv.gg">
+	<meta property="og:title" content="{{.Paper.Title}} - arXiv.gg">
+	<meta property="og:description" content="{{$description}}">
+	<meta property="og:type" content="article">
+	<meta property="og:url" content="{{.CanonicalURL}}">
+	<meta name="twitter:card" content="summary">
+	<meta name="twitter:title" content="{{.Paper.Title}} - arXiv.gg">
+	<meta name="twitter:description" content="{{$description}}">
 	<meta name="view-transition" content="same-origin">
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Paper.Title}} - arXiv.gg</title>
+	{{if .StructuredData}}<script type="application/ld+json">{{.StructuredData}}</script>{{end}}
 	<script>
 	(function() {
 		function hasMath(root) {
@@ -209,8 +221,8 @@
 <div class="meta">
 	<code>{{.Paper.ID}}</code> · {{.Paper.Created.Format "2006-01-02"}} · Cited by {{.CitedByCount}}{{if .HasEmbedding}} · <span class="badge badge-embed">🧠 embedded</span>{{end}}
 </div>
-<div class="authors">{{range $i, $a := parseAuthors .Paper.Authors}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}</div>
-<div class="categories">{{range $i, $c := parseCategories .Paper.Categories}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+<div class="authors">{{range $i, $a := parseAuthors .Paper.Authors}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}</div>
+<div class="categories">{{range $i, $c := parseCategories .Paper.Categories}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
 
 <div class="abstract">{{.Paper.Abstract}}</div>
 
@@ -257,8 +269,8 @@
 {{range .PaperList}}{{if .IsRef}}
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
-	{{if .Cached}}<a class="ref-title" href="/abs/{{.ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
-	{{else}}<span class="ref-uncached">{{.ID}}</span> <span class="ref-date">({{arxivIDToDate .ID}})</span> <a href="/paper/{{.ID}}">[open]</a>{{end}}
+	{{if .Cached}}<a class="ref-title" href="{{paperPath .ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
+	{{else}}<span class="ref-uncached">{{.ID}}</span> <span class="ref-date">({{arxivIDToDate .ID}})</span> <a href="{{paperPath .ID}}">[open]</a>{{end}}
 </li>
 {{end}}{{end}}
 </ul>
@@ -268,7 +280,7 @@
 {{range .PaperList}}{{if .IsCiting}}
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
-	<a class="ref-title" href="/abs/{{.ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
+	<a class="ref-title" href="{{paperPath .ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
 </li>
 {{end}}{{end}}
 </ul>
@@ -388,7 +400,7 @@
 			// Don't intercept if clicking directly on a link
 			if (e.target.tagName === 'A') return;
 
-			const url = '/paper/' + id;
+			const url = encodeURI('/abs/' + id);
 			navigateWithTransition(li, url);
 		});
 	});
@@ -557,7 +569,7 @@
 
 				// Re-apply event handlers
 				nodes.on('click', (e, d) => {
-					const url = '/paper/' + d.id;
+					const url = encodeURI('/abs/' + d.id);
 					navigateWithTransition(e.target, url);
 				});
 
@@ -616,7 +628,7 @@
 					li.dataset.id = r.id;
 					const dateStr = arxivIDToDate(r.id);
 					const datePart = dateStr ? ' <span class="ref-date">(' + dateStr + ')</span>' : '';
-					const paperURL = encodeURI('/paper/' + r.id);
+					const paperURL = encodeURI('/abs/' + r.id);
 					if (r.hasTitle) {
 						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <a class="ref-title" href="' + paperURL + '">' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + escapeHtml(r.citedBy) + ' cites</span>' : '');
 					} else {
@@ -672,7 +684,7 @@
 			if (!id) return;
 			li.addEventListener('click', (e) => {
 				if (e.target.tagName === 'A') return;
-				const url = '/paper/' + id;
+				const url = encodeURI('/abs/' + id);
 				navigateWithTransition(li, url);
 			});
 		});

@@ -50,10 +50,10 @@
 	{{range .Papers}}
 		<div class="paper">
 			<span class="paper-id">{{.ID}}</span>
-			<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
+			<div class="paper-title"><a href="{{paperPath .ID}}">{{.Title}}</a></div>
 			{{$authors := limitAuthors .Authors 12}}
-			<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-			<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+			<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+			<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
 		</div>
 	{{else}}
 	<p>No papers found for this author.</p>

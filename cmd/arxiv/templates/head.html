@@ -4,10 +4,22 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="description" content="Search and explore arXiv papers, authors, categories, citations, PDFs, and semantic embeddings.">
+	{{$description := "Search and explore arXiv papers, authors, categories, citations, PDFs, and semantic embeddings."}}{{if .Description}}{{$description = .Description}}{{end}}
+	<meta name="description" content="{{$description}}">
+	<meta name="robots" content="{{if .Robots}}{{.Robots}}{{else}}index,follow,max-snippet:-1,max-image-preview:large{{end}}">
+	{{if .CanonicalURL}}<link rel="canonical" href="{{.CanonicalURL}}">{{end}}
+	<meta property="og:site_name" content="arXiv.gg">
+	<meta property="og:title" content="{{.Title}} - arXiv.gg">
+	<meta property="og:description" content="{{$description}}">
+	<meta property="og:type" content="{{if .OGType}}{{.OGType}}{{else}}website{{end}}">
+	{{if .CanonicalURL}}<meta property="og:url" content="{{.CanonicalURL}}">{{end}}
+	<meta name="twitter:card" content="summary">
+	<meta name="twitter:title" content="{{.Title}} - arXiv.gg">
+	<meta name="twitter:description" content="{{$description}}">
 	<meta name="msvalidate.01" content="5D13814D95915D6874F1138BE444F2ED" />
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Title}} - arXiv.gg</title>
+	{{if .StructuredData}}<script type="application/ld+json">{{.StructuredData}}</script>{{end}}
 	<script>
 	(function() {
 		const analyticsID = 'G-SNGD2K7DPC';

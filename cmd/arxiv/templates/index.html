@@ -68,7 +68,7 @@
 			).join(' ');
 		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges +
-			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
+			'<div class="paper-title"><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' +
 			'<div class="paper-authors">' + renderAuthors(authors) + '</div>' +
 			'<div class="paper-categories">' + cats + '</div></div>';
 	}
@@ -153,7 +153,7 @@
 
 		const arxivID = extractArxivID(query);
 		if (arxivID) {
-			dropdown.innerHTML = '<a class="dropdown-item" href="/paper/' + arxivID + '">' +
+			dropdown.innerHTML = '<a class="dropdown-item" href="' + encodeURI('/abs/' + arxivID) + '">' +
 				'<div class="dropdown-item-id">' + escapeHtml(arxivID) + '</div>' +
 				'<div class="dropdown-item-title">Go to paper →</div></a>';
 			showDropdown();
@@ -190,7 +190,7 @@
 					const id = p.id || p.ID;
 					const title = p.title || p.Title || '';
 					const authors = p.authors || p.Authors || '';
-					html += '<a class="dropdown-item" href="/paper/' + id + '">' +
+					html += '<a class="dropdown-item" href="' + encodeURI('/abs/' + id) + '">' +
 						'<div class="dropdown-item-id">' + id + '</div>' +
 						'<div class="dropdown-item-title">' + escapeHtml(title) + '</div>' +
 						'<div class="dropdown-item-authors">' + escapeHtml(authors) + '</div></a>';
@@ -226,7 +226,7 @@
 
 		const arxivID = extractArxivID(query);
 		if (arxivID) {
-			window.location.href = '/paper/' + arxivID;
+			window.location.href = encodeURI('/abs/' + arxivID);
 			return;
 		}
 
@@ -281,7 +281,7 @@
 					const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 					const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><span class="paper-id">' + id + '</span> ' +
-						badges + ' ' + simBadge + '<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
+						badges + ' ' + simBadge + '<div class="paper-title"><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' +
 						'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-categories">' + cats + '</div></div>');
 					statusEl.textContent = resultCount + ' results...';
 					break;

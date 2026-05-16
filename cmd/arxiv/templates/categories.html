@@ -5,7 +5,7 @@
 <div class="categories-list">
 {{range .Categories}}
 <div class="cat-item">
-	<a href="/category/{{.Name}}">{{.Name}}</a>
+	<a href="{{categoryPath .Name}}">{{.Name}}</a>
 	<span class="cat-count">({{.Count}})</span>
 </div>
 {{end}}

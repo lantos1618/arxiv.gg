@@ -39,10 +39,10 @@
 	<div class="paper">
 		<span class="paper-id">{{.PaperID}}</span>
 		<span class="badge badge-similarity">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
-		<div class="paper-title"><a href="/paper/{{.PaperID}}">{{.Paper.Title}}</a></div>
+		<div class="paper-title"><a href="{{paperPath .PaperID}}">{{.Paper.Title}}</a></div>
 		{{$authors := limitAuthors .Paper.Authors 12}}
-		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-		<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+		<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
 	</div>
 {{else}}
 <p>No semantic results found.</p>
@@ -52,10 +52,10 @@
 {{range .Papers}}
 	<div class="paper">
 		<span class="paper-id">{{.ID}}</span>
-		<div class="paper-title"><a href="/paper/{{.ID}}">{{.Title}}</a></div>
+		<div class="paper-title"><a href="{{paperPath .ID}}">{{.Title}}</a></div>
 		{{$authors := limitAuthors .Authors 12}}
-		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="/author/{{$a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="/category/{{$c}}">{{$c}}</a>{{end}}</div>
+		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
 	</div>
 {{else}}
 <p>No results found.</p>
@@ -108,7 +108,7 @@
 		const badges = hasEmbed ? '<span class="badge badge-embed">🧠</span>' : '';
 		const simBadge = similarity ? '<span class="badge badge-similarity">' + Math.round(similarity * 100) + '%</span>' : '';
 		return '<div class="paper"><span class="paper-id">' + id + '</span> ' + badges + ' ' + simBadge +
-			'<div class="paper-title"><a href="/paper/' + id + '">' + escapeHtml(title) + '</a></div>' +
+			'<div class="paper-title"><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' +
 			'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-categories">' + cats + '</div></div>';
 	}
 

@@ -10,8 +10,10 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +36,9 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 	"limitAuthors":    limitAuthors,
 	"parseCategories": parseCategories,
 	"arxivIDToDate":   arxivIDToDate,
+	"authorPath":      authorPath,
+	"categoryPath":    categoryPath,
+	"paperPath":       paperPath,
 	"mul": func(a, b interface{}) float64 {
 		var aFloat, bFloat float64
 		switch v := a.(type) {
@@ -808,6 +813,14 @@ func (s *server) handleAbs(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+
+	canonicalID := strings.TrimRight(id, "/")
+	canonicalID = stripArxivVersion(canonicalID)
+	if canonicalID != id {
+		http.Redirect(w, r, paperPath(canonicalID), http.StatusMovedPermanently)
+		return
+	}
+
 	s.renderPaper(w, r, id)
 }
 
@@ -872,6 +885,9 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 
 	data := map[string]any{
 		"Title":          paper.Title,
+		"Description":    summaryText(paper.Abstract, 160),
+		"CanonicalURL":   canonicalURL(paperPath(paper.ID)),
+		"StructuredData": paperStructuredData(paper),
 		"Paper":          paper,
 		"Files":          files,
 		"PaperList":      paperList,
@@ -890,6 +906,11 @@ func (s *server) handleAuthor(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	canonicalAuthor := strings.TrimRight(author, "/")
+	if canonicalAuthor != author {
+		http.Redirect(w, r, authorPath(canonicalAuthor), http.StatusMovedPermanently)
+		return
+	}
 
 	ctx := r.Context()
 	papers, err := s.cache.SearchByAuthor(ctx, author, 200)
@@ -900,10 +921,13 @@ func (s *server) handleAuthor(w http.ResponseWriter, r *http.Request) {
 
 	// Only load basic stats - collaborators/similar loaded via JS for faster page load
 	data := map[string]any{
-		"Title":      "Author: " + author,
-		"Author":     author,
-		"Papers":     papers,
-		"PaperCount": len(papers),
+		"Title":          "Author: " + author,
+		"Description":    authorDescription(author, papers),
+		"CanonicalURL":   canonicalURL(authorPath(author)),
+		"StructuredData": authorStructuredData(author, papers),
+		"Author":         author,
+		"Papers":         papers,
+		"PaperCount":     len(papers),
 	}
 	templates.ExecuteTemplate(w, "author", data)
 }
@@ -1134,6 +1158,181 @@ func limitAuthors(authors string, limit int) authorList {
 		Names: names[:limit],
 		Extra: len(names) - limit,
 	}
+}
+
+func stripArxivVersion(id string) string {
+	vIdx := strings.LastIndex(id, "v")
+	if vIdx <= 0 || vIdx == len(id)-1 {
+		return id
+	}
+	for _, c := range id[vIdx+1:] {
+		if c < '0' || c > '9' {
+			return id
+		}
+	}
+	base := id[:vIdx]
+	if isArxivID(base) {
+		return base
+	}
+	return id
+}
+
+func arxivIDPath(id string) string {
+	return strings.ReplaceAll(url.PathEscape(id), "%2F", "/")
+}
+
+func paperPath(id string) string {
+	return "/abs/" + arxivIDPath(id)
+}
+
+func authorPath(author string) string {
+	return "/author/" + url.PathEscape(strings.TrimSpace(author))
+}
+
+func categoryPath(category string) string {
+	return "/category/" + url.PathEscape(strings.TrimSpace(category))
+}
+
+func canonicalURL(path string) string {
+	return strings.TrimRight(arxiv.SiteBaseURL(), "/") + path
+}
+
+func summaryText(s string, maxRunes int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if maxRunes <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes-1]) + "..."
+}
+
+func paperStructuredData(paper *arxiv.Paper) template.JS {
+	authors := parseAuthors(paper.Authors)
+	authorData := make([]map[string]any, 0, len(authors))
+	for _, author := range authors {
+		authorData = append(authorData, map[string]any{
+			"@type": "Person",
+			"name":  author,
+			"url":   canonicalURL(authorPath(author)),
+		})
+	}
+
+	data := map[string]any{
+		"@context":    "https://schema.org",
+		"@type":       "ScholarlyArticle",
+		"headline":    paper.Title,
+		"name":        paper.Title,
+		"description": summaryText(paper.Abstract, 300),
+		"abstract":    paper.Abstract,
+		"identifier":  "arXiv:" + paper.ID,
+		"url":         canonicalURL(paperPath(paper.ID)),
+		"sameAs":      "https://arxiv.org/abs/" + arxivIDPath(paper.ID),
+		"author":      authorData,
+		"about":       parseCategories(paper.Categories),
+		"encoding": []map[string]any{
+			{
+				"@type":          "MediaObject",
+				"contentUrl":     "https://arxiv.org/pdf/" + arxivIDPath(paper.ID) + ".pdf",
+				"encodingFormat": "application/pdf",
+			},
+		},
+	}
+	if paper.License != "" {
+		data["license"] = paper.License
+	}
+	if !paper.Created.IsZero() {
+		data["datePublished"] = paper.Created.UTC().Format("2006-01-02")
+	}
+	if !paper.Updated.IsZero() {
+		data["dateModified"] = paper.Updated.UTC().Format("2006-01-02")
+	}
+	return jsonScript(data)
+}
+
+func authorDescription(author string, papers []arxiv.Paper) string {
+	topics := topAuthorCategories(papers, 3)
+	if len(topics) > 0 {
+		return fmt.Sprintf("Explore recent arXiv papers by %s in %s, with publication history, collaborators, and related researchers.", author, strings.Join(topics, ", "))
+	}
+	return fmt.Sprintf("Explore recent arXiv papers by %s, with publication history, collaborators, and related researchers.", author)
+}
+
+func authorStructuredData(author string, papers []arxiv.Paper) template.JS {
+	limit := len(papers)
+	if limit > 20 {
+		limit = 20
+	}
+	items := make([]map[string]any, 0, limit)
+	for i := 0; i < limit; i++ {
+		paper := papers[i]
+		items = append(items, map[string]any{
+			"@type":    "ListItem",
+			"position": i + 1,
+			"url":      canonicalURL(paperPath(paper.ID)),
+			"name":     paper.Title,
+		})
+	}
+
+	data := map[string]any{
+		"@context": "https://schema.org",
+		"@type":    "ProfilePage",
+		"name":     author + " - arXiv.gg",
+		"url":      canonicalURL(authorPath(author)),
+		"mainEntity": map[string]any{
+			"@type": "Person",
+			"name":  author,
+		},
+		"hasPart": map[string]any{
+			"@type":           "ItemList",
+			"numberOfItems":   len(papers),
+			"itemListElement": items,
+		},
+	}
+	return jsonScript(data)
+}
+
+func jsonScript(v any) template.JS {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return template.JS("{}")
+	}
+	return template.JS(b)
+}
+
+func topAuthorCategories(papers []arxiv.Paper, limit int) []string {
+	counts := make(map[string]int)
+	for _, paper := range papers {
+		for _, category := range parseCategories(paper.Categories) {
+			counts[category]++
+		}
+	}
+
+	type categoryCount struct {
+		name  string
+		count int
+	}
+	categories := make([]categoryCount, 0, len(counts))
+	for name, count := range counts {
+		categories = append(categories, categoryCount{name: name, count: count})
+	}
+	sort.Slice(categories, func(i, j int) bool {
+		if categories[i].count == categories[j].count {
+			return categories[i].name < categories[j].name
+		}
+		return categories[i].count > categories[j].count
+	})
+
+	if limit > len(categories) {
+		limit = len(categories)
+	}
+	out := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		out = append(out, categories[i].name)
+	}
+	return out
 }
 
 // parseCategories splits a space-separated category string.

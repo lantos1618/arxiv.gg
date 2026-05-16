@@ -49,3 +49,19 @@ Disallow:
 
 Sitemap: https://arxiv.gg/sitemap.xml
 ```
+
+## Follow-Up for "Crawled - Currently Not Indexed"
+
+Search Console examples showed crawlable `200` pages in the "Crawled - currently not
+indexed" bucket. The follow-up technical fixes are:
+
+- Add self-referencing canonical URLs to paper and author pages.
+- Add page-specific descriptions for author pages instead of the generic site description.
+- Add `ScholarlyArticle` JSON-LD to paper pages.
+- Add `ProfilePage` / `Person` / `ItemList` JSON-LD to author pages.
+- Redirect author URLs with trailing slashes to the canonical author URL.
+- Redirect versioned arXiv abstract URLs, such as `/abs/2105.14275v1`, to the base paper URL.
+- Change internal navigational links from redirecting `/paper/{id}` URLs to canonical `/abs/{id}` URLs.
+
+These changes do not guarantee indexing, but they remove avoidable ambiguity and give Google
+clearer canonical, entity, and page-quality signals for pages it already crawled.

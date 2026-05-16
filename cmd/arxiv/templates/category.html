@@ -1,6 +1,7 @@
 {{define "category"}}
 {{template "head" .}}
-<h1>Category: {{.Category}}</h1>
+<h1>{{.Category}} papers</h1>
+{{if ne .DisplayName .Category}}<p>{{.DisplayName}}</p>{{end}}
 <p>{{len .Papers}} papers</p>
 {{range .Papers}}
 	<div class="paper">

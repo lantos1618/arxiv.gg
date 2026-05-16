@@ -25,6 +25,7 @@ services:
       ARXIV_CACHE: /data/arxiv
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
       TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-34af0c26368622541e3ca8aa555c3ad7}
     volumes:
       - /data/arxiv:/data/arxiv
     depends_on:

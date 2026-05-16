@@ -30,6 +30,7 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 		return s[:n] + "..."
 	},
 	"parseAuthors":    parseAuthors,
+	"limitAuthors":    limitAuthors,
 	"parseCategories": parseCategories,
 	"arxivIDToDate":   arxivIDToDate,
 	"mul": func(a, b interface{}) float64 {
@@ -67,11 +68,15 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	if embeddingServiceURL == "" {
 		embeddingServiceURL = os.Getenv("EMBEDDING_SERVICE_URL")
 	}
+	trustProxyHeaders := os.Getenv("TRUST_PROXY_HEADERS") == "true"
 
 	cache, err := arxiv.Open(cacheDir)
 	if err != nil {
 		log.Fatalf("open cache: %v", err)
 	}
+
+	// Start background stats refresh so homepage never blocks on COUNT(*) queries
+	cache.StartStatsRefresh(ctx)
 
 	srv := &server{
 		cache:               cache,
@@ -107,6 +112,12 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/api/v1/embeddings/generate", srv.handleAPIGenerateEmbeddings)
 	mux.HandleFunc("/api/v1/embeddings/status", srv.handleAPIEmbeddingWorkerStatus)
 	mux.HandleFunc("/api/v1/papers/recent/stream", srv.handleAPIRecentPapersStream)
+	mux.HandleFunc("/api/v1/authors/collaborators", srv.handleAPIAuthorCollaborators)
+	mux.HandleFunc("/api/v1/authors/similar", srv.handleAPIAuthorSimilar)
+	mux.HandleFunc("/api/v1/authors/stats", srv.handleAPIAuthorStats)
+	mux.HandleFunc("/api/v1/authors/graph", srv.handleAPIAuthorGraph)
+	mux.HandleFunc("/api/v1/authors/profile", srv.handleAPIAuthorProfile)
+	mux.HandleFunc("/api/v1/authors/build-graph", srv.handleAPIBuildAuthorGraph)
 
 	// Web routes
 	mux.HandleFunc("/", srv.handleIndex)
@@ -121,13 +132,16 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/robots.txt", srv.handleRobots)
 	mux.HandleFunc("/sitemap.xml", srv.handleSitemap)
 	mux.HandleFunc("/BingSiteAuth.xml", srv.handleBingSiteAuth)
+	mux.HandleFunc("/favicon.ico", srv.handleFavicon)
+	mux.HandleFunc("/favicon.svg", srv.handleFavicon)
+	mux.HandleFunc("/health", srv.handleHealth)
 
 	// Admin routes (unlisted, secret)
 	mux.HandleFunc("/admin/embeddings", srv.handleAdminEmbeddings)
 
 	// Setup middleware
-	cacheMW := newCacheMiddleware(5 * time.Minute)   // Cache for 5 minutes
-	rateLimiter := newRateLimiter(1000, time.Minute) // Allow higher burst per IP
+	cacheMW := newCacheMiddleware(5 * time.Minute)                      // Cache for 5 minutes
+	rateLimiter := newRateLimiter(1000, time.Minute, trustProxyHeaders) // Allow higher burst per IP
 
 	// Apply middleware: rate limiting first, then caching
 	handler := rateLimiter.Handler(cacheMW.Handler(mux))
@@ -302,6 +316,32 @@ func (s *server) handleSitemap(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := s.cache.Ping(ctx); err != nil {
+		respondJSON(w, http.StatusServiceUnavailable, APIResponse{
+			Success: false,
+			Error:   "database unavailable",
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]any{
+			"status": "ok",
+			"db":     s.cache.DBType(),
+		},
+	})
+}
+
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -468,9 +508,20 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 	// Handle /paper/:id/fetch - fetch paper on demand
 	if strings.HasSuffix(path, "/fetch") {
 		paperID := strings.TrimSuffix(path, "/fetch")
+		if r.Method != http.MethodPost {
+			http.Redirect(w, r, "/paper/"+paperID, http.StatusSeeOther)
+			return
+		}
+		if !s.localMode && !s.requireAdmin(w, r) {
+			return
+		}
+		if !isArxivID(paperID) {
+			http.NotFound(w, r)
+			return
+		}
 
-		// Fetch metadata and source
-		opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
+		// Fetch metadata only (source only in local mode for arXiv ToS compliance)
+		opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: s.localMode}
 		paper, err := s.cache.FetchAndDownload(ctx, paperID, opts)
 		if err != nil {
 			http.Error(w, "failed to fetch paper: "+err.Error(), http.StatusInternalServerError)
@@ -505,6 +556,9 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(path, "/prefetch-refs") {
 		paperID := strings.TrimSuffix(path, "/prefetch-refs")
 		if r.Method == http.MethodPost {
+			if !s.localMode && !s.requireAdmin(w, r) {
+				return
+			}
 			// Synchronous prefetch - blocks until all titles are fetched
 			err := s.cache.PrefetchReferenceTitles(ctx, paperID)
 			if err != nil {
@@ -525,8 +579,12 @@ func (s *server) handlePaper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle /paper/:id/fetch-source - fetch source and extract citations
+	// Handle /paper/:id/fetch-source - fetch source and extract citations (local mode only)
 	if strings.HasSuffix(path, "/fetch-source") {
+		if !s.localMode {
+			http.Error(w, "source downloading disabled on public site", http.StatusForbidden)
+			return
+		}
 		paperID := strings.TrimSuffix(path, "/fetch-source")
 		if r.Method == http.MethodPost {
 			// Download source only (not PDF)
@@ -656,8 +714,8 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 	if err != nil {
 		// Paper not in cache - check if it looks like a valid arXiv ID and auto-fetch
 		if isArxivID(id) {
-			// Fetch metadata and source
-			opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
+			// Fetch metadata only (source downloading disabled for public site)
+			opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: s.localMode}
 			paper, err = s.cache.FetchAndDownload(ctx, id, opts)
 			if err != nil {
 				http.Error(w, "Paper not found: "+err.Error(), http.StatusNotFound)
@@ -700,16 +758,9 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 		}
 	}
 
-	// Auto-fetch source in background if not downloaded
+	// Source downloading disabled for public site (arXiv ToS compliance)
+	// Only available in local mode for personal use
 	fetchingSource := false
-	if !paper.SourceDownloaded {
-		fetchingSource = true
-		go func() {
-			bgCtx := context.Background()
-			opts := &arxiv.DownloadOptions{DownloadPDF: false, DownloadSource: true}
-			s.cache.DownloadPaper(bgCtx, id, opts)
-		}()
-	}
 	// Note: Client handles prefetch via /prefetch-refs endpoint
 
 	hasEmbedding := s.cache.HasEmbedding(ctx, id)
@@ -742,10 +793,12 @@ func (s *server) handleAuthor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only load basic stats - collaborators/similar loaded via JS for faster page load
 	data := map[string]any{
-		"Title":  "Author: " + author,
-		"Author": author,
-		"Papers": papers,
+		"Title":      "Author: " + author,
+		"Author":     author,
+		"Papers":     papers,
+		"PaperCount": len(papers),
 	}
 	templates.ExecuteTemplate(w, "author", data)
 }
@@ -764,6 +817,9 @@ func (s *server) handlePDF(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(path, "/fetch") {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.localMode && !s.requireAdmin(w, r) {
 			return
 		}
 
@@ -862,9 +918,18 @@ func (s *server) handleSource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fullPath := filepath.Join(paper.SourcePath, filePath)
-		fullPath = filepath.Clean(fullPath)
-		if !strings.HasPrefix(fullPath, paper.SourcePath) {
+		sourceRoot, err := filepath.Abs(paper.SourcePath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		fullPath, err := filepath.Abs(filepath.Join(sourceRoot, filePath))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		relPath, err := filepath.Rel(sourceRoot, fullPath)
+		if err != nil || relPath == ".." || strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
 			http.NotFound(w, r)
 			return
 		}
@@ -882,6 +947,19 @@ func (s *server) handleSource(w http.ResponseWriter, r *http.Request) {
 	// Gateway mode: redirect to arXiv.org
 	arxivURL := fmt.Sprintf("https://arxiv.org/src/%s", strings.Join(parts, "/"))
 	http.Redirect(w, r, arxivURL, http.StatusFound)
+}
+
+const faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0066cc"/><text x="32" y="41" text-anchor="middle" font-family="Arial,sans-serif" font-size="32" font-weight="700" fill="#fff">a</text></svg>`
+
+func (s *server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write([]byte(faviconSVG))
 }
 
 // handleRobots serves a static robots.txt file from the project root
@@ -933,6 +1011,22 @@ func parseAuthors(authors string) []string {
 		}
 	}
 	return result
+}
+
+type authorList struct {
+	Names []string
+	Extra int
+}
+
+func limitAuthors(authors string, limit int) authorList {
+	names := parseAuthors(authors)
+	if limit <= 0 || len(names) <= limit {
+		return authorList{Names: names}
+	}
+	return authorList{
+		Names: names[:limit],
+		Extra: len(names) - limit,
+	}
 }
 
 // parseCategories splits a space-separated category string.
@@ -1119,6 +1213,14 @@ func (s *server) handleCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleAdminEmbeddings(w http.ResponseWriter, r *http.Request) {
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
+	if r.URL.Query().Get("admin_token") != "" {
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+
 	ctx := r.Context()
 	stats, err := s.cache.Stats(ctx)
 	if err != nil {

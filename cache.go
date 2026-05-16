@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/postgres"
@@ -39,6 +41,11 @@ type Cache struct {
 	db       *gorm.DB
 	dbType   DBType
 	paperLRU *LRUCache
+
+	// Cached stats to avoid slow COUNT(*) queries on every request
+	statsMu      sync.RWMutex
+	cachedStats  *CacheStats
+	statsUpdated time.Time
 }
 
 // DBType returns the database type in use.
@@ -117,6 +124,15 @@ func (c *Cache) Close() error {
 	return sqlDB.Close()
 }
 
+// Ping verifies that the configured database backend is reachable.
+func (c *Cache) Ping(ctx context.Context) error {
+	sqlDB, err := c.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.PingContext(ctx)
+}
+
 // Root returns the cache root directory.
 func (c *Cache) Root() string {
 	return c.root
@@ -124,7 +140,7 @@ func (c *Cache) Root() string {
 
 func (c *Cache) initSchema() error {
 	// GORM AutoMigrate handles all regular tables
-	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}, &EmbeddingJob{}); err != nil {
+	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}, &EmbeddingJob{}, &AuthorCollaboration{}, &AuthorEmbedding{}); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 
@@ -236,12 +252,35 @@ func (c *Cache) initPostgresSchema() error {
 	// Create index on embedding_jobs for efficient queue processing
 	c.db.Exec(`CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_priority ON embedding_jobs(status, priority DESC, created_at)`)
 
+	// Add vector column to author_embeddings for pgvector
+	c.db.Exec(`ALTER TABLE author_embeddings ADD COLUMN IF NOT EXISTS vector vector(384)`)
+	c.db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_author_embeddings_vector_hnsw
+		ON author_embeddings USING hnsw (vector vector_cosine_ops)
+		WITH (m = 16, ef_construction = 64);
+	`)
+
 	fmt.Println("PostgreSQL schema initialized with full-text search and pgvector HNSW index")
 	return nil
 }
 
-// Stats returns cache statistics.
+// Stats returns cache statistics, served from an in-memory cache to avoid
+// expensive COUNT(*) queries on every request. The cache is refreshed in the
+// background by StartStatsRefresh, or on-demand if the cache has expired.
 func (c *Cache) Stats(ctx context.Context) (*CacheStats, error) {
+	c.statsMu.RLock()
+	if c.cachedStats != nil && time.Since(c.statsUpdated) < 5*time.Minute {
+		stats := *c.cachedStats // return a copy
+		c.statsMu.RUnlock()
+		return &stats, nil
+	}
+	c.statsMu.RUnlock()
+
+	return c.refreshStats(ctx)
+}
+
+// refreshStats runs the actual COUNT queries and updates the cache.
+func (c *Cache) refreshStats(ctx context.Context) (*CacheStats, error) {
 	stats := &CacheStats{}
 
 	if err := c.db.WithContext(ctx).Model(&Paper{}).Count(&stats.TotalPapers).Error; err != nil {
@@ -264,7 +303,34 @@ func (c *Cache) Stats(ctx context.Context) (*CacheStats, error) {
 		return nil, err
 	}
 
+	c.statsMu.Lock()
+	c.cachedStats = stats
+	c.statsUpdated = time.Now()
+	c.statsMu.Unlock()
+
 	return stats, nil
+}
+
+// StartStatsRefresh warms the stats cache immediately and starts a background
+// goroutine that refreshes it periodically, so no request ever hits the slow
+// COUNT(*) queries.
+func (c *Cache) StartStatsRefresh(ctx context.Context) {
+	// Warm the cache on startup (background so it doesn't block server start)
+	go c.refreshStats(context.Background())
+
+	// Periodic refresh
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				c.refreshStats(context.Background())
+			}
+		}
+	}()
 }
 
 // CountEmbeddings counts the total number of embeddings in the database.
@@ -285,6 +351,26 @@ func (c *Cache) HasEmbedding(ctx context.Context, paperID string) bool {
 func (c *Cache) GetEmbeddingIDs(ctx context.Context) (map[string]bool, error) {
 	var ids []string
 	err := c.db.WithContext(ctx).Model(&Embedding{}).Pluck("paper_id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		result[id] = true
+	}
+	return result, nil
+}
+
+// GetEmbeddingIDsFor returns which of the given paper IDs have embeddings.
+// Much faster than GetEmbeddingIDs when checking a small set of papers.
+func (c *Cache) GetEmbeddingIDsFor(ctx context.Context, paperIDs []string) (map[string]bool, error) {
+	if len(paperIDs) == 0 {
+		return map[string]bool{}, nil
+	}
+	var ids []string
+	err := c.db.WithContext(ctx).Model(&Embedding{}).
+		Where("paper_id IN ?", paperIDs).
+		Pluck("paper_id", &ids).Error
 	if err != nil {
 		return nil, err
 	}

@@ -136,3 +136,31 @@ type EmbeddingJob struct {
 func (EmbeddingJob) TableName() string {
 	return "embedding_jobs"
 }
+
+// AuthorCollaboration represents a co-author relationship between two authors.
+type AuthorCollaboration struct {
+	Author1     string `gorm:"primaryKey;column:author1;index"`
+	Author2     string `gorm:"primaryKey;column:author2;index"`
+	PaperCount  int    `gorm:"column:paper_count"`
+	PaperIDs    string `gorm:"column:paper_ids;type:text"` // JSON array of paper IDs
+	FirstCollab time.Time `gorm:"column:first_collab"`
+	LastCollab  time.Time `gorm:"column:last_collab"`
+}
+
+func (AuthorCollaboration) TableName() string {
+	return "author_collaborations"
+}
+
+// AuthorEmbedding stores aggregated embeddings for an author.
+// Vector is the average of all their paper embeddings.
+type AuthorEmbedding struct {
+	Author     string    `gorm:"primaryKey;column:author"`
+	PaperCount int       `gorm:"column:paper_count"`
+	Model      string    `gorm:"column:model"`
+	Updated    time.Time `gorm:"column:updated"`
+	// Vector is managed via raw SQL (pgvector type in PostgreSQL)
+}
+
+func (AuthorEmbedding) TableName() string {
+	return "author_embeddings"
+}

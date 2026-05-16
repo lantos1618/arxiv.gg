@@ -1,17 +1,66 @@
 {{define "head"}}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Search and explore arXiv papers, authors, categories, citations, PDFs, and semantic embeddings.">
 	<meta name="msvalidate.01" content="5D13814D95915D6874F1138BE444F2ED" />
+	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Title}} - arXiv.gg</title>
 	<script>
-	MathJax = {
-		tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]}
-	};
+	(function() {
+		const analyticsID = 'G-SNGD2K7DPC';
+		function loadAnalytics() {
+			if (window.__arxivAnalyticsLoaded) return;
+			window.__arxivAnalyticsLoaded = true;
+			window.dataLayer = window.dataLayer || [];
+			window.gtag = function(){ window.dataLayer.push(arguments); };
+			window.gtag('js', new Date());
+			window.gtag('config', analyticsID, { transport_type: 'beacon' });
+			const script = document.createElement('script');
+			script.async = true;
+			script.src = 'https://www.googletagmanager.com/gtag/js?id=' + analyticsID;
+			document.head.appendChild(script);
+		}
+		function scheduleAnalytics() {
+			setTimeout(loadAnalytics, 5000);
+		}
+		if (document.readyState === 'complete') scheduleAnalytics();
+		else window.addEventListener('load', scheduleAnalytics, { once: true });
+	})();
 	</script>
-	<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+	<script>
+	(function() {
+		function hasMath(root) {
+			const text = root ? root.textContent || '' : '';
+			return /(\$[^$\n]{1,120}\$|\\\(|\\\[|\\begin\{)/.test(text);
+		}
+		window.loadMathJax = function() {
+			if (window.__arxivMathJaxLoading) return;
+			window.__arxivMathJaxLoading = true;
+			window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };
+			const script = document.createElement('script');
+			script.async = true;
+			script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
+			document.head.appendChild(script);
+		};
+		function scheduleMathJax() {
+			const mathRoots = document.querySelectorAll('[data-mathjax]');
+			if (mathRoots.length === 0) return;
+			let needsMath = false;
+			mathRoots.forEach(root => {
+				if (hasMath(root)) needsMath = true;
+			});
+			if (!needsMath) return;
+			const load = window.loadMathJax;
+			if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 1500 });
+			else setTimeout(load, 500);
+		}
+		if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleMathJax, { once: true });
+		else scheduleMathJax();
+	})();
+	</script>
 	<style>
 		* { box-sizing: border-box; }
 		body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 1rem; line-height: 1.5; }
@@ -50,6 +99,8 @@
 		.paper-id { font-family: monospace; color: #666; }
 		.paper-title { font-size: 1.1rem; font-weight: 600; margin: 0.25rem 0; min-height: 1.4rem; }
 		.paper-authors { color: #444; min-height: 1.5rem; }
+		.paper-authors a, .authors a { display: inline-flex; align-items: center; min-height: 24px; margin-right: 0.15rem; }
+		.more-authors { color: #666; font-size: 0.9em; white-space: nowrap; }
 		.paper-categories { font-size: 0.9rem; color: #666; min-height: 1.2rem; }
 		.paper-abstract { margin: 1rem 0; white-space: pre-wrap; }
 		.paper-meta { font-size: 0.9rem; color: #666; margin: 0.5rem 0; }
@@ -78,7 +129,7 @@
 		.fetch-form { display: inline; }
 		.fetch-link { color: #6c757d; font-size: 0.85em; }
 		.cite-count { color: #6c757d; font-size: 0.85em; }
-		.cat-link { font-family: monospace; background: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 3px; text-decoration: none; font-size: 0.9em; }
+		.cat-link { display: inline-flex; align-items: center; min-height: 24px; font-family: monospace; background: #f0f0f0; padding: 0 0.45rem; border-radius: 3px; text-decoration: none; font-size: 0.9em; margin: 0 0.15rem 0.2rem 0; }
 		.cat-link:hover { background: #e0e0e0; }
 		.categories-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 		.cat-item { background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 4px; }

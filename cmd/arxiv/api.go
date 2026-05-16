@@ -53,6 +53,16 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+// setSSEHeaders sets headers for Server-Sent Events, including buffering controls
+func setSSEHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+}
+
 // handleAPIPaper returns paper metadata as JSON
 // Handles: /api/v1/papers/{id}, /api/v1/papers/{id}/citations, /api/v1/papers/{id}/cited-by, /api/v1/papers/{id}/graph, /api/v1/papers/{id}/fetch, /api/v1/papers/{id}/export/{format}
 func (s *server) handleAPIPaper(w http.ResponseWriter, r *http.Request) {
@@ -137,12 +147,13 @@ func (s *server) handleAPISearchSemantic(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 20
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 20, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -212,12 +223,13 @@ func (s *server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	category := r.URL.Query().Get("category")
-	limitStr := r.URL.Query().Get("limit")
-	limit := 20
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 20, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -255,12 +267,13 @@ func (s *server) handleAPISearchQuick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 10
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 50 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 10, 50)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -300,21 +313,19 @@ func (s *server) handleAPISearchStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	category := r.URL.Query().Get("category")
-	limitStr := r.URL.Query().Get("limit")
-	limit := 100
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 100, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	searchMode := r.URL.Query().Get("mode")
 	isSemantic := searchMode == "semantic"
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setSSEHeaders(w)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -483,12 +494,13 @@ func (s *server) handleAPICitedBy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 50, 200)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	ctx := r.Context()
@@ -602,6 +614,9 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
 
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/papers/")
 	path = strings.TrimSuffix(path, "/fetch")
@@ -609,6 +624,13 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, APIResponse{
 			Success: false,
 			Error:   "paper ID required",
+		})
+		return
+	}
+	if !isArxivID(path) {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "invalid paper ID",
 		})
 		return
 	}
@@ -743,12 +765,13 @@ func (s *server) handleAPISearchPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 50, 50)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	fuzzyMode := r.URL.Query().Get("fuzzy") == "true"
@@ -794,6 +817,9 @@ func (s *server) handleAPISearchPDF(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.localMode && !s.requireAdmin(w, r) {
 		return
 	}
 
@@ -853,19 +879,17 @@ func (s *server) handleAPIGenerateEmbeddings(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 0
-	if limitStr != "" {
-		var err error
-		limit, err = strconv.Atoi(limitStr)
-		if err != nil {
-			respondJSON(w, http.StatusBadRequest, APIResponse{
-				Success: false,
-				Error:   "invalid limit parameter",
-			})
-			return
-		}
+	limit, err := parseLimit(r, 0, 10000)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
 	// Check if this is an SSE request
@@ -914,10 +938,7 @@ func (s *server) handleAPIGenerateEmbeddings(w http.ResponseWriter, r *http.Requ
 // handleGenerateEmbeddingsSSE provides real-time progress for embedding generation
 func (s *server) handleGenerateEmbeddingsSSE(w http.ResponseWriter, r *http.Request, limit int) {
 	// Set SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setSSEHeaders(w)
 	w.Header().Set("Access-Control-Allow-Headers", "Cache-Control")
 
 	flusher, ok := w.(http.Flusher)
@@ -1190,18 +1211,16 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 50
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		}
+	limit, err := parseLimit(r, 50, 100)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	setSSEHeaders(w)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -1225,8 +1244,8 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Fetch initial recent papers
-	papers, err := s.cache.ListPapers(ctx, "", 0, limit)
+	// Fetch initial recent papers (lite: only ID, Title, Authors, Categories)
+	papers, err := s.cache.ListRecentPapersLite(ctx, limit)
 	if err != nil {
 		<-sseInitSemaphore // Release semaphore
 		fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
@@ -1237,22 +1256,31 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Batch fetch embedding IDs (one query instead of 50)
-	embeddingIDs, _ := s.cache.GetEmbeddingIDs(ctx)
+	// Batch fetch embedding IDs only for these papers (not ALL embeddings)
+	paperIDs := make([]string, len(papers))
+	for i, p := range papers {
+		paperIDs[i] = p.ID
+	}
+	embeddingIDs, _ := s.cache.GetEmbeddingIDsFor(ctx, paperIDs)
 
 	// Release semaphore - DB queries done
 	<-sseInitSemaphore
 
-	// Stream initial papers
+	// Stream initial papers with minimal payload (only fields the client uses)
 	for i, paper := range papers {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
-				"type":         "paper",
-				"index":        i,
-				"paper":        paper,
+				"type":  "paper",
+				"index": i,
+				"paper": map[string]interface{}{
+					"ID":         paper.ID,
+					"Title":      paper.Title,
+					"Authors":    paper.Authors,
+					"Categories": paper.Categories,
+				},
 				"hasEmbedding": embeddingIDs[paper.ID],
 			}))
 			flusher.Flush()
@@ -1310,4 +1338,249 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func parseLimit(r *http.Request, defaultLimit, maxLimit int) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return defaultLimit, nil
+	}
+
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 0 {
+		return 0, fmt.Errorf("invalid limit parameter")
+	}
+	if limit == 0 {
+		return defaultLimit, nil
+	}
+	if maxLimit > 0 && limit > maxLimit {
+		return 0, fmt.Errorf("limit must be <= %d", maxLimit)
+	}
+	return limit, nil
+}
+
+// handleAPIAuthorCollaborators returns collaborators for an author
+func (s *server) handleAPIAuthorCollaborators(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	limit, err := parseLimit(r, 100, 200)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	ctx := r.Context()
+	collabs, err := s.cache.GetCollaborators(ctx, author, limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"author":        author,
+			"collaborators": collabs,
+			"count":         len(collabs),
+		},
+	})
+}
+
+// handleAPIAuthorSimilar returns authors with similar research interests
+func (s *server) handleAPIAuthorSimilar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	limit, err := parseLimit(r, 10, 50)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	ctx := r.Context()
+	similar, err := s.cache.GetSimilarAuthors(ctx, author, limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"author":  author,
+			"similar": similar,
+			"count":   len(similar),
+		},
+	})
+}
+
+// handleAPIAuthorStats returns statistics for an author
+func (s *server) handleAPIAuthorStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	stats, err := s.cache.GetAuthorStats(ctx, author)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"author": author,
+			"stats":  stats,
+		},
+	})
+}
+
+// handleAPIBuildAuthorGraph triggers building the author collaboration graph
+func (s *server) handleAPIBuildAuthorGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.localMode && !s.requireAdmin(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+
+	// Run in background
+	go func() {
+		bgCtx := context.Background()
+		if err := s.cache.BuildAuthorGraph(bgCtx); err != nil {
+			fmt.Printf("Error building author graph: %v\n", err)
+		}
+		if err := s.cache.BuildAuthorEmbeddings(bgCtx); err != nil {
+			fmt.Printf("Error building author embeddings: %v\n", err)
+		}
+	}()
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"message": "Author graph build started in background",
+		},
+	})
+	_ = ctx // context used for request
+}
+
+// handleAPIAuthorGraph returns collaboration graph data for visualization
+func (s *server) handleAPIAuthorGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	depth := 1
+	if d := r.URL.Query().Get("depth"); d == "2" {
+		depth = 2
+	}
+
+	ctx := r.Context()
+	graph, err := s.cache.GetAuthorGraph(ctx, author, depth)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    graph,
+	})
+}
+
+// handleAPIAuthorProfile returns comprehensive author profile
+func (s *server) handleAPIAuthorProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	author := r.URL.Query().Get("author")
+	if author == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "author parameter required",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	profile, err := s.cache.GetAuthorProfile(ctx, author)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    profile,
+	})
 }

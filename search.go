@@ -41,10 +41,10 @@ func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Pap
 	if c.dbType == DBTypePostgres {
 		countSQL = `SELECT COUNT(*) FROM papers WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1`
 		sql = `SELECT * FROM papers
-			WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1
-			ORDER BY CASE WHEN id ILIKE $1 THEN 0 WHEN title ILIKE $1 THEN 1 ELSE 2 END, created DESC
-			LIMIT $2`
-		args = []any{likePattern, limit}
+			WHERE id ILIKE ? OR title ILIKE ? OR authors ILIKE ? OR categories ILIKE ?
+			ORDER BY CASE WHEN id ILIKE ? THEN 0 WHEN title ILIKE ? THEN 1 ELSE 2 END, created DESC
+			LIMIT ?`
+		args = []any{likePattern, likePattern, likePattern, likePattern, likePattern, likePattern, limit}
 	} else {
 		countSQL = `SELECT COUNT(*) FROM papers WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?`
 		sql = `SELECT * FROM papers
@@ -127,20 +127,18 @@ func (c *Cache) searchPostgres(ctx context.Context, query, category string, limi
 	sql := `
 		SELECT id, created, updated, title, abstract, authors, categories,
 		       comments, journal_ref, doi, license, pdf_downloaded, src_downloaded,
-		       ts_rank(search_vector, plainto_tsquery('english', $1)) AS rank
+		       ts_rank(search_vector, plainto_tsquery('english', ?)) AS rank
 		FROM papers
-		WHERE search_vector @@ plainto_tsquery('english', $1)
+		WHERE search_vector @@ plainto_tsquery('english', ?)
 	`
-	args := []any{query}
-	argNum := 2
+	args := []any{query, query}
 
 	if category != "" {
-		sql += " AND categories ILIKE '%' || $" + string(rune('0'+argNum)) + " || '%'"
+		sql += " AND categories ILIKE '%' || ? || '%'"
 		args = append(args, category)
-		argNum++
 	}
 
-	sql += " ORDER BY rank DESC LIMIT $" + string(rune('0'+argNum))
+	sql += " ORDER BY rank DESC LIMIT ?"
 	args = append(args, limit)
 
 	var papers []Paper
@@ -185,11 +183,23 @@ func (c *Cache) SearchByAuthor(ctx context.Context, author string, limit int) ([
 		likeOp = "ILIKE"
 	}
 
-	err := c.db.WithContext(ctx).
-		Where("authors "+likeOp+" ?", "%"+author+"%").
-		Order("created DESC").
-		Limit(limit).
-		Find(&papers).Error
+	// Search for both "First Last" and "Last, First" formats
+	flipped := flipAuthorName(author)
+
+	var err error
+	if flipped != "" {
+		err = c.db.WithContext(ctx).
+			Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").
+			Order("created DESC").
+			Limit(limit).
+			Find(&papers).Error
+	} else {
+		err = c.db.WithContext(ctx).
+			Where("authors "+likeOp+" ?", "%"+author+"%").
+			Order("created DESC").
+			Limit(limit).
+			Find(&papers).Error
+	}
 	return papers, err
 }
 
@@ -239,6 +249,31 @@ func (c *Cache) ListCategories(ctx context.Context) ([]CategoryCount, error) {
 	return result, nil
 }
 
+// ListRecentPapersLite lists recent papers with only the columns needed for
+// homepage display (ID, Title, Authors, Categories). This avoids fetching large
+// text fields like Abstract and PDFText, dramatically reducing DB I/O.
+func (c *Cache) ListRecentPapersLite(ctx context.Context, limit int) ([]Paper, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var papers []Paper
+	orderClause := "fetched_at DESC, id DESC"
+	if c.dbType == DBTypePostgres {
+		orderClause = "fetched_at DESC NULLS LAST, id DESC"
+	}
+
+	err := c.db.WithContext(ctx).
+		Model(&Paper{}).
+		Select("id, title, authors, categories").
+		Where("src_downloaded = ?", true).
+		Order(orderClause).
+		Limit(limit).
+		Find(&papers).Error
+
+	return papers, err
+}
+
 // ListPapers lists papers, optionally filtered by category.
 // Sorted by FetchedAt (most recently fetched first), with fallback to ID for legacy papers.
 func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit int) ([]Paper, error) {
@@ -246,7 +281,8 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 		limit = 100
 	}
 
-	query := c.db.WithContext(ctx).Model(&Paper{})
+	query := c.db.WithContext(ctx).Model(&Paper{}).
+		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded, fetched_at")
 	if category != "" {
 		// Use ILIKE for PostgreSQL
 		if c.dbType == DBTypePostgres {

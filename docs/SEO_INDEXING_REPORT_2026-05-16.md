@@ -19,6 +19,13 @@
 - `/sitemaps/papers-N.xml` serves distinct paper pages in chunks of up to 50,000 URLs.
 - Sitemap and robots handlers now allow `HEAD` requests.
 - Sitemaps are returned with `Cache-Control: public, max-age=3600`.
+- Paper, author, and category pages now emit canonical URLs and page-specific meta
+  descriptions.
+- Paper pages emit `ScholarlyArticle` JSON-LD, author pages emit `ProfilePage` JSON-LD,
+  and category pages emit `CollectionPage` / `ItemList` JSON-LD.
+- `/34af0c26368622541e3ca8aa555c3ad7.txt` serves the IndexNow key file.
+- `tools/submit_indexnow.py` can submit changed URLs, a URL file, or sitemap URLs to
+  IndexNow in batches.
 
 ## Expected Live Sitemap Shape
 
@@ -41,6 +48,11 @@ display in Cloudflare:
 4. Uncheck Display Content Signals Policy, or disable managed `robots.txt` entirely.
 5. Purge Cloudflare cache for `https://arxiv.gg/robots.txt`.
 
+API note: the available Cloudflare token verified successfully and can list the `arxiv.gg`
+zone, but Cloudflare returned `9109 Unauthorized to access requested resource` for zone
+settings reads. The managed robots toggle still needs to be completed in the dashboard
+unless a token with the required settings surface is provided.
+
 After this, live `robots.txt` should only show the origin app output:
 
 ```txt
@@ -49,6 +61,22 @@ Disallow:
 
 Sitemap: https://arxiv.gg/sitemap.xml
 ```
+
+## IndexNow Submission
+
+IndexNow should be used for changed or newly exposed URLs rather than as a daily full-corpus
+ping. The current key is public and must match the key file served by the app.
+
+Examples:
+
+```sh
+python3 tools/submit_indexnow.py --url https://arxiv.gg/sitemap.xml
+python3 tools/submit_indexnow.py --sitemap https://arxiv.gg/sitemap.xml --limit 1000
+python3 tools/submit_indexnow.py --file changed-urls.txt
+```
+
+The script submits JSON to `https://api.indexnow.org/indexnow` with `host`, `key`,
+`keyLocation`, and `urlList`, in batches of up to 10,000 URLs.
 
 ## Follow-Up for "Crawled - Currently Not Indexed"
 

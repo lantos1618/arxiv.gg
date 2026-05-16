@@ -61,6 +61,8 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 	},
 }).ParseFS(templateFS, "templates/*.html"))
 
+const defaultIndexNowKey = "34af0c26368622541e3ca8aa555c3ad7"
+
 func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	port := fs.Int("port", 8080, "Port to listen on")
@@ -75,6 +77,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		embeddingServiceURL = os.Getenv("EMBEDDING_SERVICE_URL")
 	}
 	trustProxyHeaders := os.Getenv("TRUST_PROXY_HEADERS") == "true"
+	indexNowKey := configuredIndexNowKey()
 
 	cache, err := arxiv.Open(cacheDir)
 	if err != nil {
@@ -90,6 +93,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		localMode:           *localMode,
 		paperBroadcast:      newPaperBroadcaster(),
 		embeddingServiceURL: embeddingServiceURL,
+		indexNowKey:         indexNowKey,
 	}
 
 	// Start embedding worker if enabled
@@ -140,6 +144,9 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/sitemap-static.xml", srv.handleStaticSitemap)
 	mux.HandleFunc("/sitemaps/", srv.handlePaperSitemap)
 	mux.HandleFunc("/BingSiteAuth.xml", srv.handleBingSiteAuth)
+	if srv.indexNowKey != "" {
+		mux.HandleFunc("/"+srv.indexNowKey+".txt", srv.handleIndexNowKey)
+	}
 	mux.HandleFunc("/favicon.ico", srv.handleFavicon)
 	mux.HandleFunc("/favicon.svg", srv.handleFavicon)
 	mux.HandleFunc("/health", srv.handleHealth)
@@ -180,6 +187,32 @@ type server struct {
 	// Embedding service configuration
 	embeddingServiceURL string
 	embeddingWorker     *arxiv.EmbeddingWorker
+	indexNowKey         string
+}
+
+func configuredIndexNowKey() string {
+	key := strings.TrimSpace(os.Getenv("INDEXNOW_KEY"))
+	if key == "" {
+		key = defaultIndexNowKey
+	}
+	if !isSafeIndexNowKey(key) {
+		log.Printf("INDEXNOW_KEY contains unsupported characters; IndexNow key file route disabled")
+		return ""
+	}
+	return key
+}
+
+func isSafeIndexNowKey(key string) bool {
+	if len(key) < 8 || len(key) > 128 {
+		return false
+	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // paperBroadcaster manages real-time paper update subscriptions
@@ -1128,6 +1161,22 @@ func (s *server) handleBingSiteAuth(w http.ResponseWriter, r *http.Request) {
 `))
 }
 
+func (s *server) handleIndexNowKey(w http.ResponseWriter, r *http.Request) {
+	if rejectNonGetHead(w, r) {
+		return
+	}
+	if s.indexNowKey == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if r.Method != http.MethodHead {
+		fmt.Fprint(w, s.indexNowKey)
+	}
+}
+
 // parseAuthors splits an author string into individual author names.
 // arXiv author format varies but is typically comma-separated or "and"-separated.
 func parseAuthors(authors string) []string {
@@ -1286,6 +1335,151 @@ func authorStructuredData(author string, papers []arxiv.Paper) template.JS {
 			"name":  author,
 		},
 		"hasPart": map[string]any{
+			"@type":           "ItemList",
+			"numberOfItems":   len(papers),
+			"itemListElement": items,
+		},
+	}
+	return jsonScript(data)
+}
+
+var categoryDisplayNames = map[string]string{
+	"astro-ph":           "astrophysics",
+	"astro-ph.CO":        "cosmology and nongalactic astrophysics",
+	"astro-ph.EP":        "earth and planetary astrophysics",
+	"astro-ph.GA":        "galaxies",
+	"astro-ph.HE":        "high energy astrophysical phenomena",
+	"astro-ph.IM":        "instrumentation and methods for astrophysics",
+	"astro-ph.SR":        "solar and stellar astrophysics",
+	"cond-mat":           "condensed matter",
+	"cond-mat.dis-nn":    "disordered systems and neural networks",
+	"cond-mat.mes-hall":  "mesoscale and nanoscale physics",
+	"cond-mat.mtrl-sci":  "materials science",
+	"cond-mat.other":     "other condensed matter",
+	"cond-mat.quant-gas": "quantum gases",
+	"cond-mat.soft":      "soft condensed matter",
+	"cond-mat.stat-mech": "statistical mechanics",
+	"cond-mat.str-el":    "strongly correlated electrons",
+	"cond-mat.supr-con":  "superconductivity",
+	"cs.AI":              "artificial intelligence",
+	"cs.AR":              "hardware architecture",
+	"cs.CC":              "computational complexity",
+	"cs.CE":              "computational engineering, finance, and science",
+	"cs.CG":              "computational geometry",
+	"cs.CL":              "computation and language",
+	"cs.CR":              "cryptography and security",
+	"cs.CV":              "computer vision",
+	"cs.CY":              "computers and society",
+	"cs.DB":              "databases",
+	"cs.DC":              "distributed, parallel, and cluster computing",
+	"cs.DL":              "digital libraries",
+	"cs.DM":              "discrete mathematics",
+	"cs.DS":              "data structures and algorithms",
+	"cs.ET":              "emerging technologies",
+	"cs.FL":              "formal languages and automata theory",
+	"cs.GL":              "general literature",
+	"cs.GR":              "graphics",
+	"cs.GT":              "computer science and game theory",
+	"cs.HC":              "human-computer interaction",
+	"cs.IR":              "information retrieval",
+	"cs.IT":              "information theory",
+	"cs.LG":              "machine learning",
+	"cs.LO":              "logic in computer science",
+	"cs.MA":              "multiagent systems",
+	"cs.MM":              "multimedia",
+	"cs.MS":              "mathematical software",
+	"cs.NA":              "numerical analysis",
+	"cs.NE":              "neural and evolutionary computing",
+	"cs.NI":              "networking and internet architecture",
+	"cs.OH":              "other computer science",
+	"cs.OS":              "operating systems",
+	"cs.PF":              "performance",
+	"cs.PL":              "programming languages",
+	"cs.RO":              "robotics",
+	"cs.SC":              "symbolic computation",
+	"cs.SD":              "sound",
+	"cs.SE":              "software engineering",
+	"cs.SI":              "social and information networks",
+	"cs.SY":              "systems and control",
+	"econ":               "economics",
+	"eess":               "electrical engineering and systems science",
+	"gr-qc":              "general relativity and quantum cosmology",
+	"hep-ex":             "high energy physics experiment",
+	"hep-lat":            "high energy physics lattice",
+	"hep-ph":             "high energy physics phenomenology",
+	"hep-th":             "high energy physics theory",
+	"math":               "mathematics",
+	"math-ph":            "mathematical physics",
+	"nlin":               "nonlinear sciences",
+	"nucl-ex":            "nuclear experiment",
+	"nucl-th":            "nuclear theory",
+	"physics":            "physics",
+	"q-bio":              "quantitative biology",
+	"q-fin":              "quantitative finance",
+	"quant-ph":           "quantum physics",
+	"stat":               "statistics",
+	"stat.ML":            "machine learning statistics",
+}
+
+func categoryDisplayName(category string) string {
+	if name, ok := categoryDisplayNames[category]; ok {
+		return name
+	}
+	if idx := strings.LastIndex(category, "."); idx > 0 {
+		if name, ok := categoryDisplayNames[category[:idx]]; ok {
+			return name
+		}
+	}
+	return category
+}
+
+func categoryTitle(category string) string {
+	displayName := categoryDisplayName(category)
+	if displayName == category {
+		return fmt.Sprintf("arXiv %s papers", category)
+	}
+	return fmt.Sprintf("arXiv %s papers: %s", category, displayName)
+}
+
+func categoryDescription(category string, papers []arxiv.Paper) string {
+	displayName := categoryDisplayName(category)
+	paperCount := len(papers)
+	if paperCount <= 0 {
+		if displayName == category {
+			return fmt.Sprintf("Browse arXiv %s papers on arXiv.gg with authors, abstracts, PDFs, categories, and semantic search.", category)
+		}
+		return fmt.Sprintf("Browse arXiv %s (%s) papers on arXiv.gg with authors, abstracts, PDFs, categories, and semantic search.", category, displayName)
+	}
+	if displayName == category {
+		return fmt.Sprintf("Browse %d arXiv %s papers on arXiv.gg with authors, abstracts, PDFs, categories, and semantic search.", paperCount, category)
+	}
+	return fmt.Sprintf("Browse %d arXiv %s (%s) papers on arXiv.gg with authors, abstracts, PDFs, categories, and semantic search.", paperCount, category, displayName)
+}
+
+func categoryStructuredData(category string, papers []arxiv.Paper) template.JS {
+	limit := len(papers)
+	if limit > 20 {
+		limit = 20
+	}
+	items := make([]map[string]any, 0, limit)
+	for i := 0; i < limit; i++ {
+		paper := papers[i]
+		items = append(items, map[string]any{
+			"@type":    "ListItem",
+			"position": i + 1,
+			"url":      canonicalURL(paperPath(paper.ID)),
+			"name":     paper.Title,
+		})
+	}
+
+	data := map[string]any{
+		"@context":    "https://schema.org",
+		"@type":       "CollectionPage",
+		"name":        categoryTitle(category) + " - arXiv.gg",
+		"description": categoryDescription(category, papers),
+		"url":         canonicalURL(categoryPath(category)),
+		"about":       []string{category, categoryDisplayName(category)},
+		"mainEntity": map[string]any{
 			"@type":           "ItemList",
 			"numberOfItems":   len(papers),
 			"itemListElement": items,
@@ -1487,6 +1681,11 @@ func (s *server) handleCategory(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	canonicalCategory := strings.TrimRight(category, "/")
+	if canonicalCategory != category {
+		http.Redirect(w, r, categoryPath(canonicalCategory), http.StatusMovedPermanently)
+		return
+	}
 
 	ctx := r.Context()
 	papers, err := s.cache.ListPapers(ctx, category, 0, 200)
@@ -1496,9 +1695,13 @@ func (s *server) handleCategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":    "Category: " + category,
-		"Category": category,
-		"Papers":   papers,
+		"Title":          categoryTitle(category),
+		"Description":    categoryDescription(category, papers),
+		"CanonicalURL":   canonicalURL(categoryPath(category)),
+		"StructuredData": categoryStructuredData(category, papers),
+		"Category":       category,
+		"DisplayName":    categoryDisplayName(category),
+		"Papers":         papers,
 	}
 	templates.ExecuteTemplate(w, "category", data)
 }
@@ -1512,8 +1715,10 @@ func (s *server) handleCategories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":      "Categories",
-		"Categories": categories,
+		"Title":        "arXiv categories",
+		"Description":  fmt.Sprintf("Browse %d arXiv categories on arXiv.gg, including machine learning, quantum physics, condensed matter, astrophysics, math, and more.", len(categories)),
+		"CanonicalURL": canonicalURL("/categories"),
+		"Categories":   categories,
 	}
 	templates.ExecuteTemplate(w, "categories", data)
 }

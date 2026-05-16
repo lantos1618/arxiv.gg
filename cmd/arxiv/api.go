@@ -593,13 +593,17 @@ func (s *server) handleAPIStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Include live connection count
+	coverage := s.coverageSignal(stats)
 	response := map[string]interface{}{
-		"TotalPapers":       stats.TotalPapers,
-		"PDFsDownloaded":    stats.PDFsDownloaded,
-		"SourcesDownloaded": stats.SourcesDownloaded,
-		"QueuedDownloads":   stats.QueuedDownloads,
-		"EmbeddingsCount":   stats.EmbeddingsCount,
-		"SSEConnections":    s.paperBroadcast.Count(),
+		"TotalPapers":                  stats.TotalPapers,
+		"PDFsDownloaded":               stats.PDFsDownloaded,
+		"SourcesDownloaded":            stats.SourcesDownloaded,
+		"QueuedDownloads":              stats.QueuedDownloads,
+		"EmbeddingsCount":              stats.EmbeddingsCount,
+		"SSEConnections":               s.paperBroadcast.Count(),
+		"OfficialArxivPapers":          coverage.OfficialTotal,
+		"OfficialArxivPapersAsOf":      coverage.AsOf,
+		"OfficialArxivCoveragePercent": coverage.Percent,
 	}
 
 	respondJSON(w, http.StatusOK, APIResponse{

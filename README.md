@@ -1,187 +1,192 @@
-# arxiv
+# arxiv.gg
 
-arxiv is an offline arXiv paper cache manager.
+arxiv.gg is a fast, searchable arXiv discovery app with semantic search, citation graphs, author pages, category pages, exports, and an SEO-friendly public paper index.
 
-## Requirements
+[Live site](https://arxiv.gg) · [CLI docs](docs/CLI.md) · [API docs](docs/API.md) · [Deployment runbook](docs/DEPLOYMENT_RUNBOOK_2026-05-15.md) · [SEO report](docs/SEO_INDEXING_REPORT_2026-05-16.md)
 
-- Go 1.20 or higher
-- Python 3 (for semantic search embeddings)
+## What It Does
 
-It provides tools to fetch, cache, search, and browse arXiv papers locally, including TeX source files, PDFs, and extracted citation graphs.
-## Usage
+- Browses paper pages at canonical `/abs/{id}` URLs.
+- Searches papers by keyword, PDF text, category, author, and semantic similarity.
+- Shows paper metadata, abstracts, PDFs, citation relationships, and export formats.
+- Builds author and category discovery pages for long-tail research browsing.
+- Serves a REST API for papers, search, embeddings, citations, stats, and exports.
+- Publishes full-corpus sitemap shards and IndexNow submissions for faster search indexing.
 
-	arxiv <command> [options]
+## Current Production Shape
 
-## Commands
+- Go web app and CLI.
+- PostgreSQL with pgvector in production.
+- SQLite fallback for local/offline use.
+- Python embedding service using sentence-transformers.
+- Docker Compose deployment with app and database health checks.
+- Cloudflare tunnel in front of `https://arxiv.gg`.
+- Public sitemap index covering 600k+ paper URLs.
 
-	fetch      Fetch and download specific papers
-	sync       Sync paper metadata from arXiv OAI-PMH (bulk)
-	stats      Show cache statistics
-	search     Search cached papers (full-text search)
-	get        Get a specific paper's info
-	ls         List cached papers (alias: list)
-	reindex    Rebuild search index and citations
-	serve      Start web server to browse cached papers
+## Quick Start
 
-## Environment
-
-	ARXIV_CACHE    Cache directory (default: ~/.cache/arxiv)
-
-## Fetching Papers
-
-Fetch downloads paper metadata, TeX source, and optionally PDF:
-
-	arxiv fetch 2301.00001              # Fetch paper + TeX source
-	arxiv fetch -pdf 2301.00001         # Fetch paper + PDF only
-	arxiv fetch -all 2301.00001         # Fetch paper + source + PDF
-	arxiv fetch 2301.00001 2302.12345   # Fetch multiple papers
-
-To enable semantic search immediately when fetching:
-
-	arxiv fetch --with-embedding 2301.00001  # Fetch + generate embedding
-
-The fetch command also extracts citation references from TeX source files and stores them in the local database for graph visualization.
-
-## Listing Papers
-
-List cached papers with various filters:
-
-	arxiv ls                            # List all cached papers
-	arxiv ls cs.AI                      # List papers in category cs.AI
-	arxiv ls -src                       # Only papers with source downloaded
-	arxiv ls -n 50                      # Limit to 50 results
-	arxiv ls -a                         # Include metadata-only papers
-
-## Searching
-
-Full-text search across titles and abstracts:
-
-	arxiv search "transformer attention"
-	arxiv search -category cs.CL "language model"
-	arxiv search -limit 50 "neural network"
-
-### Semantic Search
-
-Search papers by semantic similarity (requires embeddings):
+Build the CLI:
 
 ```bash
-# Option 1: Generate embeddings for all papers in cache
-arxiv reindex --embeddings
-
-# Option 2: Generate embeddings with limit (faster)
-arxiv reindex --embeddings --limit 1000
-
-# Option 3: Auto-generate when fetching new papers
-arxiv fetch --with-embedding 2301.00001
-
-# Option 4: Use Python script directly
-pip3 install -r tools/requirements.txt
-python3 tools/generate_embeddings.py ~/.cache/arxiv --limit 1000
-
-# Start server and use semantic search in web UI
-arxiv serve
+go build -o bin/arxiv ./cmd/arxiv
 ```
 
-Semantic search finds papers by concept, not just keywords. For example, searching "attention mechanisms" will return papers about attention even if they don't use those exact words.
+Run a small local cache with SQLite:
 
-**Note:** Embeddings are stored as ~1.5KB per paper. For 10,000 papers, this requires ~15MB storage.
+```bash
+export ARXIV_CACHE="$HOME/.cache/arxiv"
+./bin/arxiv sync -set cs -from 2024-01-01
+./bin/arxiv serve -port 8080
+```
 
-## Web Interface
+Open `http://localhost:8080`.
 
-Start a local web server to browse papers with a citation graph visualization:
+Fetch a specific paper:
 
-	arxiv serve                         # Start on default port 8080
-	arxiv serve -port 3000              # Start on custom port
+```bash
+./bin/arxiv fetch 1706.03762
+./bin/arxiv fetch -pdf 1706.03762
+```
 
-The web interface provides:
+Search locally:
 
-  - Full-text search with real-time results
-  - Semantic search by concept (requires embeddings)
-  - Paper detail pages with abstracts and metadata
-  - Interactive D3.js citation graph visualization
-  - Category and author browsing
-  - Direct arXiv ID/URL input for fetching new papers
-  - Export papers as BibTeX, RIS, or JSON
-  - REST API for programmatic access (see API.md)
+```bash
+./bin/arxiv search "attention mechanism"
+./bin/arxiv search -category cs.CL "language model"
+```
+
+## Web App
+
+The web interface includes:
+
+- Fast keyword search with live results.
+- Semantic search when embeddings are available.
+- Paper pages with abstracts, authors, categories, PDFs, source links, and export actions.
+- Citation graph visualization.
+- Author profiles with publication history and collaborators.
+- Category pages with canonical URLs, meta descriptions, and structured data.
+- `/health` for container and uptime monitoring.
 
 ## REST API
 
-A complete REST API is available at `/api/v1/` for programmatic access:
+All API routes live under `/api/v1`.
+
+Examples:
 
 ```bash
-# Get paper metadata
-curl http://localhost:8080/api/v1/papers/2301.00001
-
-# Search papers (keyword)
-curl "http://localhost:8080/api/v1/search?q=transformer&limit=10"
-
-# Search papers (semantic, requires embeddings)
-curl "http://localhost:8080/api/v1/search/semantic?q=attention mechanism&limit=10"
-
-# Export as BibTeX
-curl http://localhost:8080/api/v1/papers/2301.00001/export/bibtex
-
-# Get citation graph
-curl http://localhost:8080/api/v1/papers/2301.00001/graph
+curl https://arxiv.gg/api/v1/stats
+curl https://arxiv.gg/api/v1/papers/1706.03762
+curl "https://arxiv.gg/api/v1/search?q=transformer&limit=10"
+curl "https://arxiv.gg/api/v1/search/semantic?q=attention+mechanisms&limit=10"
+curl https://arxiv.gg/api/v1/papers/1706.03762/export/bibtex
 ```
 
-See [docs/API.md](docs/API.md) for complete API documentation.
+See [docs/API.md](docs/API.md) for endpoint details.
 
-## Export Features
+## Semantic Search
 
-Papers can be exported in multiple formats:
+Embeddings are generated from paper title and abstract text.
 
-- **BibTeX**: `/paper/{id}/export/bibtex` or `/api/v1/papers/{id}/export/bibtex`
-- **RIS**: `/paper/{id}/export/ris` or `/api/v1/papers/{id}/export/ris`
-- **JSON**: `/paper/{id}/export/json` or `/api/v1/papers/{id}/export/json`
+Local batch generation:
 
-## Performance Features
+```bash
+pip3 install -r tools/requirements.txt
+python3 tools/generate_embeddings.py "$ARXIV_CACHE" --limit 1000
+```
 
-- **HTTP Caching**: Responses cached with ETag support (5 minutes)
-- **LRU Cache**: In-memory cache for 500,000 most recently accessed papers (~500MB-1GB memory)
-  - LRU = Least Recently Used (eviction algorithm)
-  - Automatically evicts least-recently-used entries when full
-- **Rate Limiting**: 100 requests/minute per IP to prevent abuse
+CLI generation:
 
-## Syncing Metadata
+```bash
+./bin/arxiv reindex --embeddings --limit 1000
+./bin/arxiv fetch --with-embedding 2301.00001
+```
 
-Bulk sync paper metadata from arXiv's OAI-PMH API:
+Production uses PostgreSQL and pgvector; local development can fall back to SQLite.
 
-	arxiv sync                          # Sync all papers (slow, ~2.4M records)
-	arxiv sync -set cs                  # Sync only computer science papers
-	arxiv sync -from 2024-01-01         # Sync papers from date
+## SEO And Indexing
 
-Note: This downloads metadata only, not source files or PDFs. Use 'arxiv fetch' to download individual papers with full content.
+arxiv.gg is built for crawlable research pages:
 
-## Cache Structure
+- Self-referencing canonical URLs.
+- Paper `ScholarlyArticle` JSON-LD.
+- Author `ProfilePage` JSON-LD.
+- Category `CollectionPage` and `ItemList` JSON-LD.
+- Full sitemap index at `https://arxiv.gg/sitemap.xml`.
+- Paper sitemap shards at `/sitemaps/papers-N.xml`.
+- Public IndexNow key file.
 
-The cache is stored in ARXIV\_CACHE (default ~/.cache/arxiv):
+Submit changed URLs to IndexNow:
 
-	~/.cache/arxiv/
-	├── index.db          # SQLite database with metadata and FTS index
-	├── pdf/              # Downloaded PDF files
-	├── src/              # Extracted TeX source directories
-	└── meta/             # Raw metadata files
+```bash
+python3 tools/submit_indexnow.py --url https://arxiv.gg/category/cs.LG
+python3 tools/submit_indexnow.py --file changed-urls.txt
+python3 tools/submit_indexnow.py --sitemap https://arxiv.gg/sitemap.xml --limit 1000
+```
 
-## Examples
+See [docs/SEO_INDEXING_REPORT_2026-05-16.md](docs/SEO_INDEXING_REPORT_2026-05-16.md) for the current indexing plan.
 
-	# Fetch a paper and view it in web UI
-	arxiv fetch 2301.00001
-	arxiv serve
+## Production Deploy
 
-	# Search for papers and fetch interesting ones
-	arxiv search "attention mechanism"
-	arxiv fetch 1706.03762
+Production is managed with Docker Compose. The important rule: preserve the existing Postgres volume because it contains the paper cache and embeddings.
 
-	# Enable semantic search (batch)
-	arxiv reindex --embeddings --limit 1000
-	arxiv serve  # Then use semantic search in web UI
+App-only redeploy:
 
-	# Enable semantic search (fetch with embedding)
-	arxiv fetch --with-embedding 2301.00001 2301.00002
+```bash
+docker compose build arxiv
+docker compose up -d --no-deps arxiv
+curl -fsS http://127.0.0.1/health
+```
 
-	# List all AI papers with source code
-	arxiv ls -src cs.AI
+Do not recreate the database volume during routine app deploys.
 
-	# Rebuild the citation graph after manual edits
-	arxiv reindex
+Required environment:
+
+```bash
+DATABASE_URL=postgres://...
+ADMIN_TOKEN=...
+POSTGRES_PASSWORD=...
+TRUST_PROXY_HEADERS=true
+INDEXNOW_KEY=...
+```
+
+See [docs/DEPLOYMENT_RUNBOOK_2026-05-15.md](docs/DEPLOYMENT_RUNBOOK_2026-05-15.md) for the full safe-deploy flow.
+
+## Repository Map
+
+```text
+cmd/arxiv/              Web server, CLI entrypoint, templates, API handlers
+tools/                  Embedding service, embedding jobs, IndexNow submitter
+docs/                   API, deployment, SEO, performance, and infra reports
+cache.go                Cache/database initialization
+search.go               Keyword/category/author search
+search_embeddings.go    Semantic search
+citations.go            Citation graph and reference lookup
+export_sitemap.go       Sitemap index and sitemap shard generation
+docker-compose.yml      Production compose services
+```
+
+## Development
+
+Run tests:
+
+```bash
+go test ./...
+python3 -m py_compile tools/submit_indexnow.py
+```
+
+Format Go changes:
+
+```bash
+gofmt -w .
+```
+
+Check production health:
+
+```bash
+curl -fsS https://arxiv.gg/health
+curl -fsS https://arxiv.gg/sitemap.xml
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

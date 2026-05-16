@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -131,6 +132,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/pdf/", srv.handlePDF)
 	mux.HandleFunc("/robots.txt", srv.handleRobots)
 	mux.HandleFunc("/sitemap.xml", srv.handleSitemap)
+	mux.HandleFunc("/sitemap-static.xml", srv.handleStaticSitemap)
+	mux.HandleFunc("/sitemaps/", srv.handlePaperSitemap)
 	mux.HandleFunc("/BingSiteAuth.xml", srv.handleBingSiteAuth)
 	mux.HandleFunc("/favicon.ico", srv.handleFavicon)
 	mux.HandleFunc("/favicon.svg", srv.handleFavicon)
@@ -230,13 +233,10 @@ type paperWithEmbedding struct {
 	HasEmbedding bool
 }
 
-// sitemapURLs collects the public, crawlable URLs for the sitemap.
-// It currently includes:
-//   - Home page
-//   - Categories index
-//   - Individual categories
-//   - Recently updated papers for each category
-func (s *server) sitemapURLs(ctx context.Context) (arxiv.SitemapURLSet, error) {
+const sitemapPaperURLLimit = 50000
+
+// staticSitemapURLs collects public, crawlable non-paper URLs.
+func (s *server) staticSitemapURLs(ctx context.Context) (arxiv.SitemapURLSet, error) {
 	base := arxiv.SiteBaseURL()
 
 	var urls arxiv.SitemapURLSet
@@ -271,35 +271,104 @@ func (s *server) sitemapURLs(ctx context.Context) (arxiv.SitemapURLSet, error) {
 			ChangeFreq: "daily",
 			Priority:   0.7,
 		})
-
-		// A capped number of recent papers per category
-		papers, err := s.cache.ListPapers(ctx, c.Name, 0, 50)
-		if err != nil {
-			continue
-		}
-		for _, p := range papers {
-			lastMod := p.Updated
-			urls = append(urls, arxiv.SitemapURL{
-				Loc:        fmt.Sprintf("%s/abs/%s", base, p.ID),
-				LastMod:    &lastMod,
-				ChangeFreq: "weekly",
-				Priority:   0.6,
-			})
-		}
 	}
 
 	return urls, nil
 }
 
-// handleSitemap serves the XML sitemap at /sitemap.xml.
-func (s *server) handleSitemap(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+func (s *server) sitemapIndex(ctx context.Context) (arxiv.SitemapIndex, error) {
+	base := arxiv.SiteBaseURL()
+	count, err := s.cache.CountSitemapPapers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	index := arxiv.SitemapIndex{
+		{Loc: base + "/sitemap-static.xml"},
+	}
+
+	chunks := int((count + sitemapPaperURLLimit - 1) / sitemapPaperURLLimit)
+	for i := 1; i <= chunks; i++ {
+		index = append(index, arxiv.SitemapIndexEntry{
+			Loc: fmt.Sprintf("%s/sitemaps/papers-%d.xml", base, i),
+		})
+	}
+
+	return index, nil
+}
+
+func (s *server) paperSitemapURLs(ctx context.Context, page int) (arxiv.SitemapURLSet, error) {
+	if page < 1 {
+		return nil, fmt.Errorf("invalid sitemap page")
+	}
+
+	papers, err := s.cache.ListSitemapPapers(ctx, (page-1)*sitemapPaperURLLimit, sitemapPaperURLLimit)
+	if err != nil {
+		return nil, err
+	}
+	if len(papers) == 0 {
+		return nil, os.ErrNotExist
+	}
+
+	base := arxiv.SiteBaseURL()
+	urls := make(arxiv.SitemapURLSet, 0, len(papers))
+	for _, p := range papers {
+		lastMod := p.Updated
+		urls = append(urls, arxiv.SitemapURL{
+			Loc:        fmt.Sprintf("%s/abs/%s", base, p.ID),
+			LastMod:    &lastMod,
+			ChangeFreq: "weekly",
+			Priority:   0.6,
+		})
+	}
+	return urls, nil
+}
+
+func writeXML(w http.ResponseWriter, r *http.Request, data []byte) {
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(data)
+	}
+}
+
+func rejectNonGetHead(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	return false
+}
+
+// handleSitemap serves the sitemap index at /sitemap.xml.
+func (s *server) handleSitemap(w http.ResponseWriter, r *http.Request) {
+	if rejectNonGetHead(w, r) {
+		return
+	}
+	ctx := r.Context()
+	index, err := s.sitemapIndex(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	ctx := r.Context()
-	urls, err := s.sitemapURLs(ctx)
+	data, err := arxiv.BuildSitemapIndexXML(index)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeXML(w, r, data)
+}
+
+// handleStaticSitemap serves top-level and category URLs.
+func (s *server) handleStaticSitemap(w http.ResponseWriter, r *http.Request) {
+	if rejectNonGetHead(w, r) {
+		return
+	}
+
+	urls, err := s.staticSitemapURLs(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -311,9 +380,45 @@ func (s *server) handleSitemap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	writeXML(w, r, data)
+}
+
+// handlePaperSitemap serves chunked paper sitemap files under /sitemaps/.
+func (s *server) handlePaperSitemap(w http.ResponseWriter, r *http.Request) {
+	if rejectNonGetHead(w, r) {
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/sitemaps/")
+	if !strings.HasPrefix(name, "papers-") || !strings.HasSuffix(name, ".xml") {
+		http.NotFound(w, r)
+		return
+	}
+
+	pageText := strings.TrimSuffix(strings.TrimPrefix(name, "papers-"), ".xml")
+	page, err := strconv.Atoi(pageText)
+	if err != nil || page < 1 {
+		http.NotFound(w, r)
+		return
+	}
+
+	urls, err := s.paperSitemapURLs(r.Context(), page)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data, err := arxiv.BuildSitemapXML(urls)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeXML(w, r, data)
 }
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -966,8 +1071,7 @@ func (s *server) handleFavicon(w http.ResponseWriter, r *http.Request) {
 // if it exists, otherwise returns a minimal default that points to
 // the sitemap.
 func (s *server) handleRobots(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if rejectNonGetHead(w, r) {
 		return
 	}
 
@@ -980,7 +1084,10 @@ func (s *server) handleRobots(w http.ResponseWriter, r *http.Request) {
 
 	// Fallback minimal robots.txt
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "User-agent: *\nDisallow:\n\nSitemap: %s/sitemap.xml\n", arxiv.SiteBaseURL())
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	if r.Method != http.MethodHead {
+		fmt.Fprintf(w, "User-agent: *\nDisallow:\n\nSitemap: %s/sitemap.xml\n", arxiv.SiteBaseURL())
+	}
 }
 
 // handleBingSiteAuth serves the Bing Webmaster Tools verification file.

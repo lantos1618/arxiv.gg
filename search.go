@@ -308,6 +308,37 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 	return papers, err
 }
 
+// CountSitemapPapers counts paper pages that should be exposed to crawlers.
+func (c *Cache) CountSitemapPapers(ctx context.Context) (int64, error) {
+	var count int64
+	err := c.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*)
+		FROM (
+			SELECT id || '' AS sitemap_id
+			FROM papers
+			GROUP BY id || ''
+		) AS deduped
+	`).Scan(&count).Error
+	return count, err
+}
+
+// ListSitemapPapers lists only the fields needed to generate paper sitemaps.
+func (c *Cache) ListSitemapPapers(ctx context.Context, offset, limit int) ([]Paper, error) {
+	if limit <= 0 {
+		limit = 50000
+	}
+
+	var papers []Paper
+	err := c.db.WithContext(ctx).Raw(`
+		SELECT id || '' AS id, MAX(updated) AS updated
+		FROM papers
+		GROUP BY id || ''
+		ORDER BY id ASC
+		LIMIT ? OFFSET ?
+	`, limit, offset).Scan(&papers).Error
+	return papers, err
+}
+
 // ListPapersFiltered lists papers with various filter options.
 func (c *Cache) ListPapersFiltered(ctx context.Context, category string, srcOnly, all bool, limit int) ([]Paper, error) {
 	query := c.db.WithContext(ctx).Model(&Paper{})

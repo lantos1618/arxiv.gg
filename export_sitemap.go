@@ -19,6 +19,15 @@ type SitemapURL struct {
 // SitemapURLSet represents a collection of URLs for a sitemap.
 type SitemapURLSet []SitemapURL
 
+// SitemapIndexEntry represents one sitemap listed by a sitemap index.
+type SitemapIndexEntry struct {
+	Loc     string
+	LastMod *time.Time
+}
+
+// SitemapIndex represents the sitemap files for a large site.
+type SitemapIndex []SitemapIndexEntry
+
 // SiteBaseURL returns the base URL for the site, using the SITE_URL
 // environment variable when available, falling back to https://arxiv.gg.
 func SiteBaseURL() string {
@@ -84,4 +93,46 @@ func BuildSitemapXML(urls SitemapURLSet) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// BuildSitemapIndexXML generates a sitemap index XML document.
+func BuildSitemapIndexXML(entries SitemapIndex) ([]byte, error) {
+	type xmlSitemap struct {
+		Loc     string  `xml:"loc"`
+		LastMod *string `xml:"lastmod,omitempty"`
+	}
 
+	type sitemapIndex struct {
+		XMLName  xml.Name     `xml:"sitemapindex"`
+		Xmlns    string       `xml:"xmlns,attr"`
+		Sitemaps []xmlSitemap `xml:"sitemap"`
+	}
+
+	const ns = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+	var out sitemapIndex
+	out.Xmlns = ns
+	out.Sitemaps = make([]xmlSitemap, 0, len(entries))
+
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if seen[entry.Loc] {
+			continue
+		}
+		seen[entry.Loc] = true
+
+		xs := xmlSitemap{Loc: entry.Loc}
+		if entry.LastMod != nil {
+			s := entry.LastMod.UTC().Format(time.RFC3339)
+			xs.LastMod = &s
+		}
+		out.Sitemaps = append(out.Sitemaps, xs)
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString(xml.Header)
+	enc := xml.NewEncoder(&buf)
+	enc.Indent("", "  ")
+	if err := enc.Encode(out); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}

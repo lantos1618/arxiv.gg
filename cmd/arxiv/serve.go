@@ -910,6 +910,14 @@ func (s *server) handleAbs(w http.ResponseWriter, r *http.Request) {
 
 // renderPaper contains the core logic for rendering a paper page given an ID.
 func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) {
+	if r.URL.Query().Get("admin_token") != "" {
+		if !s.requireAdmin(w, r) {
+			return
+		}
+		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+		return
+	}
+
 	ctx := r.Context()
 
 	paper, err := s.cache.GetPaper(ctx, id)
@@ -980,6 +988,7 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 		"FetchingSource": fetchingSource,
 		"HasEmbedding":   hasEmbedding,
 		"LocalMode":      s.localMode,
+		"AdminMode":      s.hasAdminAccess(r),
 	}
 	templates.ExecuteTemplate(w, "paper", data)
 }

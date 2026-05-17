@@ -24,19 +24,32 @@ func (s *server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	}
 
 	if !fromCookie {
-		secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-		http.SetCookie(w, &http.Cookie{
-			Name:     adminCookieName,
-			Value:    provided,
-			Path:     "/",
-			Expires:  time.Now().Add(12 * time.Hour),
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			Secure:   secure,
-		})
+		setAdminCookie(w, r, provided)
 	}
 
 	return true
+}
+
+func (s *server) hasAdminAccess(r *http.Request) bool {
+	token := os.Getenv("ADMIN_TOKEN")
+	if token == "" {
+		return false
+	}
+	provided, _ := adminTokenFromRequest(r)
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
+}
+
+func setAdminCookie(w http.ResponseWriter, r *http.Request, token string) {
+	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  time.Now().Add(12 * time.Hour),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	})
 }
 
 func adminTokenFromRequest(r *http.Request) (string, bool) {

@@ -835,7 +835,6 @@ func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	canRegenerate := s.localMode || s.hasAdminAccess(r)
 
 	paper, err := s.cache.GetPaper(ctx, path)
 	if err != nil {
@@ -846,21 +845,7 @@ func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.cache.HasEmbedding(ctx, path) && !canRegenerate {
-		respondJSON(w, http.StatusOK, APIResponse{
-			Success: true,
-			Data: map[string]interface{}{
-				"paperId":       path,
-				"paper":         paper,
-				"hasEmbedding":  true,
-				"alreadyExists": true,
-				"message":       "embedding already exists",
-			},
-		})
-		return
-	}
-
-	if !canRegenerate && s.publicEmbeddingLimiter != nil && !s.publicEmbeddingLimiter.Allow(r) {
+	if s.publicEmbeddingLimiter != nil && !s.publicEmbeddingLimiter.Allow(r) {
 		respondJSON(w, http.StatusTooManyRequests, APIResponse{
 			Success: false,
 			Error:   "embedding generation rate limit exceeded - please retry in a moment",

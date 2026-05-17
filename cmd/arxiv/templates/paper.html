@@ -228,13 +228,10 @@
 
 <div class="actions">
 	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}" aria-label="View PDF"><i class="btn-icon" aria-hidden="true">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit" aria-label="Fetch PDF"><i class="btn-icon" aria-hidden="true">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle" aria-label="Auto-fetch PDFs"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;" aria-live="polite">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer" aria-label="Open PDF on arXiv.org"><i class="btn-icon" aria-hidden="true">📄</i> PDF on arXiv.org</a>{{end}}
-	{{if .CanGenerateEmbedding}}
-	<button class="btn btn-secondary" type="button" id="generate-embedding-btn" aria-label="{{if .CanRegenerateEmbedding}}{{if .HasEmbedding}}Regenerate{{else}}Generate{{end}}{{else}}Generate{{end}} embedding for semantic search"><i class="btn-icon" aria-hidden="true">🧠</i> {{if .CanRegenerateEmbedding}}{{if .HasEmbedding}}Regenerate{{else}}Generate{{end}}{{else}}Generate{{end}} Embedding</button>
+	<button class="btn btn-secondary" type="button" id="generate-embedding-btn" aria-label="{{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} embedding for semantic search"><i class="btn-icon" aria-hidden="true">🧠</i> {{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} Embedding</button>
 	<label class="auto-fetch"><input type="checkbox" id="auto-embed-toggle" aria-label="Auto-generate embeddings"> Auto-embed</label>
-	{{end}}
 	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer" aria-label="View on arxiv.org"><i class="btn-icon" aria-hidden="true">↗</i> arxiv.org</a>
 </div>
-{{if .CanGenerateEmbedding}}
 <div class="terminal" id="embedding-terminal">
 	<div class="terminal-header">
 		<span class="terminal-dot red"></span>
@@ -244,7 +241,6 @@
 	</div>
 	<div class="terminal-body" id="terminal-output"></div>
 </div>
-{{end}}
 {{if .FetchingSource}}<div class="loading" id="source-status">Fetching TeX source and extracting references...</div>{{end}}
 <div class="links">
 	<a href="{{.Paper.AbstractURL}}">Original on arxiv.org</a>
@@ -694,14 +690,12 @@
 		});
 	}
 
-	{{if .CanGenerateEmbedding}}
 	// Handle embedding generation with terminal UI
 	const embeddingBtn = document.getElementById('generate-embedding-btn');
 	const terminal = document.getElementById('embedding-terminal');
 	const terminalOutput = document.getElementById('terminal-output');
 	let isGenerating = false;
 	let hasExistingEmbedding = {{if .HasEmbedding}}true{{else}}false{{end}};
-	const canRegenerateEmbedding = {{if .CanRegenerateEmbedding}}true{{else}}false{{end}};
 
 	function terminalWrite(text, className = '') {
 		const line = document.createElement('div');
@@ -749,7 +743,7 @@
 		await new Promise(r => setTimeout(r, 200));
 		
 		if (hasExistingEmbedding) {
-			terminalWrite(canRegenerateEmbedding ? 'Existing embedding found, regenerating...' : 'Existing embedding found, skipping regeneration...', 'info');
+			terminalWrite('Existing embedding found, regenerating...', 'info');
 			await new Promise(r => setTimeout(r, 150));
 		}
 		terminalWrite('Loading sentence-transformers model...', 'info');
@@ -769,7 +763,7 @@
 			await new Promise(r => setTimeout(r, 400));
 			
 			if (data.success) {
-				terminalWrite(data.data?.alreadyExists ? 'Embedding already exists in database' : 'Embedding stored in database', 'output');
+				terminalWrite('Embedding stored in database', 'output');
 				await new Promise(r => setTimeout(r, 150));
 				terminalWrite('Done! Embedding ready for ' + paperID, 'success');
 				hasExistingEmbedding = true;
@@ -778,18 +772,14 @@
 					status.innerHTML = ' · <span class="badge badge-embed">🧠 embedded</span>';
 				}
 				if (embeddingBtn) {
-					if (canRegenerateEmbedding) {
-						embeddingBtn.innerHTML = '<i class="btn-icon" aria-hidden="true">🧠</i> Regenerate Embedding';
-						embeddingBtn.setAttribute('aria-label', 'Regenerate embedding for semantic search');
-					} else {
-						embeddingBtn.innerHTML = '<i class="btn-icon" aria-hidden="true">🧠</i> Embedded';
-					}
+					embeddingBtn.innerHTML = '<i class="btn-icon" aria-hidden="true">🧠</i> Regenerate Embedding';
+					embeddingBtn.setAttribute('aria-label', 'Regenerate embedding for semantic search');
 				}
 				
 				setTimeout(() => {
 					terminal.classList.remove('active');
 					isGenerating = false;
-					embeddingBtn.disabled = !canRegenerateEmbedding;
+					embeddingBtn.disabled = false;
 				}, 3000);
 			} else {
 				throw new Error(data.error || 'Generation failed');
@@ -818,7 +808,6 @@
 			setTimeout(runEmbeddingGeneration, 500);
 		}
 	}
-	{{end}}
 
 	// Initial graph load
 	refreshGraph();

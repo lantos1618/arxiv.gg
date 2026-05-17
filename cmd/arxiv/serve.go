@@ -980,25 +980,20 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 	// Note: Client handles prefetch via /prefetch-refs endpoint
 
 	hasEmbedding := s.cache.HasEmbedding(ctx, id)
-	adminMode := s.hasAdminAccess(r)
-	canRegenerateEmbedding := s.localMode || adminMode
 
 	data := map[string]any{
-		"Title":                  paper.Title,
-		"Description":            summaryText(paper.Abstract, 160),
-		"CanonicalURL":           canonicalURL(paperPath(paper.ID)),
-		"StructuredData":         paperStructuredData(paper),
-		"Paper":                  paper,
-		"Files":                  files,
-		"PaperList":              paperList,
-		"UncachedCount":          uncachedCount,
-		"CitedByCount":           citedByCount,
-		"FetchingSource":         fetchingSource,
-		"HasEmbedding":           hasEmbedding,
-		"CanGenerateEmbedding":   canRegenerateEmbedding || !hasEmbedding,
-		"CanRegenerateEmbedding": canRegenerateEmbedding,
-		"LocalMode":              s.localMode,
-		"AdminMode":              adminMode,
+		"Title":          paper.Title,
+		"Description":    summaryText(paper.Abstract, 160),
+		"CanonicalURL":   canonicalURL(paperPath(paper.ID)),
+		"StructuredData": paperStructuredData(paper),
+		"Paper":          paper,
+		"Files":          files,
+		"PaperList":      paperList,
+		"UncachedCount":  uncachedCount,
+		"CitedByCount":   citedByCount,
+		"FetchingSource": fetchingSource,
+		"HasEmbedding":   hasEmbedding,
+		"LocalMode":      s.localMode,
 	}
 	templates.ExecuteTemplate(w, "paper", data)
 }

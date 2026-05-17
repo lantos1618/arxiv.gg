@@ -228,10 +228,13 @@
 
 <div class="actions">
 	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}" aria-label="View PDF"><i class="btn-icon" aria-hidden="true">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit" aria-label="Fetch PDF"><i class="btn-icon" aria-hidden="true">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle" aria-label="Auto-fetch PDFs"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;" aria-live="polite">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer" aria-label="Open PDF on arXiv.org"><i class="btn-icon" aria-hidden="true">📄</i> PDF on arXiv.org</a>{{end}}
+	{{if .LocalMode}}
 	<button class="btn btn-secondary" type="button" id="generate-embedding-btn" aria-label="{{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} embedding for semantic search"><i class="btn-icon" aria-hidden="true">🧠</i> {{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} Embedding</button>
 	<label class="auto-fetch"><input type="checkbox" id="auto-embed-toggle" aria-label="Auto-generate embeddings"> Auto-embed</label>
+	{{end}}
 	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer" aria-label="View on arxiv.org"><i class="btn-icon" aria-hidden="true">↗</i> arxiv.org</a>
 </div>
+{{if .LocalMode}}
 <div class="terminal" id="embedding-terminal">
 	<div class="terminal-header">
 		<span class="terminal-dot red"></span>
@@ -241,6 +244,7 @@
 	</div>
 	<div class="terminal-body" id="terminal-output"></div>
 </div>
+{{end}}
 {{if .FetchingSource}}<div class="loading" id="source-status">Fetching TeX source and extracting references...</div>{{end}}
 <div class="links">
 	<a href="{{.Paper.AbstractURL}}">Original on arxiv.org</a>
@@ -690,6 +694,7 @@
 		});
 	}
 
+	{{if .LocalMode}}
 	// Handle embedding generation with terminal UI
 	const embeddingBtn = document.getElementById('generate-embedding-btn');
 	const terminal = document.getElementById('embedding-terminal');
@@ -800,6 +805,7 @@
 			setTimeout(runEmbeddingGeneration, 500);
 		}
 	}
+	{{end}}
 
 	// Initial graph load
 	refreshGraph();

@@ -666,21 +666,10 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if generateEmbedding {
-		cmd := exec.Command("python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--paper-id", path)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
+		if _, err := s.generatePaperEmbedding(ctx, paper); err != nil {
 			respondJSON(w, http.StatusInternalServerError, APIResponse{
 				Success: false,
-				Error:   fmt.Sprintf("failed to generate embedding: %v, output: %s", err, string(output)),
-			})
-			return
-		}
-
-		outputStr := strings.TrimSpace(string(output))
-		if strings.HasPrefix(outputStr, "ERROR:") {
-			respondJSON(w, http.StatusInternalServerError, APIResponse{
-				Success: false,
-				Error:   outputStr,
+				Error:   fmt.Sprintf("failed to generate embedding: %v", err),
 			})
 			return
 		}
@@ -853,21 +842,11 @@ func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := exec.Command("python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--paper-id", path)
-	output, err := cmd.CombinedOutput()
+	generator, err := s.generatePaperEmbedding(ctx, paper)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, APIResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to generate embedding: %v, output: %s", err, string(output)),
-		})
-		return
-	}
-
-	outputStr := strings.TrimSpace(string(output))
-	if strings.HasPrefix(outputStr, "ERROR:") {
-		respondJSON(w, http.StatusInternalServerError, APIResponse{
-			Success: false,
-			Error:   outputStr,
+			Error:   fmt.Sprintf("failed to generate embedding: %v", err),
 		})
 		return
 	}
@@ -878,9 +857,88 @@ func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 			"paperId":      path,
 			"paper":        paper,
 			"hasEmbedding": true,
+			"generator":    generator,
 			"message":      "embedding generated successfully",
 		},
 	})
+}
+
+func (s *server) generatePaperEmbedding(ctx context.Context, paper *arxiv.Paper) (string, error) {
+	if s.embeddingServiceURL != "" {
+		if err := s.generatePaperEmbeddingHTTP(ctx, paper); err == nil {
+			return "embedding-service", nil
+		} else {
+			fmt.Printf("Embedding service paper generation error (falling back to Python): %v\n", err)
+		}
+	}
+
+	if err := s.generatePaperEmbeddingPython(ctx, paper.ID); err != nil {
+		return "", err
+	}
+	return "python-script", nil
+}
+
+func (s *server) generatePaperEmbeddingHTTP(ctx context.Context, paper *arxiv.Paper) error {
+	reqBody := map[string]string{
+		"paper_id": paper.ID,
+		"title":    paper.Title,
+		"abstract": paper.Abstract,
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.embeddingServiceURL+"/embed/paper", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("embedding service request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("embedding service error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode embedding service response: %w", err)
+	}
+	if !result.Success {
+		return fmt.Errorf("embedding service failed: %s", result.Message)
+	}
+
+	return nil
+}
+
+func (s *server) generatePaperEmbeddingPython(ctx context.Context, paperID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--paper-id", paperID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v, output: %s", err, string(output))
+	}
+
+	outputStr := strings.TrimSpace(string(output))
+	if strings.HasPrefix(outputStr, "ERROR:") {
+		return fmt.Errorf("%s", outputStr)
+	}
+
+	return nil
 }
 
 // handleAPIGenerateEmbeddings generates embeddings for all papers

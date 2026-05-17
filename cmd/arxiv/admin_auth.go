@@ -10,6 +10,16 @@ import (
 
 const adminCookieName = "arxiv_admin_token"
 
+type adminTokenSource int
+
+const (
+	adminTokenMissing adminTokenSource = iota
+	adminTokenCookie
+	adminTokenHeader
+	adminTokenBearer
+	adminTokenQuery
+)
+
 func (s *server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	token := os.Getenv("ADMIN_TOKEN")
 	if token == "" {
@@ -17,13 +27,13 @@ func (s *server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
-	provided, fromCookie := adminTokenFromRequest(r)
+	provided, source := adminTokenFromRequest(r)
 	if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 		writeAdminDenied(w, r, http.StatusUnauthorized, "admin token required")
 		return false
 	}
 
-	if !fromCookie {
+	if source == adminTokenQuery && !strings.HasPrefix(r.URL.Path, "/api/") {
 		setAdminCookie(w, r, provided)
 	}
 
@@ -52,21 +62,25 @@ func setAdminCookie(w http.ResponseWriter, r *http.Request, token string) {
 	})
 }
 
-func adminTokenFromRequest(r *http.Request) (string, bool) {
+func adminTokenFromRequest(r *http.Request) (string, adminTokenSource) {
 	if cookie, err := r.Cookie(adminCookieName); err == nil {
-		return cookie.Value, true
+		return cookie.Value, adminTokenCookie
 	}
 
 	if provided := r.Header.Get("X-Admin-Token"); provided != "" {
-		return provided, false
+		return provided, adminTokenHeader
 	}
 
 	auth := r.Header.Get("Authorization")
 	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
-		return strings.TrimSpace(auth[len("bearer "):]), false
+		return strings.TrimSpace(auth[len("bearer "):]), adminTokenBearer
 	}
 
-	return r.URL.Query().Get("admin_token"), false
+	if provided := r.URL.Query().Get("admin_token"); provided != "" {
+		return provided, adminTokenQuery
+	}
+
+	return "", adminTokenMissing
 }
 
 func writeAdminDenied(w http.ResponseWriter, r *http.Request, status int, message string) {

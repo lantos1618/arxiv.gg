@@ -212,7 +212,7 @@ func fetchPaperMetadata(ctx context.Context, id string) (*Paper, error) {
 func fetchPaperMetadataAtom(ctx context.Context, id string) (*Paper, error) {
 	url := fmt.Sprintf("%s?id_list=%s", apiBaseURL, id)
 
-	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, "GET", url, nil)

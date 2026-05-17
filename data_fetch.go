@@ -4,13 +4,25 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const apiBaseURL = "https://export.arxiv.org/api/query"
+const absBaseURL = "https://arxiv.org/abs"
+const arxivFetchUserAgent = "arxiv.gg metadata fetcher (https://arxiv.gg)"
+
+var (
+	metaTagPattern         = regexp.MustCompile(`(?is)<meta\s+[^>]*>`)
+	htmlAttributePattern   = regexp.MustCompile(`(?is)([a-z_:.-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>/]+))`)
+	subjectCellPattern     = regexp.MustCompile(`(?is)<td[^>]*class=["'][^"']*\bsubjects\b[^"']*["'][^>]*>(.*?)</td>`)
+	subjectCategoryPattern = regexp.MustCompile(`\(([a-z][a-z-]*(?:\.[A-Za-z-]+)?)\)`)
+	duplicateSpacePattern  = regexp.MustCompile(`\s+`)
+)
 
 // Fetch retrieves a paper's metadata directly from arXiv API and stores it.
 // This is for fetching individual papers without a full OAI-PMH sync.
@@ -184,12 +196,30 @@ func (c *Cache) FetchAndDownload(ctx context.Context, id string, opts *DownloadO
 }
 
 func fetchPaperMetadata(ctx context.Context, id string) (*Paper, error) {
+	paper, err := fetchPaperMetadataAtom(ctx, id)
+	if err == nil {
+		return paper, nil
+	}
+
+	fallbackPaper, fallbackErr := fetchPaperMetadataHTML(ctx, id)
+	if fallbackErr == nil {
+		return fallbackPaper, nil
+	}
+
+	return nil, fmt.Errorf("%w; html fallback: %v", err, fallbackErr)
+}
+
+func fetchPaperMetadataAtom(ctx context.Context, id string) (*Paper, error) {
 	url := fmt.Sprintf("%s?id_list=%s", apiBaseURL, id)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", arxivFetchUserAgent)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -252,6 +282,163 @@ func fetchPaperMetadata(ctx context.Context, id string) (*Paper, error) {
 	paper.Updated, _ = time.Parse(time.RFC3339, entry.Updated)
 
 	return paper, nil
+}
+
+func fetchPaperMetadataHTML(ctx context.Context, id string) (*Paper, error) {
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "GET", absBaseURL+"/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", arxivFetchUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	paper, err := parseArxivHTMLMetadata(id, string(body))
+	if err != nil {
+		return nil, err
+	}
+	return paper, nil
+}
+
+func parseArxivHTMLMetadata(requestedID, body string) (*Paper, error) {
+	metadata := extractCitationMetadata(body)
+
+	paperID := strings.TrimSpace(firstMetadataValue(metadata, "citation_arxiv_id"))
+	if paperID == "" {
+		paperID = requestedID
+	}
+
+	title := cleanHTMLMetadataText(firstMetadataValue(metadata, "citation_title"))
+	abstract := cleanHTMLMetadataText(firstMetadataValue(metadata, "citation_abstract"))
+	if title == "" || abstract == "" {
+		return nil, fmt.Errorf("missing citation metadata for %s", requestedID)
+	}
+
+	authors := metadata["citation_author"]
+	for i := range authors {
+		authors[i] = normalizeCitationAuthor(cleanHTMLMetadataText(authors[i]))
+	}
+
+	paper := &Paper{
+		ID:         paperID,
+		Title:      title,
+		Abstract:   abstract,
+		Authors:    strings.Join(authors, ", "),
+		Categories: strings.Join(extractHTMLCategories(body), " "),
+		DOI:        cleanHTMLMetadataText(firstMetadataValue(metadata, "citation_doi")),
+	}
+
+	if dateValue := firstMetadataValue(metadata, "citation_date"); dateValue != "" {
+		if created, err := time.Parse("2006/01/02", dateValue); err == nil {
+			paper.Created = created
+			paper.Updated = created
+		}
+	}
+	if dateValue := firstMetadataValue(metadata, "citation_online_date"); dateValue != "" {
+		if updated, err := time.Parse("2006/01/02", dateValue); err == nil {
+			paper.Updated = updated
+			if paper.Created.IsZero() {
+				paper.Created = updated
+			}
+		}
+	}
+
+	return paper, nil
+}
+
+func extractCitationMetadata(body string) map[string][]string {
+	metadata := make(map[string][]string)
+	for _, tag := range metaTagPattern.FindAllString(body, -1) {
+		attrs := extractHTMLAttributes(tag)
+		name := strings.ToLower(attrs["name"])
+		if !strings.HasPrefix(name, "citation_") {
+			continue
+		}
+		metadata[name] = append(metadata[name], attrs["content"])
+	}
+	return metadata
+}
+
+func extractHTMLAttributes(tag string) map[string]string {
+	attrs := make(map[string]string)
+	for _, match := range htmlAttributePattern.FindAllStringSubmatch(tag, -1) {
+		if len(match) < 6 {
+			continue
+		}
+		value := match[3]
+		if value == "" {
+			value = match[4]
+		}
+		if value == "" {
+			value = match[5]
+		}
+		attrs[strings.ToLower(match[1])] = html.UnescapeString(value)
+	}
+	return attrs
+}
+
+func extractHTMLCategories(body string) []string {
+	match := subjectCellPattern.FindStringSubmatch(body)
+	if len(match) < 2 {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var categories []string
+	for _, categoryMatch := range subjectCategoryPattern.FindAllStringSubmatch(match[1], -1) {
+		if len(categoryMatch) < 2 {
+			continue
+		}
+		category := categoryMatch[1]
+		if !seen[category] {
+			seen[category] = true
+			categories = append(categories, category)
+		}
+	}
+	return categories
+}
+
+func firstMetadataValue(metadata map[string][]string, key string) string {
+	values := metadata[strings.ToLower(key)]
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func normalizeCitationAuthor(author string) string {
+	parts := strings.Split(author, ",")
+	if len(parts) != 2 {
+		return author
+	}
+	first := strings.TrimSpace(parts[1])
+	last := strings.TrimSpace(parts[0])
+	if first == "" || last == "" {
+		return author
+	}
+	return first + " " + last
+}
+
+func cleanHTMLMetadataText(value string) string {
+	value = html.UnescapeString(value)
+	value = strings.TrimSpace(value)
+	return duplicateSpacePattern.ReplaceAllString(value, " ")
 }
 
 // Atom feed structures for arXiv API

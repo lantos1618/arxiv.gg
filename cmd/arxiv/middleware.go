@@ -241,53 +241,60 @@ func (rl *rateLimiter) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip := rl.clientIP(r)
-
-		rl.mu.Lock()
-		v, exists := rl.visitors[ip]
-		now := time.Now()
-
-		if !exists || now.Sub(v.lastSeen) > rl.window {
-			v = &visitor{count: 1, lastSeen: now}
-			rl.visitors[ip] = v
-			rl.mu.Unlock()
-			next.ServeHTTP(w, r)
+		if !rl.Allow(r) {
+			writeRateLimitExceeded(w, r)
 			return
 		}
-
-		if v.count >= rl.rate {
-			rl.mu.Unlock()
-
-			// Render a friendlier rate limit response.
-			// For API routes, return structured JSON.
-			if strings.HasPrefix(r.URL.Path, "/api/") {
-				w.Header().Set("Content-Type", "application/json; charset=utf-8")
-				w.WriteHeader(http.StatusTooManyRequests)
-				_ = json.NewEncoder(w).Encode(APIResponse{
-					Success: false,
-					Error:   "rate limit exceeded – please slow down and retry in a moment",
-				})
-				return
-			}
-
-			// For HTML routes, render an error template if available.
-			w.WriteHeader(http.StatusTooManyRequests)
-			data := map[string]any{
-				"Title":   "Too Many Requests",
-				"Message": "You’ve hit the per-IP rate limit. Please wait a bit and try again.",
-			}
-			if err := templates.ExecuteTemplate(w, "error", data); err != nil {
-				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			}
-			return
-		}
-
-		v.count++
-		v.lastSeen = now
-		rl.mu.Unlock()
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (rl *rateLimiter) Allow(r *http.Request) bool {
+	ip := rl.clientIP(r)
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	v, exists := rl.visitors[ip]
+	now := time.Now()
+
+	if !exists || now.Sub(v.lastSeen) > rl.window {
+		rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
+		return true
+	}
+
+	if v.count >= rl.rate {
+		return false
+	}
+
+	v.count++
+	v.lastSeen = now
+	return true
+}
+
+func writeRateLimitExceeded(w http.ResponseWriter, r *http.Request) {
+	// Render a friendlier rate limit response.
+	// For API routes, return structured JSON.
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = json.NewEncoder(w).Encode(APIResponse{
+			Success: false,
+			Error:   "rate limit exceeded - please slow down and retry in a moment",
+		})
+		return
+	}
+
+	// For HTML routes, render an error template if available.
+	w.WriteHeader(http.StatusTooManyRequests)
+	data := map[string]any{
+		"Title":   "Too Many Requests",
+		"Message": "You've hit the per-IP rate limit. Please wait a bit and try again.",
+	}
+	if err := templates.ExecuteTemplate(w, "error", data); err != nil {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+	}
 }
 
 func (rl *rateLimiter) clientIP(r *http.Request) string {

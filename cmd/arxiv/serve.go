@@ -100,6 +100,11 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		indexNowKey:         indexNowKey,
 		officialArxivPapers: officialArxivPapers,
 		officialArxivAsOf:   officialArxivPapersAsOf,
+		publicEmbeddingLimiter: newRateLimiter(
+			6,
+			time.Minute,
+			trustProxyHeaders,
+		),
 	}
 
 	// Start embedding worker if enabled
@@ -191,11 +196,12 @@ type server struct {
 	paperBroadcast *paperBroadcaster
 
 	// Embedding service configuration
-	embeddingServiceURL string
-	embeddingWorker     *arxiv.EmbeddingWorker
-	indexNowKey         string
-	officialArxivPapers int64
-	officialArxivAsOf   string
+	embeddingServiceURL    string
+	embeddingWorker        *arxiv.EmbeddingWorker
+	indexNowKey            string
+	officialArxivPapers    int64
+	officialArxivAsOf      string
+	publicEmbeddingLimiter *rateLimiter
 }
 
 func configuredIndexNowKey() string {
@@ -974,21 +980,25 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 	// Note: Client handles prefetch via /prefetch-refs endpoint
 
 	hasEmbedding := s.cache.HasEmbedding(ctx, id)
+	adminMode := s.hasAdminAccess(r)
+	canRegenerateEmbedding := s.localMode || adminMode
 
 	data := map[string]any{
-		"Title":          paper.Title,
-		"Description":    summaryText(paper.Abstract, 160),
-		"CanonicalURL":   canonicalURL(paperPath(paper.ID)),
-		"StructuredData": paperStructuredData(paper),
-		"Paper":          paper,
-		"Files":          files,
-		"PaperList":      paperList,
-		"UncachedCount":  uncachedCount,
-		"CitedByCount":   citedByCount,
-		"FetchingSource": fetchingSource,
-		"HasEmbedding":   hasEmbedding,
-		"LocalMode":      s.localMode,
-		"AdminMode":      s.hasAdminAccess(r),
+		"Title":                  paper.Title,
+		"Description":            summaryText(paper.Abstract, 160),
+		"CanonicalURL":           canonicalURL(paperPath(paper.ID)),
+		"StructuredData":         paperStructuredData(paper),
+		"Paper":                  paper,
+		"Files":                  files,
+		"PaperList":              paperList,
+		"UncachedCount":          uncachedCount,
+		"CitedByCount":           citedByCount,
+		"FetchingSource":         fetchingSource,
+		"HasEmbedding":           hasEmbedding,
+		"CanGenerateEmbedding":   canRegenerateEmbedding || !hasEmbedding,
+		"CanRegenerateEmbedding": canRegenerateEmbedding,
+		"LocalMode":              s.localMode,
+		"AdminMode":              adminMode,
 	}
 	templates.ExecuteTemplate(w, "paper", data)
 }

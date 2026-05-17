@@ -739,14 +739,14 @@
 		terminalOutput.innerHTML = '';
 		terminal.classList.add('active');
 		
-		await terminalWriteTyping('python3 generate_embeddings.py --paper-id ' + paperID, 'prompt', 15);
+		await terminalWriteTyping('POST /api/v1/papers/' + paperID + '/embeddings', 'prompt', 15);
 		await new Promise(r => setTimeout(r, 200));
 		
 		if (hasExistingEmbedding) {
 			terminalWrite('Existing embedding found, regenerating...', 'info');
 			await new Promise(r => setTimeout(r, 150));
 		}
-		terminalWrite('Loading sentence-transformers model...', 'info');
+		terminalWrite('Using cached sentence-transformers model...', 'info');
 		
 		try {
 			const response = await fetch('/api/v1/papers/' + paperID + '/embeddings', {
@@ -758,6 +758,7 @@
 			
 			await new Promise(r => setTimeout(r, 300));
 			terminalWrite('Model: all-MiniLM-L6-v2 (384 dimensions)', 'output');
+			terminalWrite('Generator: ' + (data.data?.generator || 'embedding-service'), 'output');
 			await new Promise(r => setTimeout(r, 200));
 			terminalWrite('Encoding: "' + (data.data?.paper?.Title || paperID).substring(0, 50) + '..."', 'output');
 			await new Promise(r => setTimeout(r, 400));

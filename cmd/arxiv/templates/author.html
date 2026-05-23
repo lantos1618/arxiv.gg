@@ -3,8 +3,8 @@
 <h1>{{.Author}}</h1>
 
 <div class="author-stats">
-	<span class="stat">{{.PaperCount}} papers</span>
-	<span class="stat" id="collab-count"></span>
+		<span class="stat helpable" tabindex="0" data-help="Cached papers by this author.">{{.PaperCount}} papers</span>
+		<span class="stat helpable" id="collab-count" tabindex="0" data-help="Coauthors found from cached paper metadata."></span>
 	<span id="embed-badge"></span>
 </div>
 
@@ -12,11 +12,11 @@
 <div class="profile-section" id="profile-section">
 	<div class="profile-grid">
 		<div class="profile-card" id="research-areas">
-			<h3>Research Areas</h3>
+				<h3 data-help="Top arXiv categories from this author's cached papers.">Research Areas</h3>
 			<div class="area-bars" id="area-bars"></div>
 		</div>
 		<div class="profile-card" id="timeline">
-			<h3>Publication Timeline</h3>
+				<h3 data-help="Publication volume over time from cached arXiv metadata.">Publication Timeline</h3>
 			<div class="timeline-chart" id="timeline-chart"></div>
 		</div>
 	</div>
@@ -26,7 +26,7 @@
 <div class="author-section">
 	<h2>Collaboration Network</h2>
 	<div class="graph-controls">
-		<label><input type="checkbox" id="depth-toggle"> Show 2nd degree connections</label>
+			<label data-help="Includes collaborators of collaborators, which makes the network broader."><input type="checkbox" id="depth-toggle"> Show 2nd degree connections</label>
 	</div>
 	<div class="graph-container" id="graph-container">
 		<svg id="collab-graph"></svg>
@@ -41,7 +41,7 @@
 
 <div class="author-section" id="similar-section" style="display:none;">
 	<h2>Similar Researchers</h2>
-	<p class="section-desc">Authors working on similar topics (by embedding similarity)</p>
+		<p class="section-desc helpable" tabindex="0" data-help="Finds researchers who publish on similar themes, even if they have not coauthored together.">Authors working on similar topics</p>
 	<div class="similar-list" id="similar-list"></div>
 </div>
 
@@ -49,11 +49,11 @@
 	<h2>Papers ({{len .Papers}})</h2>
 	{{range .Papers}}
 		<div class="paper">
-			<span class="paper-id">{{.ID}}</span>
-			<div class="paper-title"><a href="{{paperPath .ID}}">{{.Title}}</a></div>
+				<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.ID}}</span>
+			<div class="paper-title" data-mathjax><a href="{{paperPath .ID}}">{{.Title}}</a></div>
 			{{$authors := limitAuthors .Authors 12}}
 			<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-			<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
+				<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
 		</div>
 	{{else}}
 	<p>No papers found for this author.</p>
@@ -144,7 +144,7 @@
 				document.getElementById('collab-count').textContent = profile.total_collaborators + ' collaborators';
 			}
 			if (profile.has_embedding) {
-				document.getElementById('embed-badge').innerHTML = '<span class="badge badge-embed">embedding</span>';
+				document.getElementById('embed-badge').innerHTML = '<span class="badge badge-embed helpable" tabindex="0" data-help="This author is ready for similar-researcher matching.">topic profile</span>';
 			}
 
 			// Render research areas

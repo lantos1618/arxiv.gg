@@ -26,20 +26,49 @@
 			const text = root ? root.textContent || '' : '';
 			return /(\$[^$\n]{1,120}\$|\\\(|\\\[|\\begin\{)/.test(text);
 		}
+		let mathRenderQueue = Promise.resolve();
 		window.loadMathJax = function() {
-			if (window.__arxivMathJaxLoading) return;
-			window.__arxivMathJaxLoading = true;
-			window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };
-			const script = document.createElement('script');
-			script.async = true;
-			script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
-			document.head.appendChild(script);
+			if (window.MathJax && window.MathJax.typesetPromise) return Promise.resolve(window.MathJax);
+			if (window.__arxivMathJaxReady) return window.__arxivMathJaxReady;
+			window.__arxivMathJaxReady = new Promise((resolve, reject) => {
+				window.MathJax = {
+					tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], processEscapes: true },
+					startup: {
+						typeset: false,
+						ready: () => {
+							window.MathJax.startup.defaultReady();
+							resolve(window.MathJax);
+						}
+					}
+				};
+				const script = document.createElement('script');
+				script.async = true;
+				script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
+				script.onerror = err => {
+					window.__arxivMathJaxReady = null;
+					reject(err);
+				};
+				document.head.appendChild(script);
+			});
+			return window.__arxivMathJaxReady;
+		};
+		window.typesetMath = function(root) {
+			const candidates = Array.isArray(root) || (window.NodeList && root instanceof NodeList)
+				? Array.from(root)
+				: [root || document.body];
+			const roots = candidates.filter(target => target && hasMath(target));
+			if (roots.length === 0) return Promise.resolve(false);
+			mathRenderQueue = mathRenderQueue
+				.then(() => window.loadMathJax())
+				.then(mj => mj.typesetPromise ? mj.typesetPromise(roots) : false)
+				.catch(err => console.warn('MathJax render failed', err));
+			return mathRenderQueue;
 		};
 		function scheduleMathJax() {
 			if (!hasMath(document.body)) return;
-			const load = window.loadMathJax;
-			if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 1500 });
-			else setTimeout(load, 500);
+			const render = () => window.typesetMath(document.body);
+			if ('requestIdleCallback' in window) requestIdleCallback(render, { timeout: 1500 });
+			else setTimeout(render, 500);
 		}
 		if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleMathJax, { once: true });
 		else scheduleMathJax();
@@ -82,39 +111,94 @@
 		.nav a { margin-right: 1rem; }
 		.meta { font-size: 0.875rem; color: #64748b; margin-bottom: 0.5rem; min-height: 1.5rem; }
 		.meta code { font-family: monospace; background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 3px; }
-		.authors { margin-bottom: 0.5rem; }
-		.authors a { display: inline-flex; align-items: center; min-height: 24px; margin-right: 0.15rem; }
-		.categories { margin-bottom: 1rem; min-height: 1.5rem; }
-		.cat-link { display: inline-flex; align-items: center; min-height: 24px; font-family: monospace; font-size: 0.8rem; background: #f1f5f9; padding: 0 0.5rem; border-radius: 3px; margin-right: 0.25rem; margin-bottom: 0.25rem; }
-		/* Abstract - contain layout for MathJax rendering */
-		.abstract { white-space: pre-wrap; color: #334155; margin-bottom: 1rem; contain: layout style; }
-		/* Actions bar - fixed min-height prevents CLS */
-		.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; min-height: 2.5rem; }
-		.btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 500; background: #1d4ed8; color: #fff; border-radius: 6px; border: none; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; text-decoration: none; height: 2.25rem; }
-		.btn:hover { background: #1e40af; text-decoration: none; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-		.btn:active { transform: translateY(0); }
-		.btn-secondary { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-		.btn-secondary:hover { background: #e2e8f0; color: #334155; }
-		.btn-icon { font-style: normal; }
+			.authors { margin-bottom: 0.5rem; }
+			.authors a { display: inline-flex; align-items: center; min-height: 24px; margin-right: 0.15rem; }
+			.categories { margin-bottom: 1rem; min-height: 1.5rem; }
+			.cat-link { display: inline-flex; align-items: center; min-height: 24px; font-family: monospace; font-size: 0.8rem; background: #f1f5f9; padding: 0 0.5rem; border-radius: 3px; margin-right: 0.25rem; margin-bottom: 0.25rem; }
+			[data-help] { position: relative; }
+			[data-help]::before,
+			[data-help]::after {
+				position: absolute;
+				left: 50%;
+				opacity: 0;
+				pointer-events: none;
+				transform: translate(-50%, -4px);
+				transition: opacity 0.14s ease, transform 0.14s ease;
+				z-index: 1001;
+			}
+			[data-help]::before {
+				content: "";
+				bottom: calc(100% + 3px);
+				border: 6px solid transparent;
+				border-top-color: #111827;
+			}
+			[data-help]::after {
+				content: attr(data-help);
+				bottom: calc(100% + 14px);
+				width: max-content;
+				max-width: min(19rem, calc(100vw - 2rem));
+				padding: 0.55rem 0.65rem;
+				background: #111827;
+				color: #fff;
+				border-radius: 6px;
+				box-shadow: 0 10px 28px rgba(17,24,39,0.22);
+				font-size: 0.78rem;
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+				font-weight: 500;
+				line-height: 1.35;
+				white-space: normal;
+				text-align: left;
+			}
+			[data-help]:hover::before,
+			[data-help]:hover::after,
+			[data-help]:focus-visible::before,
+			[data-help]:focus-visible::after {
+				opacity: 1;
+				transform: translate(-50%, 0);
+			}
+			.helpable { cursor: help; }
+			/* Abstract - contain layout for MathJax rendering */
+			.abstract { white-space: pre-wrap; color: #334155; margin-bottom: 1rem; contain: layout style; }
+			/* Actions bar - fixed min-height prevents CLS */
+			.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; min-height: 2.5rem; }
+			.btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 500; background: #1d4ed8; color: #fff; border-radius: 6px; border: none; cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease; text-decoration: none; height: 2.25rem; }
+			.btn:hover { background: #1e40af; text-decoration: none; transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+			.btn:active { transform: translateY(0); }
+			.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+			.btn:disabled:hover { background: #f1f5f9; color: #475569; transform: none; box-shadow: none; }
+			.btn-secondary { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+			.btn-secondary:hover { background: #e2e8f0; color: #334155; }
+			.btn-icon { font-style: normal; }
 		.auto-fetch { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: #64748b; margin-left: 0.25rem; }
 		.links { font-size: 0.875rem; margin-bottom: 1rem; }
 		.links a { margin-right: 1rem; }
 
-		/* Citation graph - explicit height prevents CLS */
-		.graph-container { position: relative; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; height: 500px; margin: 1rem 0; contain: layout; }
-		.graph-controls { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.5rem; z-index: 10; }
-		.graph-btn { padding: 0.3rem 0.6rem; font-size: 0.75rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; }
-		.graph-btn:hover { background: #f1f5f9; }
-		.graph-legend { position: absolute; bottom: 0.5rem; left: 0.5rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.7rem; }
+			/* Citation graph - explicit height prevents CLS */
+			.graph-container { position: relative; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; height: 500px; margin: 1rem 0; contain: layout; }
+			.graph-controls { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.5rem; z-index: 10; }
+			.graph-btn { padding: 0.3rem 0.6rem; font-size: 0.75rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; }
+			.graph-btn:hover { background: #f1f5f9; }
+			.graph-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+			.graph-btn:disabled:hover { background: #fff; }
+			.graph-legend { position: absolute; bottom: 0.5rem; left: 0.5rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.7rem; }
 		.legend-item { display: flex; align-items: center; gap: 0.4rem; margin: 0.15rem 0; }
 		.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 		.graph-tooltip { position: fixed; padding: 0.5rem 0.75rem; background: rgba(0,0,0,0.9); color: #fff; border-radius: 4px; font-size: 0.75rem; max-width: 300px; pointer-events: none; z-index: 100; display: none; }
 		.graph-node { cursor: pointer; stroke: #fff; stroke-width: 1.5px; }
 		.graph-node:hover { stroke-width: 3px; }
 		.graph-node.selected { stroke: #1d4ed8; stroke-width: 3px; }
-		.graph-link { stroke: #94a3b8; stroke-opacity: 0.4; fill: none; }
-		.graph-link.highlighted { stroke: #1d4ed8; stroke-opacity: 1; stroke-width: 2px; }
-		.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; height: 100vh; border-radius: 0; }
+			.graph-link { stroke: #94a3b8; stroke-opacity: 0.4; fill: none; }
+			.graph-link.highlighted { stroke: #1d4ed8; stroke-opacity: 1; stroke-width: 2px; }
+			.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; height: 100vh; border-radius: 0; }
+			.semantic-map-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: -0.25rem; }
+			.semantic-map-status { color: #64748b; font-size: 0.8rem; min-height: 1.25rem; }
+			.semantic-map-container { height: 460px; background: linear-gradient(180deg, #f8fafc 0%, #eef6ff 100%); overflow: hidden; }
+			.semantic-map-placeholder { padding: 2rem; color: #64748b; text-align: center; }
+			.semantic-map-link { stroke: #94a3b8; stroke-opacity: 0.32; stroke-width: 1.2px; }
+			.semantic-map-node { cursor: pointer; stroke: #fff; stroke-width: 1.5px; }
+			.semantic-map-node:hover { stroke: #111827; stroke-width: 2px; }
+			.semantic-map-label { fill: #1e293b; font-size: 0.68rem; font-weight: 600; paint-order: stroke; stroke: rgba(255,255,255,0.85); stroke-width: 3px; pointer-events: none; }
+			.semantic-category-label { fill: #475569; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; pointer-events: none; }
 
 		/* References list - contain layout to prevent CLS on dynamic updates */
 		.refs { list-style: none; padding: 0; contain: layout style; min-height: 100px; }
@@ -210,6 +294,7 @@
 			.actions .btn { width: 100%; justify-content: center; text-align: center; }
 			.actions .auto-fetch { margin: 0.25rem 0; }
 			.graph-container { height: 300px; }
+			.semantic-map-container { height: 360px; }
 			.refs li { padding: 0.75rem; }
 		}
 	</style>
@@ -217,27 +302,28 @@
 <body>
 <div class="nav"><a href="/">Home</a> | <a href="/categories">Categories</a> | <a href="/api/v1/">API</a></div>
 
-<h1>{{.Paper.Title}}</h1>
+<h1 data-mathjax>{{.Paper.Title}}</h1>
 <div class="meta">
-	<code>{{.Paper.ID}}</code> · {{.Paper.Created.Format "2006-01-02"}} · Cited by {{.CitedByCount}}<span id="embedding-status">{{if .HasEmbedding}} · <span class="badge badge-embed">🧠 embedded</span>{{end}}</span>
+	<code class="helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.Paper.ID}}</code> · <span class="helpable" tabindex="0" data-help="Original arXiv submission date.">{{.Paper.Created.Format "2006-01-02"}}</span> · <span class="helpable" tabindex="0" data-help="Number of cached papers that cite this one.">Cited by {{.CitedByCount}}</span><span id="embedding-status">{{if .HasEmbedding}} · <span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠 ready</span>{{end}}</span>
 </div>
 <div class="authors">{{range $i, $a := parseAuthors .Paper.Authors}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}</div>
-<div class="categories">{{range $i, $c := parseCategories .Paper.Categories}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
+<div class="categories">{{range $i, $c := parseCategories .Paper.Categories}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
 
-<div class="abstract">{{.Paper.Abstract}}</div>
+<div class="abstract" data-mathjax>{{.Paper.Abstract}}</div>
 
 <div class="actions">
-	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}" aria-label="View PDF"><i class="btn-icon" aria-hidden="true">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit" aria-label="Fetch PDF"><i class="btn-icon" aria-hidden="true">📥</i> Fetch PDF</button></form> <label class="auto-fetch"><input type="checkbox" id="auto-fetch-toggle" aria-label="Auto-fetch PDFs"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;" aria-live="polite">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer" aria-label="Open PDF on arXiv.org"><i class="btn-icon" aria-hidden="true">📄</i> PDF on arXiv.org</a>{{end}}
-	<button class="btn btn-secondary" type="button" id="generate-embedding-btn" aria-label="{{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} embedding for semantic search"><i class="btn-icon" aria-hidden="true">🧠</i> {{if .HasEmbedding}}Regenerate{{else}}Generate{{end}} Embedding</button>
-	<label class="auto-fetch"><input type="checkbox" id="auto-embed-toggle" aria-label="Auto-generate embeddings"> Auto-embed</label>
-	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer" aria-label="View on arxiv.org"><i class="btn-icon" aria-hidden="true">↗</i> arxiv.org</a>
+	{{if .LocalMode}}{{if .Paper.PDFDownloaded}}<a class="btn" href="/pdf/{{.Paper.ID}}" aria-label="View PDF" data-help="Open the locally cached PDF."><i class="btn-icon" aria-hidden="true">📄</i> View PDF</a>{{else}}<form id="fetch-pdf-form" style="display:inline" method="POST" action="/pdf/{{.Paper.ID}}/fetch"><button class="btn btn-secondary" type="submit" aria-label="Fetch PDF" data-help="Download and cache this paper's PDF."><i class="btn-icon" aria-hidden="true">📥</i> Fetch PDF</button></form> <label class="auto-fetch helpable" data-help="When enabled, pages you open will try to fetch missing PDFs automatically."><input type="checkbox" id="auto-fetch-toggle" aria-label="Auto-fetch PDFs"> Auto-fetch</label> <span id="fetch-status" class="loading" style="display:none;" aria-live="polite">Fetching PDF...</span>{{end}}{{else}}<a class="btn" href="https://arxiv.org/pdf/{{.Paper.ID}}.pdf" target="_blank" rel="noopener noreferrer" aria-label="Open PDF on arXiv.org" data-help="Open the official PDF on arXiv.org."><i class="btn-icon" aria-hidden="true">📄</i> PDF on arXiv.org</a>{{end}}
+	<button class="btn btn-secondary" type="button" id="generate-embedding-btn" aria-label="{{if .HasEmbedding}}Refresh{{else}}Prepare{{end}} this paper for related-work search" data-help="Prepare this paper so arXiv.gg can recommend related work and place it on the idea map."><i class="btn-icon" aria-hidden="true">🧠</i> {{if .HasEmbedding}}Refresh{{else}}Prepare{{end}} Paper</button>
+	<button class="btn btn-secondary" type="button" id="find-similar-btn" aria-label="Find related papers" data-help="Show papers that discuss closely related ideas, even if the wording is different." {{if not .HasEmbedding}}disabled{{end}}><i class="btn-icon" aria-hidden="true">◎</i> Find Similar</button>
+	<label class="auto-fetch helpable" data-help="Automatically prepare papers you open so related-work recommendations are ready."><input type="checkbox" id="auto-embed-toggle" aria-label="Auto-prepare papers"> Auto-prepare</label>
+	<a class="btn btn-secondary" href="{{.Paper.AbstractURL}}" target="_blank" rel="noopener noreferrer" aria-label="View on arxiv.org" data-help="Open the official arXiv abstract page."><i class="btn-icon" aria-hidden="true">↗</i> arxiv.org</a>
 </div>
 <div class="terminal" id="embedding-terminal">
 	<div class="terminal-header">
 		<span class="terminal-dot red"></span>
 		<span class="terminal-dot yellow"></span>
 		<span class="terminal-dot green"></span>
-		<span class="terminal-title">embedding-generator</span>
+		<span class="terminal-title">related-work</span>
 	</div>
 	<div class="terminal-body" id="terminal-output"></div>
 </div>
@@ -251,17 +337,26 @@
 <h2>Citation Graph</h2>
 <div class="graph-container" id="graph-container">
 	<div class="graph-controls">
-		<button class="graph-btn" id="reset-btn">Reset</button>
-		<button class="graph-btn" id="fullscreen-btn">Fullscreen</button>
+		<button class="graph-btn" id="reset-btn" data-help="Reset zoom and graph position.">Reset</button>
+		<button class="graph-btn" id="fullscreen-btn" data-help="Expand the graph for easier exploration.">Fullscreen</button>
 	</div>
 	<div class="graph-legend">
-		<div class="legend-item"><div class="legend-dot" style="background:#1d4ed8;"></div> This paper</div>
-		<div class="legend-item"><div class="legend-dot" style="background:#334155;"></div> Reference</div>
-		<div class="legend-item"><div class="legend-dot" style="background:#10b981;"></div> Citing</div>
-		<div class="legend-item"><div class="legend-dot" style="background:#94a3b8;"></div> Uncached</div>
+		<div class="legend-item helpable" tabindex="0" data-help="The page you are viewing now."><div class="legend-dot" style="background:#1d4ed8;"></div> This paper</div>
+		<div class="legend-item helpable" tabindex="0" data-help="Papers this paper cites."><div class="legend-dot" style="background:#334155;"></div> Reference</div>
+		<div class="legend-item helpable" tabindex="0" data-help="Cached papers that cite this paper."><div class="legend-dot" style="background:#10b981;"></div> Citing</div>
+		<div class="legend-item helpable" tabindex="0" data-help="Citation IDs we found but have not cached yet."><div class="legend-dot" style="background:#94a3b8;"></div> Uncached</div>
 	</div>
 </div>
 <div class="graph-tooltip" id="tooltip"></div>
+
+<h2>Related Work Map</h2>
+<div class="semantic-map-toolbar">
+	<button class="graph-btn" id="semantic-map-load-btn" type="button" data-help="Show papers that discuss closely related ideas." {{if not .HasEmbedding}}disabled{{end}}>Find Similar</button>
+	<span class="semantic-map-status helpable" id="semantic-map-status" tabindex="0" data-help="Related-work maps need the paper prepared first." aria-live="polite">{{if .HasEmbedding}}Ready{{else}}Prepare paper first{{end}}</span>
+</div>
+<div class="graph-container semantic-map-container" id="semantic-map-container">
+	<p class="semantic-map-placeholder">{{if .HasEmbedding}}Click Find Similar to map nearby papers.{{else}}Prepare this paper, then map nearby papers.{{end}}</p>
+</div>
 
 {{if .PaperList}}
 <h2>References{{if .UncachedCount}} <span class="loading" id="prefetch-status">Loading titles...</span>{{end}}</h2>
@@ -269,7 +364,7 @@
 {{range .PaperList}}{{if .IsRef}}
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
-	{{if .Cached}}<a class="ref-title" href="{{paperPath .ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
+	{{if .Cached}}<a class="ref-title" href="{{paperPath .ID}}" data-mathjax>{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
 	{{else}}<span class="ref-uncached">{{.ID}}</span> <span class="ref-date">({{arxivIDToDate .ID}})</span> <a href="{{paperPath .ID}}">[open]</a>{{end}}
 </li>
 {{end}}{{end}}
@@ -280,7 +375,7 @@
 {{range .PaperList}}{{if .IsCiting}}
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
-	<a class="ref-title" href="{{paperPath .ID}}">{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
+	<a class="ref-title" href="{{paperPath .ID}}" data-mathjax>{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
 </li>
 {{end}}{{end}}
 </ul>
@@ -302,7 +397,14 @@
 	const pdfDownloaded = {{if .Paper.PDFDownloaded}}true{{else}}false{{end}};
 	const container = document.getElementById('graph-container');
 	const tooltip = document.getElementById('tooltip');
+	const semanticMapContainer = document.getElementById('semantic-map-container');
+	const semanticMapStatus = document.getElementById('semantic-map-status');
+	const findSimilarBtn = document.getElementById('find-similar-btn');
+	const semanticMapLoadBtn = document.getElementById('semantic-map-load-btn');
 	let simulation, svg, g, nodes, links;
+	let semanticSimulation, semanticSvg, semanticMapResults = [], semanticMapData = null, semanticMapModel = '';
+	let semanticMapLoaded = false;
+	let semanticMapLoading = false;
 
 	// Optional auto-fetch for PDF when user opts in
 	if (!pdfDownloaded) {
@@ -630,7 +732,7 @@
 					const datePart = dateStr ? ' <span class="ref-date">(' + dateStr + ')</span>' : '';
 					const paperURL = encodeURI('/abs/' + r.id);
 					if (r.hasTitle) {
-						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <a class="ref-title" href="' + paperURL + '">' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + escapeHtml(r.citedBy) + ' cites</span>' : '');
+						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <a class="ref-title" href="' + paperURL + '" data-mathjax>' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + escapeHtml(r.citedBy) + ' cites</span>' : '');
 					} else {
 						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <span class="ref-uncached">' + escapeHtml(r.id) + '</span>' + datePart + ' <a href="' + paperURL + '">[open]</a>';
 					}
@@ -641,23 +743,451 @@
 				setupRefListHovers();
 				setupRefListClicks();
 
-				// Re-render any math in titles
-				if (window.loadMathJax) {
-					window.loadMathJax();
-				} else if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
-					MathJax.typesetPromise();
-				}
+				if (window.typesetMath) window.typesetMath(refsList);
 			});
 	}
 
-	function escapeHtml(s) {
-		const div = document.createElement('div');
-		div.textContent = s;
-		return div.innerHTML;
-	}
+		function escapeHtml(s) {
+			const div = document.createElement('div');
+			div.textContent = s;
+			return div.innerHTML;
+		}
 
-	// Parse arXiv ID to date string (e.g., "2302.13971" -> "Feb 2023")
-	function arxivIDToDate(id) {
+		function paperField(paper, upperName, lowerName, fallback = '') {
+			if (!paper) return fallback;
+			return paper[upperName] ?? paper[lowerName] ?? fallback;
+		}
+
+		function primaryCategory(categories) {
+			const first = String(categories || '').split(/\s+/).find(Boolean);
+			return first || 'other';
+		}
+
+		function hashString(value) {
+			let hash = 0;
+			for (let i = 0; i < value.length; i++) {
+				hash = ((hash << 5) - hash) + value.charCodeAt(i);
+				hash |= 0;
+			}
+			return Math.abs(hash);
+		}
+
+		function categoryColor(category) {
+			const palette = ['#1d4ed8', '#059669', '#dc2626', '#7c3aed', '#b45309', '#0891b2', '#be123c', '#4d7c0f', '#9333ea', '#0f766e'];
+			return palette[hashString(category) % palette.length];
+		}
+
+		function shortTitle(title, maxLen = 54) {
+			const clean = String(title || '').replace(/\s+/g, ' ').trim();
+			if (clean.length <= maxLen) return clean;
+			return clean.slice(0, maxLen - 1).trim() + '...';
+		}
+
+		function setSimilarButtonsDisabled(disabled) {
+			if (findSimilarBtn) findSimilarBtn.disabled = disabled;
+			if (semanticMapLoadBtn) semanticMapLoadBtn.disabled = disabled;
+		}
+
+		function enableSimilarButtons() {
+			setSimilarButtonsDisabled(false);
+			if (semanticMapStatus && semanticMapStatus.textContent.includes('Prepare')) {
+				semanticMapStatus.textContent = 'Ready';
+			}
+			const placeholder = semanticMapContainer?.querySelector('.semantic-map-placeholder');
+			if (placeholder && placeholder.textContent.includes('Prepare')) {
+				placeholder.textContent = 'Click Find Similar to map related papers.';
+			}
+		}
+
+		function renderProjectedSemanticMap(mapData, modelName) {
+			if (!semanticMapContainer) return;
+			if (semanticSimulation) semanticSimulation.stop();
+			semanticMapContainer.innerHTML = '';
+
+			const width = Math.max(semanticMapContainer.clientWidth, 320);
+			const height = Math.max(semanticMapContainer.clientHeight, 320);
+			const rawPoints = Array.isArray(mapData.points) ? mapData.points : [];
+			const rawLinks = Array.isArray(mapData.links) ? mapData.links : [];
+			const rawClusters = Array.isArray(mapData.clusters) ? mapData.clusters : [];
+			const visibleClusters = rawClusters.filter(cluster => Number(cluster.count ?? cluster.Count ?? 0) > 0);
+			const palette = ['#2563eb', '#059669', '#dc2626', '#7c3aed', '#b45309', '#0891b2', '#be123c', '#4d7c0f'];
+
+			const valuesX = rawPoints.map(point => Number(point.x) || 0);
+			const valuesY = rawPoints.map(point => Number(point.y) || 0);
+			function paddedExtent(values) {
+				let min = d3.min(values);
+				let max = d3.max(values);
+				if (!Number.isFinite(min) || !Number.isFinite(max)) return [-1, 1];
+				if (Math.abs(max - min) < 0.01) return [min - 1, max + 1];
+				const pad = (max - min) * 0.16;
+				return [min - pad, max + pad];
+			}
+
+			const xScale = d3.scaleLinear().domain(paddedExtent(valuesX)).range([56, width - 56]);
+			const yScale = d3.scaleLinear().domain(paddedExtent(valuesY)).range([height - 52, 52]);
+
+			const mapNodes = rawPoints.map((point, index) => {
+				const paper = point.paper || point.Paper || {};
+				const id = point.paperId || point.PaperID || paperField(paper, 'ID', 'id');
+				const categories = point.categories || point.Categories || paperField(paper, 'Categories', 'categories', '');
+				const title = point.title || point.Title || paperField(paper, 'Title', 'title', id);
+				const cluster = Number(point.cluster ?? point.Cluster ?? 0);
+				const sourceX = Number(point.x) || 0;
+				const sourceY = Number(point.y) || 0;
+				return {
+					id,
+					title,
+					category: primaryCategory(categories),
+					categories,
+					similarity: Number(point.similarity ?? point.Similarity ?? 0),
+					cluster,
+					clusterLabel: point.clusterLabel || point.ClusterLabel || 'Related work',
+					anchor: Boolean(point.anchor ?? point.Anchor),
+					rank: index,
+					mapX: sourceX,
+					mapY: sourceY,
+					targetX: xScale(sourceX),
+					targetY: yScale(sourceY),
+					x: xScale(sourceX),
+					y: yScale(sourceY)
+				};
+			}).filter(node => node.id);
+
+			const nodeByID = new Map(mapNodes.map(node => [node.id, node]));
+			const linksData = rawLinks
+				.map(link => ({
+					source: link.source || link.Source,
+					target: link.target || link.Target,
+					strength: Number(link.strength ?? link.Strength ?? 0)
+				}))
+				.filter(link => nodeByID.has(link.source) && nodeByID.has(link.target));
+
+			semanticSvg = d3.select(semanticMapContainer)
+				.append('svg')
+				.attr('width', width)
+				.attr('height', height)
+				.attr('viewBox', `0 0 ${width} ${height}`);
+
+			const mapLayer = semanticSvg.append('g');
+			semanticSvg.call(d3.zoom()
+				.scaleExtent([0.65, 4])
+				.on('zoom', event => mapLayer.attr('transform', event.transform)));
+
+			mapLayer.append('g')
+				.selectAll('text')
+				.data(visibleClusters)
+				.join('text')
+				.attr('class', 'semantic-category-label')
+				.attr('x', cluster => xScale(Number(cluster.x ?? cluster.X ?? 0)))
+				.attr('y', cluster => yScale(Number(cluster.y ?? cluster.Y ?? 0)))
+				.attr('text-anchor', 'middle')
+				.text(cluster => cluster.label || cluster.Label || 'Topic');
+
+			const linkSelection = mapLayer.append('g')
+				.selectAll('line')
+				.data(linksData)
+				.join('line')
+				.attr('class', 'semantic-map-link')
+				.attr('stroke-width', d => 0.7 + Math.max(0, d.strength - 0.35) * 4)
+				.attr('stroke-opacity', d => d.strength > 0.75 ? 0.42 : 0.24);
+
+			const radius = d => d.anchor ? 15 : 5 + Math.max(0, d.similarity - 0.45) * 26;
+
+			const nodeSelection = mapLayer.append('g')
+				.selectAll('circle')
+				.data(mapNodes, d => d.id)
+				.join('circle')
+				.attr('class', 'semantic-map-node')
+				.attr('r', radius)
+				.attr('fill', d => d.anchor ? '#111827' : palette[Math.abs(d.cluster) % palette.length]);
+
+			const labelSelection = mapLayer.append('g')
+				.selectAll('text')
+				.data(mapNodes.filter(d => d.anchor || d.rank <= 14), d => d.id)
+				.join('text')
+				.attr('class', 'semantic-map-label')
+				.attr('text-anchor', 'middle')
+				.attr('dy', d => d.anchor ? -22 : -12)
+				.text(d => d.anchor ? 'this paper' : shortTitle(d.title, 32));
+
+			nodeSelection.call(d3.drag()
+				.on('start', event => {
+					if (!event.active) semanticSimulation.alphaTarget(0.25).restart();
+					event.subject.fx = event.subject.x;
+					event.subject.fy = event.subject.y;
+				})
+				.on('drag', event => {
+					event.subject.fx = event.x;
+					event.subject.fy = event.y;
+				})
+				.on('end', event => {
+					if (!event.active) semanticSimulation.alphaTarget(0);
+					event.subject.fx = null;
+					event.subject.fy = null;
+				}));
+
+			nodeSelection.on('click', (event, d) => {
+				navigateWithTransition(event.target, encodeURI('/abs/' + d.id));
+			});
+
+			nodeSelection.on('mouseover', (event, d) => {
+				tooltip.style.display = 'block';
+				const score = d.anchor ? 'anchor paper' : Math.round(d.similarity * 1000) / 10 + '% similar';
+				tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' +
+					escapeHtml(shortTitle(d.title, 120)) + '<br>' +
+					escapeHtml(d.clusterLabel) + ' · ' + escapeHtml(score);
+			});
+
+			nodeSelection.on('mousemove', event => {
+				tooltip.style.left = (event.clientX + 12) + 'px';
+				tooltip.style.top = (event.clientY + 12) + 'px';
+			});
+
+			nodeSelection.on('mouseout', () => {
+				tooltip.style.display = 'none';
+			});
+
+			semanticSimulation = d3.forceSimulation(mapNodes)
+				.force('link', d3.forceLink(linksData).id(d => d.id).distance(d => 55 + (1 - d.strength) * 160).strength(d => Math.max(0.04, d.strength - 0.48)))
+				.force('charge', d3.forceManyBody().strength(d => d.anchor ? -360 : -85))
+				.force('x', d3.forceX(d => d.targetX).strength(d => d.anchor ? 0.9 : 0.62))
+				.force('y', d3.forceY(d => d.targetY).strength(d => d.anchor ? 0.9 : 0.62))
+				.force('collision', d3.forceCollide().radius(d => radius(d) + 8))
+				.alpha(0.9)
+				.on('tick', () => {
+					linkSelection
+						.attr('x1', d => d.source.x)
+						.attr('y1', d => d.source.y)
+						.attr('x2', d => d.target.x)
+						.attr('y2', d => d.target.y);
+					nodeSelection
+						.attr('cx', d => d.x)
+						.attr('cy', d => d.y);
+					labelSelection
+						.attr('x', d => d.x)
+						.attr('y', d => d.y);
+				});
+
+			const relatedCount = Math.max(0, mapNodes.length - 1);
+			if (semanticMapStatus) {
+				semanticMapStatus.textContent = `${relatedCount} papers · ${visibleClusters.length} clusters · embedding map`;
+			}
+			semanticMapLoaded = true;
+		}
+
+		function renderSemanticMap(results, modelName, mapData) {
+			if (mapData && Array.isArray(mapData.points) && mapData.points.length) {
+				renderProjectedSemanticMap(mapData, modelName);
+				return;
+			}
+
+			if (!semanticMapContainer) return;
+			if (semanticSimulation) semanticSimulation.stop();
+			semanticMapContainer.innerHTML = '';
+
+			const width = Math.max(semanticMapContainer.clientWidth, 320);
+			const height = Math.max(semanticMapContainer.clientHeight, 320);
+			const currentTitle = document.querySelector('h1')?.textContent || paperID;
+			const currentCategory = primaryCategory("{{.Paper.Categories}}");
+			const seen = new Set([paperID]);
+
+			const resultNodes = results.map((result, index) => {
+				const paper = result.paper || result.Paper || {};
+				const id = result.paperId || result.PaperID || paperField(paper, 'ID', 'id');
+				const categories = paperField(paper, 'Categories', 'categories', '');
+				const title = paperField(paper, 'Title', 'title', id);
+				const similarity = Number(result.similarity ?? result.Similarity ?? 0);
+				return {
+					id,
+					title,
+					category: primaryCategory(categories),
+					categories,
+					similarity: Number.isFinite(similarity) ? similarity : 0,
+					rank: index + 1,
+					anchor: false
+				};
+			}).filter(node => {
+				if (!node.id || seen.has(node.id)) return false;
+				seen.add(node.id);
+				return true;
+			});
+
+			const mapNodes = [{
+				id: paperID,
+				title: currentTitle,
+				category: currentCategory,
+				categories: "{{.Paper.Categories}}",
+				similarity: 1,
+				rank: 0,
+				anchor: true
+			}, ...resultNodes];
+
+			const linksData = resultNodes.map(node => ({
+				source: paperID,
+				target: node.id,
+				similarity: node.similarity
+			}));
+
+			const categories = Array.from(new Set(mapNodes.map(node => node.category)));
+			const xScale = d3.scalePoint()
+				.domain(categories)
+				.range([Math.min(90, width * 0.18), width - Math.min(90, width * 0.18)])
+				.padding(0.7);
+
+			const minSim = d3.min(resultNodes, d => d.similarity) ?? 0.45;
+			const maxSim = d3.max(resultNodes, d => d.similarity) ?? 1;
+			const yScale = d3.scaleLinear()
+				.domain([minSim, maxSim])
+				.range([height * 0.78, height * 0.28])
+				.clamp(true);
+
+			semanticSvg = d3.select(semanticMapContainer)
+				.append('svg')
+				.attr('width', width)
+				.attr('height', height)
+				.attr('viewBox', `0 0 ${width} ${height}`);
+
+			const mapLayer = semanticSvg.append('g');
+			semanticSvg.call(d3.zoom()
+				.scaleExtent([0.6, 3])
+				.on('zoom', event => mapLayer.attr('transform', event.transform)));
+
+			mapLayer.append('g')
+				.selectAll('text')
+				.data(categories)
+				.join('text')
+				.attr('class', 'semantic-category-label')
+				.attr('x', category => xScale(category) || width / 2)
+				.attr('y', 28)
+				.attr('text-anchor', 'middle')
+				.text(category => category);
+
+			const linkSelection = mapLayer.append('g')
+				.selectAll('line')
+				.data(linksData)
+				.join('line')
+				.attr('class', 'semantic-map-link')
+				.attr('stroke-width', d => 0.8 + Math.max(0, d.similarity - 0.45) * 5);
+
+			const radius = d => d.anchor ? 15 : 6 + Math.max(0, d.similarity - 0.45) * 24;
+
+			const nodeSelection = mapLayer.append('g')
+				.selectAll('circle')
+				.data(mapNodes, d => d.id)
+				.join('circle')
+				.attr('class', 'semantic-map-node')
+				.attr('r', radius)
+				.attr('fill', d => d.anchor ? '#111827' : categoryColor(d.category));
+
+			const labelSelection = mapLayer.append('g')
+				.selectAll('text')
+				.data(mapNodes.filter(d => d.anchor || d.rank <= 10), d => d.id)
+				.join('text')
+				.attr('class', 'semantic-map-label')
+				.attr('text-anchor', 'middle')
+				.attr('dy', d => d.anchor ? -21 : -13)
+				.text(d => d.anchor ? 'this paper' : shortTitle(d.title, 34));
+
+			nodeSelection.call(d3.drag()
+				.on('start', event => {
+					if (!event.active) semanticSimulation.alphaTarget(0.3).restart();
+					event.subject.fx = event.subject.x;
+					event.subject.fy = event.subject.y;
+				})
+				.on('drag', event => {
+					event.subject.fx = event.x;
+					event.subject.fy = event.y;
+				})
+				.on('end', event => {
+					if (!event.active) semanticSimulation.alphaTarget(0);
+					event.subject.fx = null;
+					event.subject.fy = null;
+				}));
+
+			nodeSelection.on('click', (event, d) => {
+				const url = encodeURI('/abs/' + d.id);
+				navigateWithTransition(event.target, url);
+			});
+
+			nodeSelection.on('mouseover', (event, d) => {
+				tooltip.style.display = 'block';
+				const score = d.anchor ? 'anchor' : Math.round(d.similarity * 1000) / 10 + '% similar';
+				tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' + escapeHtml(shortTitle(d.title, 120)) + '<br>' + escapeHtml(d.category) + ' · ' + escapeHtml(score);
+			});
+
+			nodeSelection.on('mousemove', event => {
+				tooltip.style.left = (event.clientX + 12) + 'px';
+				tooltip.style.top = (event.clientY + 12) + 'px';
+			});
+
+			nodeSelection.on('mouseout', () => {
+				tooltip.style.display = 'none';
+			});
+
+			semanticSimulation = d3.forceSimulation(mapNodes)
+				.force('link', d3.forceLink(linksData).id(d => d.id).distance(d => 80 + (1 - d.similarity) * 170).strength(d => Math.max(0.06, d.similarity - 0.42)))
+				.force('charge', d3.forceManyBody().strength(d => d.anchor ? -320 : -125))
+				.force('x', d3.forceX(d => d.anchor ? width / 2 : (xScale(d.category) || width / 2)).strength(d => d.anchor ? 0.22 : 0.16))
+				.force('y', d3.forceY(d => d.anchor ? height * 0.5 : yScale(d.similarity)).strength(d => d.anchor ? 0.24 : 0.12))
+				.force('collision', d3.forceCollide().radius(d => radius(d) + 10))
+				.on('tick', () => {
+					linkSelection
+						.attr('x1', d => d.source.x)
+						.attr('y1', d => d.source.y)
+						.attr('x2', d => d.target.x)
+						.attr('y2', d => d.target.y);
+					nodeSelection
+						.attr('cx', d => d.x)
+						.attr('cy', d => d.y);
+					labelSelection
+						.attr('x', d => d.x)
+						.attr('y', d => d.y);
+				});
+
+			if (semanticMapStatus) {
+				semanticMapStatus.textContent = `${resultNodes.length} related papers`;
+			}
+			semanticMapLoaded = true;
+		}
+
+		async function loadSemanticMap() {
+			if (!semanticMapContainer || semanticMapLoading) return;
+			if (!hasExistingEmbedding) {
+				if (semanticMapStatus) semanticMapStatus.textContent = 'Prepare paper first';
+				return;
+			}
+
+			semanticMapLoading = true;
+			setSimilarButtonsDisabled(true);
+			semanticMapContainer.innerHTML = '<p class="semantic-map-placeholder">Mapping related papers...</p>';
+			if (semanticMapStatus) semanticMapStatus.textContent = 'Loading...';
+
+			try {
+				const response = await fetch(encodeURI('/api/v1/papers/' + paperID + '/similar?limit=80'));
+				const data = await response.json();
+				if (!response.ok || !data.success) {
+					throw new Error(data.error || 'Could not load similar papers');
+				}
+				semanticMapResults = data.data?.results || [];
+				semanticMapData = data.data?.map || null;
+				semanticMapModel = data.data?.model || '';
+				if (!semanticMapResults.length) {
+					semanticMapContainer.innerHTML = '<p class="semantic-map-placeholder">No related prepared papers found yet.</p>';
+					if (semanticMapStatus) semanticMapStatus.textContent = 'No matches';
+					return;
+				}
+				renderSemanticMap(semanticMapResults, semanticMapModel, semanticMapData);
+			} catch (err) {
+				semanticMapContainer.innerHTML = '<p class="semantic-map-placeholder">Could not load related papers.</p>';
+				if (semanticMapStatus) semanticMapStatus.textContent = err.message;
+			} finally {
+				semanticMapLoading = false;
+				if (hasExistingEmbedding) setSimilarButtonsDisabled(false);
+			}
+		}
+
+		// Parse arXiv ID to date string (e.g., "2302.13971" -> "Feb 2023")
+		function arxivIDToDate(id) {
 		const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 		let yymm = '';
 		// Old format: category/YYMMNNN
@@ -690,7 +1220,7 @@
 		});
 	}
 
-	// Handle embedding generation with terminal UI
+		// Handle paper preparation with terminal UI
 	const embeddingBtn = document.getElementById('generate-embedding-btn');
 	const terminal = document.getElementById('embedding-terminal');
 	const terminalOutput = document.getElementById('terminal-output');
@@ -739,14 +1269,14 @@
 		terminalOutput.innerHTML = '';
 		terminal.classList.add('active');
 		
-		await terminalWriteTyping('POST /api/v1/papers/' + paperID + '/embeddings', 'prompt', 15);
+		await terminalWriteTyping('prepare related-work map for ' + paperID, 'prompt', 15);
 		await new Promise(r => setTimeout(r, 200));
 		
 		if (hasExistingEmbedding) {
-			terminalWrite('Existing embedding found, regenerating...', 'info');
+			terminalWrite('This paper was already prepared; refreshing...', 'info');
 			await new Promise(r => setTimeout(r, 150));
 		}
-		terminalWrite('Using cached sentence-transformers model...', 'info');
+		terminalWrite('Preparing recommendation profile...', 'info');
 		
 		try {
 			const response = await fetch('/api/v1/papers/' + paperID + '/embeddings', {
@@ -757,28 +1287,29 @@
 			const data = await response.json();
 			
 			await new Promise(r => setTimeout(r, 300));
-			terminalWrite('Model: all-MiniLM-L6-v2 (384 dimensions)', 'output');
-			terminalWrite('Generator: ' + (data.data?.generator || 'embedding-service'), 'output');
+			terminalWrite('Related-work profile ready', 'output');
+			terminalWrite('Generator: ' + (data.data?.generator || 'recommendation-service'), 'output');
 			await new Promise(r => setTimeout(r, 200));
 			terminalWrite('Encoding: "' + (data.data?.paper?.Title || paperID).substring(0, 50) + '..."', 'output');
 			await new Promise(r => setTimeout(r, 400));
 			
 			if (data.success) {
-				terminalWrite('Embedding stored in database', 'output');
+				terminalWrite('Paper is ready for idea search', 'output');
 				await new Promise(r => setTimeout(r, 150));
-				terminalWrite('Done! Embedding ready for ' + paperID, 'success');
+				terminalWrite('Done! Similar papers are now available for ' + paperID, 'success');
 				hasExistingEmbedding = true;
 				const status = document.getElementById('embedding-status');
-				if (status && !status.textContent.includes('embedded')) {
-					status.innerHTML = ' · <span class="badge badge-embed">🧠 embedded</span>';
+				if (status && !status.textContent.includes('ready')) {
+					status.innerHTML = ' · <span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠 ready</span>';
 				}
-				if (embeddingBtn) {
-					embeddingBtn.innerHTML = '<i class="btn-icon" aria-hidden="true">🧠</i> Regenerate Embedding';
-					embeddingBtn.setAttribute('aria-label', 'Regenerate embedding for semantic search');
-				}
-				
-				setTimeout(() => {
-					terminal.classList.remove('active');
+					if (embeddingBtn) {
+						embeddingBtn.innerHTML = '<i class="btn-icon" aria-hidden="true">🧠</i> Refresh Paper';
+						embeddingBtn.setAttribute('aria-label', 'Refresh this paper for related-work search');
+					}
+					enableSimilarButtons();
+
+					setTimeout(() => {
+						terminal.classList.remove('active');
 					isGenerating = false;
 					embeddingBtn.disabled = false;
 				}, 3000);
@@ -792,11 +1323,28 @@
 		}
 	}
 
-	if (embeddingBtn) {
-		embeddingBtn.addEventListener('click', runEmbeddingGeneration);
-	}
+		if (embeddingBtn) {
+			embeddingBtn.addEventListener('click', runEmbeddingGeneration);
+		}
 
-	// Auto-embed toggle
+		if (findSimilarBtn) {
+			findSimilarBtn.addEventListener('click', () => {
+				semanticMapContainer?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				loadSemanticMap();
+			});
+		}
+
+		if (semanticMapLoadBtn) {
+			semanticMapLoadBtn.addEventListener('click', loadSemanticMap);
+		}
+
+		window.addEventListener('resize', () => {
+			if (semanticMapLoaded && semanticMapResults.length) {
+				renderSemanticMap(semanticMapResults, semanticMapModel, semanticMapData);
+			}
+		});
+
+		// Auto-embed toggle
 	const autoEmbedToggle = document.getElementById('auto-embed-toggle');
 	const autoEmbedKey = 'autoEmbed';
 	if (autoEmbedToggle) {

@@ -5,8 +5,8 @@
 <div class="categories-list">
 {{range .Categories}}
 <div class="cat-item">
-	<a href="{{categoryPath .Name}}">{{.Name}}</a>
-	<span class="cat-count">({{.Count}})</span>
+		<a href="{{categoryPath .Name}}" data-help="Open the latest cached papers in this arXiv subject area.">{{.Name}}</a>
+		<span class="cat-count helpable" tabindex="0" data-help="Cached papers currently indexed in this category.">({{.Count}})</span>
 </div>
 {{end}}
 </div>

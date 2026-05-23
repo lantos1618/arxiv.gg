@@ -5,11 +5,11 @@
 <p>{{len .Papers}} papers</p>
 {{range .Papers}}
 	<div class="paper">
-		<span class="paper-id">{{.ID}}</span>
-		<div class="paper-title"><a href="{{paperPath .ID}}">{{.Title}}</a></div>
+		<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.ID}}</span>
+		<div class="paper-title" data-mathjax><a href="{{paperPath .ID}}">{{.Title}}</a></div>
 		{{$authors := limitAuthors .Authors 12}}
 		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</div>
+		<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
 	</div>
 {{else}}
 <p>No papers in this category.</p>

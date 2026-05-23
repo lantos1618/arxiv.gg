@@ -53,6 +53,75 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+type paperSummary struct {
+	ID         string    `json:"id"`
+	Created    time.Time `json:"created"`
+	Updated    time.Time `json:"updated"`
+	Title      string    `json:"title"`
+	Authors    string    `json:"authors"`
+	Categories string    `json:"categories"`
+	DOI        string    `json:"doi,omitempty"`
+}
+
+type similarPaperResult struct {
+	PaperID    string        `json:"paperId"`
+	Similarity float64       `json:"similarity"`
+	Paper      *paperSummary `json:"paper,omitempty"`
+}
+
+func summarizePaper(p *arxiv.Paper) *paperSummary {
+	if p == nil {
+		return nil
+	}
+	return &paperSummary{
+		ID:         p.ID,
+		Created:    p.Created,
+		Updated:    p.Updated,
+		Title:      p.Title,
+		Authors:    compactAuthors(p.Authors),
+		Categories: p.Categories,
+		DOI:        p.DOI,
+	}
+}
+
+func compactAuthors(authors string) string {
+	authors = strings.Join(strings.Fields(authors), " ")
+	if authors == "" {
+		return ""
+	}
+	const maxRunes = 260
+	runes := []rune(authors)
+	if len(runes) <= maxRunes {
+		return authors
+	}
+
+	parts := strings.Split(authors, ",")
+	if len(parts) > 1 {
+		visible := parts
+		if len(visible) > 8 {
+			visible = visible[:8]
+		}
+		summary := strings.TrimSpace(strings.Join(visible, ",")) + " +" + strconv.Itoa(len(parts)-len(visible)) + " more"
+		if len([]rune(summary)) <= maxRunes {
+			return summary
+		}
+	}
+
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
+}
+
+func summarizeSimilarResults(results []arxiv.SemanticResult) []similarPaperResult {
+	summaries := make([]similarPaperResult, len(results))
+	for i, result := range results {
+		summaries[i] = similarPaperResult{
+			PaperID:    result.PaperID,
+			Similarity: result.Similarity,
+			Paper:      summarizePaper(result.Paper),
+		}
+	}
+	return summaries
+}
+
 // setSSEHeaders sets headers for Server-Sent Events, including buffering controls
 func setSSEHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -88,6 +157,10 @@ func (s *server) handleAPIPaper(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(path, "/graph") {
 		s.handleAPICitationGraph(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/similar") {
+		s.handleAPISimilarPapers(w, r)
 		return
 	}
 	if strings.HasSuffix(path, "/fetch") {
@@ -202,6 +275,71 @@ func (s *server) handleAPISearchSemantic(w http.ResponseWriter, r *http.Request)
 			"results": results,
 			"count":   len(results),
 			"query":   query,
+		},
+	})
+}
+
+// handleAPISimilarPapers returns nearest neighbors for a paper embedding.
+func (s *server) handleAPISimilarPapers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	paperID := strings.TrimPrefix(r.URL.Path, "/api/v1/papers/")
+	paperID = strings.TrimSuffix(paperID, "/similar")
+	if paperID == "" {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   "paper ID required",
+		})
+		return
+	}
+
+	limit, err := parseLimit(r, 80, 160)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	ctx := r.Context()
+	paper, err := s.cache.GetPaper(ctx, paperID)
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "paper not found",
+		})
+		return
+	}
+
+	if !s.cache.HasEmbedding(ctx, paperID) {
+		respondJSON(w, http.StatusConflict, APIResponse{
+			Success: false,
+			Error:   "paper embedding not found",
+		})
+		return
+	}
+
+	semanticMap, results, err := s.cache.SimilarPaperMap(ctx, paperID, limit)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"paper":   summarizePaper(paper),
+			"results": summarizeSimilarResults(results),
+			"map":     semanticMap,
+			"count":   len(results),
+			"model":   "all-MiniLM-L6-v2",
 		},
 	})
 }

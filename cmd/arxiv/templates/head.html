@@ -4,7 +4,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	{{$description := "Search and explore arXiv papers, authors, categories, citations, PDFs, and semantic embeddings."}}{{if .Description}}{{$description = .Description}}{{end}}
+	{{$description := "Search and explore arXiv papers, authors, categories, citations, PDFs, and related work."}}{{if .Description}}{{$description = .Description}}{{end}}
 	<meta name="description" content="{{$description}}">
 	<meta name="robots" content="{{if .Robots}}{{.Robots}}{{else}}index,follow,max-snippet:-1,max-image-preview:large{{end}}">
 	{{if .CanonicalURL}}<link rel="canonical" href="{{.CanonicalURL}}">{{end}}
@@ -48,26 +48,55 @@
 			const text = root ? root.textContent || '' : '';
 			return /(\$[^$\n]{1,120}\$|\\\(|\\\[|\\begin\{)/.test(text);
 		}
+		let mathRenderQueue = Promise.resolve();
 		window.loadMathJax = function() {
-			if (window.__arxivMathJaxLoading) return;
-			window.__arxivMathJaxLoading = true;
-			window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };
-			const script = document.createElement('script');
-			script.async = true;
-			script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
-			document.head.appendChild(script);
+			if (window.MathJax && window.MathJax.typesetPromise) return Promise.resolve(window.MathJax);
+			if (window.__arxivMathJaxReady) return window.__arxivMathJaxReady;
+			window.__arxivMathJaxReady = new Promise((resolve, reject) => {
+				window.MathJax = {
+					tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], processEscapes: true },
+					startup: {
+						typeset: false,
+						ready: () => {
+							window.MathJax.startup.defaultReady();
+							resolve(window.MathJax);
+						}
+					}
+				};
+				const script = document.createElement('script');
+				script.async = true;
+				script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js';
+				script.onerror = err => {
+					window.__arxivMathJaxReady = null;
+					reject(err);
+				};
+				document.head.appendChild(script);
+			});
+			return window.__arxivMathJaxReady;
+		};
+		window.typesetMath = function(root) {
+			const candidates = Array.isArray(root) || (window.NodeList && root instanceof NodeList)
+				? Array.from(root)
+				: [root || document.body];
+			const roots = candidates.filter(target => target && hasMath(target));
+			if (roots.length === 0) return Promise.resolve(false);
+			mathRenderQueue = mathRenderQueue
+				.then(() => window.loadMathJax())
+				.then(mj => mj.typesetPromise ? mj.typesetPromise(roots) : false)
+				.catch(err => console.warn('MathJax render failed', err));
+			return mathRenderQueue;
 		};
 		function scheduleMathJax() {
 			const mathRoots = document.querySelectorAll('[data-mathjax]');
 			if (mathRoots.length === 0) return;
-			let needsMath = false;
+			const roots = [];
 			mathRoots.forEach(root => {
-				if (hasMath(root)) needsMath = true;
+				if (hasMath(root)) roots.push(root);
 			});
-			if (!needsMath) return;
-			const load = window.loadMathJax;
-			if ('requestIdleCallback' in window) requestIdleCallback(load, { timeout: 1500 });
-			else setTimeout(load, 500);
+			if (roots.length === 0) return;
+			const render = () => window.typesetMath(roots);
+			if ('requestIdleCallback' in window) requestIdleCallback(render, { timeout: 1500 });
+			else setTimeout(render, 500);
 		}
 		if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleMathJax, { once: true });
 		else scheduleMathJax();
@@ -78,7 +107,8 @@
 		body { font-family: system-ui, -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 1rem; line-height: 1.5; }
 		a { color: #0066cc; }
 		/* Search Bar with Dropdown */
-		.search-container { position: relative; margin: 1rem 0; }
+		.search-container { position: relative; margin: 1rem 0; transition: margin-bottom 0.18s ease; }
+		.search-container.semantic-tooltip-open { margin-bottom: 4.25rem; }
 		.search-bar { display: flex; align-items: stretch; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
 		.search-bar:focus-within { border-color: #0066cc; box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1); }
 		.search-bar.dropdown-open { border-radius: 8px 8px 0 0; }
@@ -91,6 +121,44 @@
 		.search-btn-semantic { background: #0066cc; color: #fff; }
 		.search-btn-semantic:hover { background: #0052a3; }
 		.search-btn .btn-icon { font-size: 1rem; }
+		.semantic-search-tooltip {
+			position: absolute;
+			top: calc(100% + 0.55rem);
+			right: 0;
+			width: min(22rem, 100%);
+			background: #111827;
+			color: #fff;
+			padding: 0.7rem 0.8rem;
+			border-radius: 6px;
+			box-shadow: 0 10px 28px rgba(17,24,39,0.24);
+			font-size: 0.82rem;
+			line-height: 1.35;
+			z-index: 120;
+			opacity: 0;
+			transform: translateY(-4px);
+			pointer-events: none;
+			transition: opacity 0.16s ease, transform 0.16s ease;
+		}
+		.semantic-search-tooltip::before {
+			content: "";
+			position: absolute;
+			top: -6px;
+			right: 2.1rem;
+			width: 12px;
+			height: 12px;
+			background: #111827;
+			transform: rotate(45deg);
+		}
+		.semantic-search-tooltip.is-visible {
+			opacity: 1;
+			transform: translateY(0);
+			pointer-events: auto;
+		}
+		@media (max-width: 640px) {
+			.search-container.semantic-tooltip-open { margin-bottom: 5rem; }
+			.semantic-search-tooltip { left: 0; right: 0; width: auto; }
+			.semantic-search-tooltip::before { right: 1.25rem; }
+		}
 		/* Dropdown */
 		.search-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #0066cc; border-top: none; border-radius: 0 0 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-height: 400px; overflow-y: auto; z-index: 100; display: none; }
 		.search-dropdown.open { display: block; }
@@ -143,6 +211,48 @@
 		.cite-count { color: #6c757d; font-size: 0.85em; }
 		.cat-link { display: inline-flex; align-items: center; min-height: 24px; font-family: monospace; background: #f0f0f0; padding: 0 0.45rem; border-radius: 3px; text-decoration: none; font-size: 0.9em; margin: 0 0.15rem 0.2rem 0; }
 		.cat-link:hover { background: #e0e0e0; }
+		[data-help] { position: relative; }
+		[data-help]::before,
+		[data-help]::after {
+			position: absolute;
+			left: 50%;
+			opacity: 0;
+			pointer-events: none;
+			transform: translate(-50%, -4px);
+			transition: opacity 0.14s ease, transform 0.14s ease;
+			z-index: 1000;
+		}
+		[data-help]::before {
+			content: "";
+			bottom: calc(100% + 3px);
+			border: 6px solid transparent;
+			border-top-color: #111827;
+		}
+		[data-help]::after {
+			content: attr(data-help);
+			bottom: calc(100% + 14px);
+			width: max-content;
+			max-width: min(19rem, calc(100vw - 2rem));
+			padding: 0.55rem 0.65rem;
+			background: #111827;
+			color: #fff;
+			border-radius: 6px;
+			box-shadow: 0 10px 28px rgba(17,24,39,0.22);
+			font-size: 0.78rem;
+			font-family: system-ui, -apple-system, sans-serif;
+			font-weight: 500;
+			line-height: 1.35;
+			white-space: normal;
+			text-align: left;
+		}
+		[data-help]:hover::before,
+		[data-help]:hover::after,
+		[data-help]:focus-visible::before,
+		[data-help]:focus-visible::after {
+			opacity: 1;
+			transform: translate(-50%, 0);
+		}
+		.helpable { cursor: help; }
 		.categories-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 		.cat-item { background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 4px; }
 		.cat-item a { text-decoration: none; font-family: monospace; }

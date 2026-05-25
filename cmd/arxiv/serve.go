@@ -169,8 +169,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	cacheMW := newCacheMiddleware(5 * time.Minute)                      // Cache for 5 minutes
 	rateLimiter := newRateLimiter(1000, time.Minute, trustProxyHeaders) // Allow higher burst per IP
 
-	// Apply middleware: rate limiting first, then caching
-	handler := rateLimiter.Handler(cacheMW.Handler(mux))
+	// Apply middleware: rate limiting first, then caching/security headers.
+	handler := securityHeadersMiddleware(rateLimiter.Handler(cacheMW.Handler(mux)))
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting server at http://localhost%s", addr)

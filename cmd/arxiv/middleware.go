@@ -12,6 +12,38 @@ import (
 	"time"
 )
 
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers := w.Header()
+		setHeaderIfEmpty(headers, "X-Content-Type-Options", "nosniff")
+		setHeaderIfEmpty(headers, "X-Frame-Options", "DENY")
+		setHeaderIfEmpty(headers, "Referrer-Policy", "strict-origin-when-cross-origin")
+		setHeaderIfEmpty(headers, "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		setHeaderIfEmpty(headers, "Cross-Origin-Opener-Policy", "same-origin")
+		setHeaderIfEmpty(headers, "Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		setHeaderIfEmpty(headers, "Content-Security-Policy", strings.Join([]string{
+			"default-src 'self'",
+			"base-uri 'self'",
+			"object-src 'none'",
+			"frame-ancestors 'none'",
+			"form-action 'self'",
+			"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://d3js.org https://www.googletagmanager.com",
+			"style-src 'self' 'unsafe-inline'",
+			"img-src 'self' data: https:",
+			"font-src 'self' data: https://cdn.jsdelivr.net",
+			"connect-src 'self' https://www.google-analytics.com",
+			"upgrade-insecure-requests",
+		}, "; "))
+		next.ServeHTTP(w, r)
+	})
+}
+
+func setHeaderIfEmpty(headers http.Header, key, value string) {
+	if headers.Get(key) == "" {
+		headers.Set(key, value)
+	}
+}
+
 // cacheEntry holds cached response data
 type cacheEntry struct {
 	etag      string

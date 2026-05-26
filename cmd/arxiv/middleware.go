@@ -178,12 +178,23 @@ func shouldBypassResponseCache(r *http.Request) bool {
 	if strings.HasPrefix(r.URL.Path, "/admin") {
 		return true
 	}
+	if r.URL.Path == "/login" ||
+		r.URL.Path == "/login/verify" ||
+		r.URL.Path == "/auth/google/start" ||
+		r.URL.Path == "/auth/google/callback" ||
+		r.URL.Path == "/logout" ||
+		r.URL.Path == "/account" {
+		return true
+	}
 	if r.URL.Query().Get("admin_token") != "" ||
 		r.Header.Get("Authorization") != "" ||
 		r.Header.Get("X-Admin-Token") != "" {
 		return true
 	}
 	if _, err := r.Cookie(adminCookieName); err == nil {
+		return true
+	}
+	if _, err := r.Cookie(sessionCookieName); err == nil {
 		return true
 	}
 	return false

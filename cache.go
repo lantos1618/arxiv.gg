@@ -140,7 +140,22 @@ func (c *Cache) Root() string {
 
 func (c *Cache) initSchema() error {
 	// GORM AutoMigrate handles all regular tables
-	if err := c.db.AutoMigrate(&Paper{}, &Citation{}, &SyncState{}, &DownloadQueueItem{}, &Embedding{}, &EmbeddingJob{}, &AuthorCollaboration{}, &AuthorEmbedding{}); err != nil {
+	if err := c.db.AutoMigrate(
+		&Paper{},
+		&Citation{},
+		&SyncState{},
+		&DownloadQueueItem{},
+		&Embedding{},
+		&EmbeddingV2{},
+		&PaperChunk{},
+		&ChunkEmbeddingV2{},
+		&EmbeddingJob{},
+		&AuthorCollaboration{},
+		&AuthorEmbedding{},
+		&User{},
+		&LoginCode{},
+		&UserSession{},
+	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 
@@ -197,6 +212,10 @@ func (c *Cache) initSQLiteSchema() error {
 }
 
 func (c *Cache) initPostgresSchema() error {
+	if err := c.execPostgresSchema(`CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
+		return err
+	}
+
 	// Add indexes for common queries
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_papers_src_downloaded ON papers(src_downloaded)",
@@ -207,22 +226,28 @@ func (c *Cache) initPostgresSchema() error {
 		"CREATE INDEX IF NOT EXISTS idx_citations_from_id ON citations(from_id)",
 	}
 	for _, idx := range indexes {
-		c.db.Exec(idx)
+		if err := c.execPostgresSchema(idx); err != nil {
+			return err
+		}
 	}
 
 	// Add tsvector column for full-text search if it doesn't exist
-	c.db.Exec(`
+	if err := c.execPostgresSchema(`
 		DO $$ BEGIN
 			ALTER TABLE papers ADD COLUMN IF NOT EXISTS search_vector tsvector;
 		EXCEPTION WHEN duplicate_column THEN NULL;
 		END $$;
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Create GIN index on search_vector
-	c.db.Exec(`CREATE INDEX IF NOT EXISTS idx_papers_search ON papers USING GIN(search_vector)`)
+	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_papers_search ON papers USING GIN(search_vector)`); err != nil {
+		return err
+	}
 
 	// Create function to update search_vector
-	c.db.Exec(`
+	if err := c.execPostgresSchema(`
 		CREATE OR REPLACE FUNCTION papers_search_trigger() RETURNS trigger AS $$
 		BEGIN
 			NEW.search_vector :=
@@ -231,36 +256,80 @@ func (c *Cache) initPostgresSchema() error {
 			RETURN NEW;
 		END
 		$$ LANGUAGE plpgsql;
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Create trigger for automatic updates
-	c.db.Exec(`
+	if err := c.execPostgresSchema(`
 		DROP TRIGGER IF EXISTS papers_search_update ON papers;
 		CREATE TRIGGER papers_search_update
 			BEFORE INSERT OR UPDATE ON papers
 			FOR EACH ROW EXECUTE FUNCTION papers_search_trigger();
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Create HNSW index for fast vector similarity search (pgvector)
 	// This dramatically improves semantic search performance at scale
-	c.db.Exec(`
+	if err := c.execPostgresSchema(`ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS vector vector(384)`); err != nil {
+		return err
+	}
+	if err := c.execPostgresSchema(`
 		CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw
 		ON embeddings USING hnsw (vector vector_cosine_ops)
 		WITH (m = 16, ef_construction = 64);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Create index on embedding_jobs for efficient queue processing
-	c.db.Exec(`CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_priority ON embedding_jobs(status, priority DESC, created_at)`)
+	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_embedding_jobs_status_priority ON embedding_jobs(status, priority DESC, created_at)`); err != nil {
+		return err
+	}
+
+	// Add vector columns for the v2 embedding pipeline. These tables are
+	// intentionally separate from the current 384d production embeddings.
+	if err := c.execPostgresSchema(`ALTER TABLE embeddings_v2 ADD COLUMN IF NOT EXISTS vector vector(1024)`); err != nil {
+		return err
+	}
+	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_embeddings_v2_lookup ON embeddings_v2(scope, model, dim, paper_id)`); err != nil {
+		return err
+	}
+	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_scope ON paper_chunks(paper_id, scope, chunk_index)`); err != nil {
+		return err
+	}
+	if err := c.execPostgresSchema(`ALTER TABLE chunk_embeddings_v2 ADD COLUMN IF NOT EXISTS vector vector(1024)`); err != nil {
+		return err
+	}
+	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_v2_lookup ON chunk_embeddings_v2(model, dim, chunk_id)`); err != nil {
+		return err
+	}
 
 	// Add vector column to author_embeddings for pgvector
-	c.db.Exec(`ALTER TABLE author_embeddings ADD COLUMN IF NOT EXISTS vector vector(384)`)
-	c.db.Exec(`
+	if err := c.execPostgresSchema(`ALTER TABLE author_embeddings ADD COLUMN IF NOT EXISTS vector vector(384)`); err != nil {
+		return err
+	}
+	if err := c.execPostgresSchema(`
 		CREATE INDEX IF NOT EXISTS idx_author_embeddings_vector_hnsw
 		ON author_embeddings USING hnsw (vector vector_cosine_ops)
 		WITH (m = 16, ef_construction = 64);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	fmt.Println("PostgreSQL schema initialized with full-text search and pgvector HNSW index")
+	return nil
+}
+
+func (c *Cache) execPostgresSchema(query string) error {
+	if err := c.db.Exec(query).Error; err != nil {
+		preview := strings.Join(strings.Fields(query), " ")
+		if len(preview) > 120 {
+			preview = preview[:120] + "..."
+		}
+		return fmt.Errorf("postgres schema: %s: %w", preview, err)
+	}
 	return nil
 }
 

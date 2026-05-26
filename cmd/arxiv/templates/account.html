@@ -1,0 +1,24 @@
+{{define "account"}}
+{{template "head" .}}
+<h1>Account</h1>
+<div class="account-summary">
+	{{if .User.PictureURL}}<p><img src="{{.User.PictureURL}}" alt="" width="48" height="48" style="border-radius:50%;"></p>{{end}}
+	{{if .User.Name}}<p><strong>Name:</strong> {{.User.Name}}</p>{{end}}
+	<p><strong>Email:</strong> {{.User.Email}}</p>
+	<p><strong>Sign-in:</strong> {{.User.AuthProvider}}</p>
+	<p><strong>Plan:</strong> {{.User.Plan}}</p>
+</div>
+
+<h2>What This Unlocks Next</h2>
+<ul>
+	<li>Saved searches and paper maps.</li>
+	<li>Topic, author, and category alerts.</li>
+	<li>Paid full-paper semantic search once chunk embeddings are live.</li>
+</ul>
+
+<form method="post" action="/logout">
+	<button class="btn btn-secondary" type="submit">Sign out</button>
+</form>
+
+{{template "foot" .}}
+{{end}}

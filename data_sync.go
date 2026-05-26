@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"gorm.io/gorm/clause"
 )
 
 // SyncOptions configures metadata synchronization.
@@ -122,9 +124,32 @@ func (c *Cache) saveResumptionToken(ctx context.Context, token string) {
 }
 
 func (c *Cache) insertPapers(ctx context.Context, papers []Paper) error {
+	if len(papers) == 0 {
+		return nil
+	}
+
 	now := time.Now()
 	for i := range papers {
 		papers[i].MetadataUpdated = &now
+		if papers[i].FetchedAt == nil {
+			papers[i].FetchedAt = &now
+		}
 	}
-	return c.db.WithContext(ctx).Save(papers).Error
+
+	return c.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"created",
+			"updated",
+			"title",
+			"abstract",
+			"authors",
+			"categories",
+			"comments",
+			"journal_ref",
+			"doi",
+			"license",
+			"metadata_updated",
+		}),
+	}).Create(&papers).Error
 }

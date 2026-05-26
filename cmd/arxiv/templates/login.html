@@ -1,0 +1,38 @@
+{{define "login"}}
+{{template "head" .}}
+<h1>Sign in</h1>
+
+{{if .Error}}<p class="alert error">{{.Error}}</p>{{end}}
+
+{{if .GoogleEnabled}}
+<p><a class="btn" href="/auth/google/start?next={{urlquery .Next}}">Continue with Google</a></p>
+{{end}}
+
+{{if .Sent}}
+<p>Enter the code we sent to <strong>{{.Email}}</strong>.</p>
+{{if .DevCode}}<p class="alert">Development code: <code>{{.DevCode}}</code></p>{{end}}
+<form method="post" action="/login/verify" class="auth-form">
+	<input type="hidden" name="email" value="{{.Email}}">
+	<input type="hidden" name="next" value="{{.Next}}">
+	<label for="code">Sign-in code</label>
+	<input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
+	<button class="btn" type="submit">Continue</button>
+</form>
+<form method="post" action="/login" class="inline-form">
+	<input type="hidden" name="email" value="{{.Email}}">
+	<input type="hidden" name="next" value="{{.Next}}">
+	<button class="link-button" type="submit">Send a new code</button>
+</form>
+{{else}}
+{{if .GoogleEnabled}}<p>Or use email code.</p>{{end}}
+<p>Use your email to save searches, follow topics, and unlock full-paper tools when they land.</p>
+<form method="post" action="/login" class="auth-form">
+	<input type="hidden" name="next" value="{{.Next}}">
+	<label for="email">Email</label>
+	<input id="email" type="email" name="email" value="{{.Email}}" autocomplete="email" required autofocus>
+	<button class="btn" type="submit">Send code</button>
+</form>
+{{end}}
+
+{{template "foot" .}}
+{{end}}

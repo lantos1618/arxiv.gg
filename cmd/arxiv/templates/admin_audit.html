@@ -1,0 +1,49 @@
+{{define "admin_audit"}}
+{{template "head" .}}
+<style>
+	.admin-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
+	.admin-tabs a { padding: 0.35rem 0.65rem; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #111827; }
+	.admin-tabs a.active { border-color: #0066cc; color: #0066cc; background: #f0f7ff; }
+	.admin-section { margin: 1.5rem 0; }
+	.admin-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+	.admin-table th, .admin-table td { border-bottom: 1px solid #e5e7eb; padding: 0.55rem 0.45rem; text-align: left; vertical-align: top; }
+	.admin-table th { color: #374151; font-weight: 700; background: #f9fafb; }
+	.placeholder-row td { color: #92400e; background: #fffbeb; }
+	@media (max-width: 760px) {
+		.admin-table { display: block; overflow-x: auto; white-space: nowrap; }
+	}
+</style>
+
+<h1>Admin Audit</h1>
+<p class="inline-notice">Read-only audit trail for admin page views. Future admin mutations should write here too.</p>
+
+<div class="admin-tabs">
+	<a href="/admin">Overview</a>
+	<a href="/admin/users">Users</a>
+	<a class="active" href="/admin/audit">Audit</a>
+</div>
+
+<div class="admin-section">
+	<table class="admin-table">
+		<thead><tr><th>Time UTC</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+		<tbody>
+			{{range .Stats.RecentAuditLog}}
+			<tr>
+				<td>{{timeStamp .CreatedAt}}</td>
+				<td>{{.AdminEmail}}</td>
+				<td>{{.Action}}</td>
+				<td>{{.TargetType}} {{.TargetID}}</td>
+				<td>{{.Details}}</td>
+			</tr>
+			{{else}}
+			<tr><td colspan="5">No admin audit rows yet.</td></tr>
+			{{end}}
+			<tr class="placeholder-row">
+				<td colspan="5">PLACEHOLDER: app-level user activity and payment events are not tracked in this table yet.</td>
+			</tr>
+		</tbody>
+	</table>
+</div>
+
+{{template "foot" .}}
+{{end}}

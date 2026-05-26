@@ -227,10 +227,17 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 	if data == nil {
 		data = map[string]any{}
 	}
+	var currentUser *arxiv.User
 	if _, exists := data["CurrentUser"]; !exists {
 		if user, ok := s.currentUser(r); ok {
 			data["CurrentUser"] = user
+			currentUser = user
 		}
+	} else if user, ok := data["CurrentUser"].(*arxiv.User); ok {
+		currentUser = user
+	}
+	if _, exists := data["CurrentUserIsAdmin"]; !exists {
+		data["CurrentUserIsAdmin"] = s.userIsAdmin(currentUser) || s.hasAdminAccess(r)
 	}
 	if err := templates.ExecuteTemplate(w, name, data); err != nil {
 		log.Printf("render template %s failed: %v", name, err)

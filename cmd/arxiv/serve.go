@@ -32,6 +32,33 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 		}
 		return s[:n] + "..."
 	},
+	"formatInt": func(n int64) string {
+		return formatInt(n)
+	},
+	"percent": func(n, total int64) string {
+		if total <= 0 {
+			return "0.0%"
+		}
+		return fmt.Sprintf("%.1f%%", float64(n)/float64(total)*100)
+	},
+	"mapInt": func(m map[string]int64, key string) int64 {
+		if m == nil {
+			return 0
+		}
+		return m[key]
+	},
+	"timeOrDash": func(t *time.Time) string {
+		if t == nil || t.IsZero() {
+			return "-"
+		}
+		return t.UTC().Format("2006-01-02 15:04")
+	},
+	"timeStamp": func(t time.Time) string {
+		if t.IsZero() {
+			return "-"
+		}
+		return t.UTC().Format("2006-01-02 15:04")
+	},
 	"parseAuthors":    parseAuthors,
 	"limitAuthors":    limitAuthors,
 	"parseCategories": parseCategories,
@@ -173,7 +200,10 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/favicon.svg", srv.handleFavicon)
 	mux.HandleFunc("/health", srv.handleHealth)
 
-	// Admin routes (unlisted, secret)
+	// Admin routes.
+	mux.HandleFunc("/admin", srv.handleAdminDashboard)
+	mux.HandleFunc("/admin/users", srv.handleAdminUsers)
+	mux.HandleFunc("/admin/audit", srv.handleAdminAudit)
 	mux.HandleFunc("/admin/embeddings", srv.handleAdminEmbeddings)
 
 	// Setup middleware
@@ -261,6 +291,30 @@ func configuredOfficialArxivPapersAsOf() string {
 		return defaultOfficialArxivPapersAsOf
 	}
 	return value
+}
+
+func formatInt(n int64) string {
+	sign := ""
+	if n < 0 {
+		sign = "-"
+		n = -n
+	}
+	s := strconv.FormatInt(n, 10)
+	if len(s) <= 3 {
+		return sign + s
+	}
+	var b strings.Builder
+	b.WriteString(sign)
+	first := len(s) % 3
+	if first == 0 {
+		first = 3
+	}
+	b.WriteString(s[:first])
+	for i := first; i < len(s); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(s[i : i+3])
+	}
+	return b.String()
 }
 
 type coverageSignal struct {
@@ -1831,36 +1885,5 @@ func (s *server) handleAdminEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if !s.localMode && !s.requireAdmin(w, r) {
 		return
 	}
-	if r.URL.Query().Get("admin_token") != "" {
-		http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
-		return
-	}
-
-	ctx := r.Context()
-	stats, err := s.cache.Stats(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	pendingCount := stats.TotalPapers - stats.EmbeddingsCount
-	if pendingCount < 0 {
-		pendingCount = 0
-	}
-
-	percentComplete := float64(0)
-	if stats.TotalPapers > 0 {
-		percentComplete = float64(stats.EmbeddingsCount) / float64(stats.TotalPapers) * 100
-	}
-
-	estimatedMinutes := pendingCount / 100 // ~100 papers per minute on average
-
-	data := map[string]any{
-		"Title":            "Admin - Embeddings",
-		"Stats":            stats,
-		"PendingCount":     pendingCount,
-		"PercentComplete":  percentComplete,
-		"EstimatedMinutes": estimatedMinutes,
-	}
-	s.renderTemplate(w, r, "admin_embeddings", data)
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }

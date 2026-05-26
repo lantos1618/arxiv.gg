@@ -76,3 +76,36 @@ func TestRequireAdminSetsCookieOnlyForBrowserQueryLogin(t *testing.T) {
 		})
 	}
 }
+
+func TestRequireAdminRedirectsBrowserToLoginWhenAdminEmailsConfigured(t *testing.T) {
+	t.Setenv("ADMIN_TOKEN", "")
+	t.Setenv("ADMIN_EMAILS", "owner@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
+	rec := httptest.NewRecorder()
+
+	if ok := (&server{}).requireAdmin(rec, req); ok {
+		t.Fatal("requireAdmin returned true")
+	}
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected %d, got %d", http.StatusSeeOther, rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/login?next=%2Fadmin%2Fusers" {
+		t.Fatalf("unexpected redirect: %q", got)
+	}
+}
+
+func TestRequireAdminKeepsAPITokenGateWhenAdminEmailsConfigured(t *testing.T) {
+	t.Setenv("ADMIN_TOKEN", "")
+	t.Setenv("ADMIN_EMAILS", "owner@example.com")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/embeddings/generate", nil)
+	rec := httptest.NewRecorder()
+
+	if ok := (&server{}).requireAdmin(rec, req); ok {
+		t.Fatal("requireAdmin returned true")
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}

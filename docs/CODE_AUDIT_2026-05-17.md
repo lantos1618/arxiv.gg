@@ -187,7 +187,7 @@ Fix:
 
 ## Lower Priority Cleanups
 
-- `go.mod` still uses module path `github.com/tmc/arxiv`; docs/templates also contain old `tmc/arxiv` links. If the repo is now `lantos1618/arxiv.gg`, update public docs and generated API page links.
+- Module path and public GitHub links now point at `github.com/lantos1618/arxiv.gg`.
 - `SearchSemantic` assumes Postgres/pgvector; local SQLite with embeddings will fail at query time. Gate it by DB type.
 - `BuildAuthorGraph` clears `author_collaborations` before a full rebuild. If the rebuild fails mid-run, author graph data is empty. Build into a temp table and swap.
 - Several manual O(n^2) sorts exist in author/category/PDF search code. Fine at small sizes, but easy to replace with `sort.Slice`.

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/arxiv"
+	"github.com/lantos1618/arxiv.gg"
 )
 
 // getToolsPath returns the path to a tool script.
@@ -250,7 +250,7 @@ func (s *server) handleAPISearchSemantic(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Generate query embedding using Python script
-	queryEmbedding, err := s.generateQueryEmbedding(query)
+	queryEmbedding, err := s.generateQueryEmbedding(ctx, query)
 	if err != nil {
 		respondJSON(w, http.StatusServiceUnavailable, APIResponse{
 			Success: false,
@@ -498,7 +498,7 @@ func (s *server) handleAPISearchStream(w http.ResponseWriter, r *http.Request) {
 		}))
 		flusher.Flush()
 
-		queryEmbedding, err := s.generateQueryEmbedding(query)
+		queryEmbedding, err := s.generateQueryEmbedding(ctx, query)
 		if err != nil {
 			fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
 				"type":  "error",
@@ -1300,11 +1300,13 @@ func (s *server) handleAPIEmbeddingWorkerStatus(w http.ResponseWriter, r *http.R
 		defer cancel()
 		req, _ := http.NewRequestWithContext(ctx, "GET", s.embeddingServiceURL+"/health", nil)
 		resp, err := http.DefaultClient.Do(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		if err != nil || resp.StatusCode != http.StatusOK {
 			response["serviceUp"] = false
 		} else {
 			response["serviceUp"] = true
-			resp.Body.Close()
 		}
 	}
 
@@ -1314,10 +1316,12 @@ func (s *server) handleAPIEmbeddingWorkerStatus(w http.ResponseWriter, r *http.R
 	})
 }
 
-func (s *server) generateQueryEmbedding(query string) ([]float32, error) {
+var queryEmbeddingPythonSemaphore = make(chan struct{}, 1)
+
+func (s *server) generateQueryEmbedding(ctx context.Context, query string) ([]float32, error) {
 	// Try HTTP embedding service first (fast path)
 	if s.embeddingServiceURL != "" {
-		embedding, err := s.generateQueryEmbeddingHTTP(query)
+		embedding, err := s.generateQueryEmbeddingHTTP(ctx, query)
 		if err == nil {
 			return embedding, nil
 		}
@@ -1326,18 +1330,18 @@ func (s *server) generateQueryEmbedding(query string) ([]float32, error) {
 	}
 
 	// Fallback to Python script (slow path - loads model each time)
-	return s.generateQueryEmbeddingPython(query)
+	return s.generateQueryEmbeddingPython(ctx, query)
 }
 
 // generateQueryEmbeddingHTTP calls the FastAPI embedding service.
-func (s *server) generateQueryEmbeddingHTTP(query string) ([]float32, error) {
+func (s *server) generateQueryEmbeddingHTTP(ctx context.Context, query string) ([]float32, error) {
 	reqBody := map[string]string{"text": query}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.embeddingServiceURL+"/embed", bytes.NewReader(body))
@@ -1368,11 +1372,24 @@ func (s *server) generateQueryEmbeddingHTTP(query string) ([]float32, error) {
 }
 
 // generateQueryEmbeddingPython falls back to the Python script.
-func (s *server) generateQueryEmbeddingPython(query string) ([]float32, error) {
-	cmd := exec.Command("python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--query", query)
+func (s *server) generateQueryEmbeddingPython(ctx context.Context, query string) ([]float32, error) {
+	select {
+	case queryEmbeddingPythonSemaphore <- struct{}{}:
+		defer func() { <-queryEmbeddingPythonSemaphore }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "python3", getToolsPath("generate_embeddings.py"), s.cache.Root(), "--query", query)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("python embedding timed out: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("python embedding failed: %v, output: %s", err, string(output))
 	}
 
@@ -1411,12 +1428,6 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Check total connections limit
-	if s.paperBroadcast.Count() >= 10000 {
-		http.Error(w, "too many connections", http.StatusServiceUnavailable)
-		return
-	}
-
 	limit, err := parseLimit(r, 50, 100)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, APIResponse{
@@ -1425,6 +1436,14 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		})
 		return
 	}
+
+	clientIP := clientIPFromRequest(r, s.trustProxyHeaders)
+	sub, ok := s.paperBroadcast.Subscribe(clientIP)
+	if !ok {
+		http.Error(w, "too many stream connections", http.StatusServiceUnavailable)
+		return
+	}
+	defer s.paperBroadcast.Unsubscribe(sub)
 
 	setSSEHeaders(w)
 
@@ -1499,10 +1518,6 @@ func (s *server) handleAPIRecentPapersStream(w http.ResponseWriter, r *http.Requ
 		"count": len(papers),
 	}))
 	flusher.Flush()
-
-	// Subscribe to real-time updates
-	sub := s.paperBroadcast.Subscribe()
-	defer s.paperBroadcast.Unsubscribe(sub)
 
 	// Keep connection open for 10 minutes max (client will reconnect)
 	timeout := time.After(10 * time.Minute)

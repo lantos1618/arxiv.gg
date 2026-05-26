@@ -10,28 +10,18 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/smtp"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/tmc/arxiv"
+	"github.com/lantos1618/arxiv.gg"
 	"gorm.io/gorm"
 )
 
 const sessionCookieName = "arxiv_session"
 const googleOAuthStateCookieName = "arxiv_google_oauth_state"
 const googleOAuthNextCookieName = "arxiv_google_oauth_next"
-
-type smtpConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	From     string
-}
 
 type googleOAuthConfig struct {
 	ClientID     string
@@ -64,122 +54,29 @@ type googleUserInfo struct {
 }
 
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		_, googleEnabled := configuredGoogleOAuth(r)
-		templates.ExecuteTemplate(w, "login", map[string]any{
-			"Title":         "Sign in",
-			"Next":          safeNextPath(r.URL.Query().Get("next")),
-			"GoogleEnabled": googleEnabled,
-		})
-	case http.MethodPost:
-		if s.loginLimiter != nil && !s.loginLimiter.Allow(r) {
-			writeRateLimitExceeded(w, r)
-			return
-		}
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "bad form", http.StatusBadRequest)
-			return
-		}
-		email := strings.TrimSpace(r.FormValue("email"))
-		next := safeNextPath(r.FormValue("next"))
-		if _, err := arxiv.NormalizeEmail(email); err != nil {
-			templates.ExecuteTemplate(w, "login", map[string]any{
-				"Title": "Sign in",
-				"Email": email,
-				"Next":  next,
-				"Error": "Enter a valid email address.",
-			})
-			return
-		}
-
-		devCodes := os.Getenv("AUTH_DEV_SHOW_CODES") == "true"
-		mailer, hasMailer := configuredSMTP()
-		if !hasMailer && !devCodes {
-			templates.ExecuteTemplate(w, "login", map[string]any{
-				"Title": "Sign in",
-				"Email": email,
-				"Next":  next,
-				"Error": "Sign-in email is not configured yet.",
-			})
-			return
-		}
-
-		ttl := configuredLoginCodeTTL()
-		code, err := s.createAndSendLoginCode(r.Context(), email, ttl, mailer, hasMailer)
-		if err != nil {
-			log.Printf("login code failed: %v", err)
-			templates.ExecuteTemplate(w, "login", map[string]any{
-				"Title": "Sign in",
-				"Email": email,
-				"Next":  next,
-				"Error": "Could not send a sign-in code. Try again in a moment.",
-			})
-			return
-		}
-
-		data := map[string]any{
-			"Title":   "Verify sign in",
-			"Email":   email,
-			"Next":    next,
-			"Sent":    true,
-			"TTLMin":  int(ttl.Minutes()),
-			"DevCode": "",
-		}
-		if devCodes {
-			data["DevCode"] = code
-		}
-		templates.ExecuteTemplate(w, "login", data)
-	default:
+	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-}
-
-func (s *server) handleLoginVerify(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		templates.ExecuteTemplate(w, "login", map[string]any{
-			"Title": "Verify sign in",
-			"Email": r.URL.Query().Get("email"),
-			"Next":  safeNextPath(r.URL.Query().Get("next")),
-			"Sent":  true,
-		})
-	case http.MethodPost:
-		if s.loginLimiter != nil && !s.loginLimiter.Allow(r) {
-			writeRateLimitExceeded(w, r)
-			return
+	next := safeNextPath(r.URL.Query().Get("next"))
+	if _, ok := s.currentUser(r); ok {
+		if next == "/" || next == "/login" {
+			next = "/account"
 		}
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "bad form", http.StatusBadRequest)
-			return
-		}
-		email := strings.TrimSpace(r.FormValue("email"))
-		code := strings.TrimSpace(r.FormValue("code"))
-		next := safeNextPath(r.FormValue("next"))
-
-		user, err := s.cache.ConsumeLoginCode(r.Context(), email, code)
-		if err != nil {
-			templates.ExecuteTemplate(w, "login", map[string]any{
-				"Title": "Verify sign in",
-				"Email": email,
-				"Next":  next,
-				"Sent":  true,
-				"Error": "That code did not work or expired.",
-			})
-			return
-		}
-
-		token, err := s.cache.CreateUserSession(r.Context(), user.ID, requestIP(r), r.UserAgent(), 30*24*time.Hour)
-		if err != nil {
-			log.Printf("create session failed: %v", err)
-			http.Error(w, "could not create session", http.StatusInternalServerError)
-			return
-		}
-		setSessionCookie(w, r, token)
 		http.Redirect(w, r, next, http.StatusSeeOther)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
+
+	_, googleEnabled := configuredGoogleOAuth(r)
+	data := map[string]any{
+		"Title":         "Sign in",
+		"Next":          next,
+		"GoogleEnabled": googleEnabled,
+	}
+	if strings.TrimSpace(r.URL.Query().Get("error")) != "" {
+		data["Error"] = "Google sign-in could not start. Try again in a moment."
+	}
+	s.renderTemplate(w, r, "login", data)
 }
 
 func (s *server) handleGoogleOAuthStart(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +123,7 @@ func (s *server) handleGoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if msg := strings.TrimSpace(r.URL.Query().Get("error")); msg != "" {
-		templates.ExecuteTemplate(w, "login", map[string]any{
+		s.renderTemplate(w, r, "login", map[string]any{
 			"Title":         "Sign in",
 			"GoogleEnabled": true,
 			"Error":         "Google sign-in was cancelled or denied.",
@@ -303,7 +200,7 @@ func (s *server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?next=/account", http.StatusSeeOther)
 		return
 	}
-	templates.ExecuteTemplate(w, "account", map[string]any{
+	s.renderTemplate(w, r, "account", map[string]any{
 		"Title": "Account",
 		"User":  user,
 	})
@@ -326,36 +223,18 @@ func (s *server) currentUser(r *http.Request) (*arxiv.User, bool) {
 	return user, true
 }
 
-func (s *server) createAndSendLoginCode(ctx context.Context, email string, ttl time.Duration, mailer smtpConfig, hasMailer bool) (string, error) {
-	_, code, err := s.cache.CreateLoginCode(ctx, email, ttl)
-	if err != nil {
-		return "", err
+func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
+	if data == nil {
+		data = map[string]any{}
 	}
-	if !hasMailer {
-		log.Printf("AUTH_DEV_SHOW_CODES=true login code for %s: %s", email, code)
-		return code, nil
+	if _, exists := data["CurrentUser"]; !exists {
+		if user, ok := s.currentUser(r); ok {
+			data["CurrentUser"] = user
+		}
 	}
-	if err := sendLoginCodeEmail(mailer, email, code, ttl); err != nil {
-		return "", err
+	if err := templates.ExecuteTemplate(w, name, data); err != nil {
+		log.Printf("render template %s failed: %v", name, err)
 	}
-	return code, nil
-}
-
-func configuredSMTP() (smtpConfig, bool) {
-	cfg := smtpConfig{
-		Host:     strings.TrimSpace(os.Getenv("SMTP_HOST")),
-		Port:     strings.TrimSpace(os.Getenv("SMTP_PORT")),
-		User:     strings.TrimSpace(os.Getenv("SMTP_USER")),
-		Password: os.Getenv("SMTP_PASSWORD"),
-		From:     strings.TrimSpace(os.Getenv("SMTP_FROM")),
-	}
-	if cfg.Port == "" {
-		cfg.Port = "587"
-	}
-	if cfg.From == "" {
-		cfg.From = cfg.User
-	}
-	return cfg, cfg.Host != "" && cfg.From != ""
 }
 
 func configuredGoogleOAuth(r *http.Request) (googleOAuthConfig, bool) {
@@ -485,36 +364,6 @@ func fetchGoogleUserInfo(ctx context.Context, accessToken string) (*googleUserIn
 		return nil, err
 	}
 	return &profile, nil
-}
-
-func configuredLoginCodeTTL() time.Duration {
-	minutes := 10
-	if raw := strings.TrimSpace(os.Getenv("LOGIN_CODE_TTL_MINUTES")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 60 {
-			minutes = parsed
-		}
-	}
-	return time.Duration(minutes) * time.Minute
-}
-
-func sendLoginCodeEmail(cfg smtpConfig, to, code string, ttl time.Duration) error {
-	addr := net.JoinHostPort(cfg.Host, cfg.Port)
-	subject := "Your arXiv.gg sign-in code"
-	body := fmt.Sprintf("Your arXiv.gg sign-in code is %s.\n\nIt expires in %d minutes.\n\nIf you did not request this, you can ignore this email.\n", code, int(ttl.Minutes()))
-	msg := strings.Join([]string{
-		"From: " + cfg.From,
-		"To: " + to,
-		"Subject: " + subject,
-		"Content-Type: text/plain; charset=UTF-8",
-		"",
-		body,
-	}, "\r\n")
-
-	var auth smtp.Auth
-	if cfg.User != "" || cfg.Password != "" {
-		auth = smtp.PlainAuth("", cfg.User, cfg.Password, cfg.Host)
-	}
-	return smtp.SendMail(addr, auth, cfg.From, []string{to}, []byte(msg))
 }
 
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {

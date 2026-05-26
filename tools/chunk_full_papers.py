@@ -151,21 +151,31 @@ def store_chunks(conn, paper_id, chunks):
 def main():
     parser = argparse.ArgumentParser(description="Chunk extracted full-paper text")
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--select-batch-size", type=int, default=100)
     parser.add_argument("--chunk-chars", type=int, default=3000)
     parser.add_argument("--overlap-chars", type=int, default=300)
     args = parser.parse_args()
 
     conn = db_connect()
     ensure_schema(conn)
-    papers = fetch_papers(conn, args.limit)
+    processed = 0
     total_chunks = 0
-    for paper_id, pdf_text in papers:
-        chunks = chunk_text(pdf_text, args.chunk_chars, args.overlap_chars)
-        stored = store_chunks(conn, paper_id, chunks)
-        total_chunks += stored
-        print(f"{paper_id}: chunks={stored}", flush=True)
+    while processed < args.limit:
+        remaining = args.limit - processed
+        batch_limit = min(args.select_batch_size, remaining)
+        papers = fetch_papers(conn, batch_limit)
+        if not papers:
+            break
+        for paper_id, pdf_text in papers:
+            chunks = chunk_text(pdf_text, args.chunk_chars, args.overlap_chars)
+            stored = store_chunks(conn, paper_id, chunks)
+            total_chunks += stored
+            processed += 1
+            print(f"{paper_id}: chunks={stored}", flush=True)
+        if len(papers) < batch_limit:
+            break
     conn.close()
-    print(f"done papers={len(papers)} chunks={total_chunks}")
+    print(f"done papers={processed} chunks={total_chunks}")
 
 
 if __name__ == "__main__":

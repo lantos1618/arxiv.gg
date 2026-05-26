@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tmc/arxiv"
+	"github.com/lantos1618/arxiv.gg"
 )
 
 func main() {

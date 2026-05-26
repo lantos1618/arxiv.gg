@@ -46,6 +46,7 @@ type EmbeddingWorker struct {
 	client   *http.Client
 	mu       sync.RWMutex
 	running  bool
+	stopping bool
 	stats    EmbeddingWorkerStats
 	stopChan chan struct{}
 	doneChan chan struct{}
@@ -83,10 +84,12 @@ func (w *EmbeddingWorker) Start(ctx context.Context) {
 	}
 
 	w.mu.Lock()
-	if w.running {
+	if w.running || w.stopping {
 		w.mu.Unlock()
 		return
 	}
+	w.stopChan = make(chan struct{})
+	w.doneChan = make(chan struct{})
 	w.running = true
 	w.stats.IsRunning = true
 	w.mu.Unlock()
@@ -100,19 +103,18 @@ func (w *EmbeddingWorker) Start(ctx context.Context) {
 // Stop gracefully stops the worker.
 func (w *EmbeddingWorker) Stop() {
 	w.mu.Lock()
-	if !w.running {
+	if !w.running && !w.stopping {
 		w.mu.Unlock()
 		return
 	}
+	if !w.stopping {
+		close(w.stopChan)
+		w.stopping = true
+	}
+	done := w.doneChan
 	w.mu.Unlock()
 
-	close(w.stopChan)
-	<-w.doneChan
-
-	w.mu.Lock()
-	w.running = false
-	w.stats.IsRunning = false
-	w.mu.Unlock()
+	<-done
 
 	log.Println("Embedding worker stopped")
 }
@@ -126,7 +128,15 @@ func (w *EmbeddingWorker) Stats() EmbeddingWorkerStats {
 
 // run is the main worker loop.
 func (w *EmbeddingWorker) run(ctx context.Context) {
-	defer close(w.doneChan)
+	defer func() {
+		w.mu.Lock()
+		w.running = false
+		w.stopping = false
+		w.stats.IsRunning = false
+		done := w.doneChan
+		w.mu.Unlock()
+		close(done)
+	}()
 
 	for {
 		processed := w.processBatch(ctx)

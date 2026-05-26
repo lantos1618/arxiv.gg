@@ -91,7 +91,8 @@ func (c *Cache) GetPaper(ctx context.Context, id string) (*Paper, error) {
 	// Check LRU cache first
 	if cached, ok := c.paperLRU.Get(id); ok {
 		if paper, ok := cached.(*Paper); ok {
-			return paper, nil
+			paperCopy := *paper
+			return &paperCopy, nil
 		}
 	}
 
@@ -101,7 +102,8 @@ func (c *Cache) GetPaper(ctx context.Context, id string) (*Paper, error) {
 	}
 
 	// Cache the result
-	c.paperLRU.Put(id, &p)
+	cached := p
+	c.paperLRU.Put(id, &cached)
 
 	return &p, nil
 }
@@ -112,7 +114,8 @@ func (c *Cache) GetPaperFresh(ctx context.Context, id string) (*Paper, error) {
 	if err := c.db.WithContext(ctx).Where("id = ?", id).First(&p).Error; err != nil {
 		return nil, err
 	}
-	c.paperLRU.Put(id, &p)
+	cached := p
+	c.paperLRU.Put(id, &cached)
 	return &p, nil
 }
 

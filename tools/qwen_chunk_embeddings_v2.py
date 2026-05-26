@@ -175,16 +175,18 @@ def main():
 
     conn = db_connect()
     ensure_schema(conn)
-    rows = fetch_chunks(conn, args.model, args.dim, args.scope, args.limit, args.order)
-    if not rows:
-        print("No chunks need v2 embeddings.")
-        return
 
     print(f"using embedding service={args.service_url} model={args.model} dim={args.dim}")
     started = time.time()
     processed = 0
-    for i in range(0, len(rows), args.batch_size):
-        batch = rows[i : i + args.batch_size]
+    while processed < args.limit:
+        remaining = args.limit - processed
+        batch_limit = min(args.batch_size, remaining)
+        batch = fetch_chunks(conn, args.model, args.dim, args.scope, batch_limit, args.order)
+        if not batch:
+            if processed == 0:
+                print("No chunks need v2 embeddings.")
+            break
         texts = [" ".join((text or "").split()) for _, text, _, _, _ in batch]
         embeddings = encode_remote(args.service_url, texts, args.timeout)
         if not args.dry_run:
@@ -193,10 +195,13 @@ def main():
         elapsed = time.time() - started
         rate = processed / elapsed if elapsed else 0
         print(
-            f"processed={processed}/{len(rows)} rate={rate:.2f}/s "
+            f"processed={processed}/{args.limit} rate={rate:.2f}/s "
             f"elapsed={elapsed:.1f}s dry_run={args.dry_run}",
             flush=True,
         )
+        if args.dry_run:
+            print("dry-run stops after one streamed batch to avoid reselecting unchanged rows.")
+            break
 
     conn.close()
     print(f"done processed={processed} seconds={time.time() - started:.1f}")

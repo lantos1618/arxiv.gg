@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/tmc/arxiv"
+	"github.com/lantos1618/arxiv.gg"
 )
 
 func main() {

@@ -369,9 +369,9 @@ go vet ./...
 Results:
 
 ```text
-? github.com/tmc/arxiv             [no test files]
-? github.com/tmc/arxiv/cmd/arxiv   [no test files]
-? github.com/tmc/arxiv/cmd/migrate [no test files]
+? github.com/lantos1618/arxiv.gg             [no test files]
+? github.com/lantos1618/arxiv.gg/cmd/arxiv   [no test files]
+? github.com/lantos1618/arxiv.gg/cmd/migrate [no test files]
 ```
 
 `go vet ./...` completed without output.

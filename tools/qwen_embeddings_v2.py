@@ -202,13 +202,6 @@ def main():
     if args.dim != DEFAULT_DIM:
         raise SystemExit("This first v2 table is fixed to 1024d; use --dim 1024.")
 
-    conn = db_connect()
-    ensure_schema(conn)
-    rows = fetch_papers(conn, args.model, args.scope, args.dim, args.limit, args.order)
-    if not rows:
-        print("No papers need v2 embeddings.")
-        return
-
     local_model = None
     if args.service_url:
         print(f"using embedding service={args.service_url} model={args.model} dim={args.dim}")
@@ -216,10 +209,18 @@ def main():
         print(f"loading local model={args.model} dim={args.dim}")
         local_model = load_local_model(args.model, args.dim)
 
+    conn = db_connect()
+    ensure_schema(conn)
     started = time.time()
     processed = 0
-    for i in range(0, len(rows), args.batch_size):
-        batch = rows[i : i + args.batch_size]
+    while processed < args.limit:
+        remaining = args.limit - processed
+        batch_limit = min(args.batch_size, remaining)
+        batch = fetch_papers(conn, args.model, args.scope, args.dim, batch_limit, args.order)
+        if not batch:
+            if processed == 0:
+                print("No papers need v2 embeddings.")
+            break
         texts = [paper_text(title, abstract) for _, title, abstract in batch]
         if args.service_url:
             embeddings = encode_remote(args.service_url, texts, args.timeout)
@@ -231,10 +232,13 @@ def main():
         elapsed = time.time() - started
         rate = processed / elapsed if elapsed else 0
         print(
-            f"processed={processed}/{len(rows)} rate={rate:.2f}/s "
+            f"processed={processed}/{args.limit} rate={rate:.2f}/s "
             f"elapsed={elapsed:.1f}s dry_run={args.dry_run}",
             flush=True,
         )
+        if args.dry_run:
+            print("dry-run stops after one streamed batch to avoid reselecting unchanged rows.")
+            break
 
     conn.close()
     total_elapsed = time.time() - started

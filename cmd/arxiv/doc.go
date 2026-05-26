@@ -133,4 +133,4 @@ Examples:
   arxiv ls -src -n 50          List 50 papers with source
   arxiv serve                  Start web UI on :8080
 
-Run 'go doc github.com/tmc/arxiv/cmd/arxiv' for full documentation.`
+Run 'go doc github.com/lantos1618/arxiv.gg/cmd/arxiv' for full documentation.`

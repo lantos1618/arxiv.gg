@@ -16,7 +16,7 @@
 
 ### 1. Build from Source
 ```bash
-git clone https://github.com/tmc/arxiv.git
+git clone https://github.com/lantos1618/arxiv.gg.git
 cd arxiv
 make build
 sudo make install  # Optional: installs to /usr/local/bin

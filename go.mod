@@ -1,4 +1,4 @@
-module github.com/tmc/arxiv
+module github.com/lantos1618/arxiv.gg
 
 go 1.25.0
 

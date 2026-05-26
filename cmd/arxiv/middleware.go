@@ -51,22 +51,36 @@ type cacheEntry struct {
 	data      []byte
 	headers   http.Header
 	expiresAt time.Time
+	size      int64
 }
 
 // cacheMiddleware provides HTTP caching with ETag support
 type cacheMiddleware struct {
-	cache      map[string]*cacheEntry
-	mu         sync.RWMutex
-	maxAge     time.Duration
-	cleanupInt time.Duration
+	cache       map[string]*cacheEntry
+	mu          sync.RWMutex
+	maxAge      time.Duration
+	cleanupInt  time.Duration
+	maxEntries  int
+	maxBytes    int64
+	maxItemSize int64
+	bytesUsed   int64
 }
+
+const (
+	responseCacheMaxEntries  = 5000
+	responseCacheMaxBytes    = 64 << 20
+	responseCacheMaxItemSize = 2 << 20
+)
 
 // newCacheMiddleware creates a new cache middleware
 func newCacheMiddleware(maxAge time.Duration) *cacheMiddleware {
 	cm := &cacheMiddleware{
-		cache:      make(map[string]*cacheEntry),
-		maxAge:     maxAge,
-		cleanupInt: time.Hour,
+		cache:       make(map[string]*cacheEntry),
+		maxAge:      maxAge,
+		cleanupInt:  time.Minute,
+		maxEntries:  responseCacheMaxEntries,
+		maxBytes:    responseCacheMaxBytes,
+		maxItemSize: responseCacheMaxItemSize,
 	}
 	go cm.cleanup()
 	return cm
@@ -81,10 +95,40 @@ func (cm *cacheMiddleware) cleanup() {
 		now := time.Now()
 		for key, entry := range cm.cache {
 			if now.After(entry.expiresAt) {
-				delete(cm.cache, key)
+				cm.deleteLocked(key, entry)
 			}
 		}
 		cm.mu.Unlock()
+	}
+}
+
+func (cm *cacheMiddleware) deleteLocked(key string, entry *cacheEntry) {
+	delete(cm.cache, key)
+	cm.bytesUsed -= entry.size
+	if cm.bytesUsed < 0 {
+		cm.bytesUsed = 0
+	}
+}
+
+func (cm *cacheMiddleware) enforceLimitsLocked(now time.Time) {
+	for key, entry := range cm.cache {
+		if now.After(entry.expiresAt) {
+			cm.deleteLocked(key, entry)
+		}
+	}
+	for len(cm.cache) > cm.maxEntries || cm.bytesUsed > cm.maxBytes {
+		var oldestKey string
+		var oldestEntry *cacheEntry
+		for key, entry := range cm.cache {
+			if oldestEntry == nil || entry.lastMod.Before(oldestEntry.lastMod) {
+				oldestKey = key
+				oldestEntry = entry
+			}
+		}
+		if oldestEntry == nil {
+			return
+		}
+		cm.deleteLocked(oldestKey, oldestEntry)
 	}
 }
 
@@ -114,9 +158,10 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		key := r.URL.Path
-		if r.URL.RawQuery != "" {
-			key += "?" + r.URL.RawQuery
+		key, ok := responseCacheKey(r)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
 		}
 
 		// Check for a valid cached response
@@ -143,6 +188,13 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			w.Write(entry.data)
 			return
 		}
+		if exists {
+			cm.mu.Lock()
+			if current, ok := cm.cache[key]; ok && time.Now().After(current.expiresAt) {
+				cm.deleteLocked(key, current)
+			}
+			cm.mu.Unlock()
+		}
 
 		// Cache miss - capture response while writing to client
 		cw := &cachingResponseWriter{
@@ -154,24 +206,57 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 
 		// Store successful responses in cache for future requests
 		if cw.statusCode == http.StatusOK && len(cw.data) > 0 {
+			if int64(len(cw.data)) > cm.maxItemSize {
+				return
+			}
 			etag := generateETag(cw.data)
 			now := time.Now()
 			headers := cw.Header().Clone()
 			if headers.Get("Content-Type") == "" {
 				headers.Set("Content-Type", detectContentType(cw.data))
 			}
-
-			cm.mu.Lock()
-			cm.cache[key] = &cacheEntry{
+			entry := &cacheEntry{
 				etag:      etag,
 				lastMod:   now,
-				data:      cw.data,
+				data:      append([]byte(nil), cw.data...),
 				headers:   headers,
 				expiresAt: now.Add(cm.maxAge),
+				size:      int64(len(cw.data)),
 			}
+
+			cm.mu.Lock()
+			if existing, ok := cm.cache[key]; ok {
+				cm.deleteLocked(key, existing)
+			}
+			cm.cache[key] = entry
+			cm.bytesUsed += entry.size
+			cm.enforceLimitsLocked(now)
 			cm.mu.Unlock()
 		}
 	})
+}
+
+func responseCacheKey(r *http.Request) (string, bool) {
+	if r.URL.RawQuery != "" {
+		return "", false
+	}
+	path := r.URL.Path
+	if path == "/" ||
+		path == "/categories" ||
+		path == "/robots.txt" ||
+		path == "/sitemap.xml" ||
+		path == "/sitemap-static.xml" ||
+		path == "/BingSiteAuth.xml" ||
+		path == "/favicon.ico" ||
+		path == "/favicon.svg" ||
+		strings.HasPrefix(path, "/abs/") ||
+		strings.HasPrefix(path, "/paper/") ||
+		strings.HasPrefix(path, "/author/") ||
+		strings.HasPrefix(path, "/category/") ||
+		strings.HasPrefix(path, "/sitemaps/") {
+		return path, true
+	}
+	return "", false
 }
 
 func shouldBypassResponseCache(r *http.Request) bool {
@@ -179,7 +264,6 @@ func shouldBypassResponseCache(r *http.Request) bool {
 		return true
 	}
 	if r.URL.Path == "/login" ||
-		r.URL.Path == "/login/verify" ||
 		r.URL.Path == "/auth/google/start" ||
 		r.URL.Path == "/auth/google/callback" ||
 		r.URL.Path == "/logout" ||
@@ -279,11 +363,6 @@ func (rl *rateLimiter) cleanup() {
 // Handler wraps an http.Handler with rate limiting
 func (rl *rateLimiter) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Bypass rate limiting for SSE endpoints to support streaming
-		if strings.Contains(r.URL.Path, "/stream") {
-			next.ServeHTTP(w, r)
-			return
-		}
 		if !rl.Allow(r) {
 			writeRateLimitExceeded(w, r)
 			return
@@ -341,12 +420,16 @@ func writeRateLimitExceeded(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rl *rateLimiter) clientIP(r *http.Request) string {
+	return clientIPFromRequest(r, rl.trustProxyHeaders)
+}
+
+func clientIPFromRequest(r *http.Request, trustProxyHeaders bool) string {
 	host := r.RemoteAddr
 	if parsedHost, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		host = parsedHost
 	}
 
-	if !rl.trustProxyHeaders {
+	if !trustProxyHeaders {
 		return host
 	}
 

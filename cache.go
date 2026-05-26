@@ -3,6 +3,7 @@ package arxiv
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,9 +44,10 @@ type Cache struct {
 	paperLRU *LRUCache
 
 	// Cached stats to avoid slow COUNT(*) queries on every request
-	statsMu      sync.RWMutex
-	cachedStats  *CacheStats
-	statsUpdated time.Time
+	statsMu        sync.RWMutex
+	statsRefreshMu sync.Mutex
+	cachedStats    *CacheStats
+	statsUpdated   time.Time
 }
 
 // DBType returns the database type in use.
@@ -343,13 +345,40 @@ func (c *Cache) Stats(ctx context.Context) (*CacheStats, error) {
 		c.statsMu.RUnlock()
 		return &stats, nil
 	}
+	var stale *CacheStats
+	if c.cachedStats != nil {
+		stats := *c.cachedStats
+		stale = &stats
+	}
 	c.statsMu.RUnlock()
 
-	return c.refreshStats(ctx)
+	if stale != nil && !c.statsRefreshMu.TryLock() {
+		return stale, nil
+	}
+	if stale == nil {
+		c.statsRefreshMu.Lock()
+	}
+	defer c.statsRefreshMu.Unlock()
+
+	c.statsMu.RLock()
+	if c.cachedStats != nil && time.Since(c.statsUpdated) < 5*time.Minute {
+		stats := *c.cachedStats
+		c.statsMu.RUnlock()
+		return &stats, nil
+	}
+	c.statsMu.RUnlock()
+
+	return c.refreshStatsLocked(ctx)
 }
 
 // refreshStats runs the actual COUNT queries and updates the cache.
 func (c *Cache) refreshStats(ctx context.Context) (*CacheStats, error) {
+	c.statsRefreshMu.Lock()
+	defer c.statsRefreshMu.Unlock()
+	return c.refreshStatsLocked(ctx)
+}
+
+func (c *Cache) refreshStatsLocked(ctx context.Context) (*CacheStats, error) {
 	stats := &CacheStats{}
 
 	if err := c.db.WithContext(ctx).Model(&Paper{}).Count(&stats.TotalPapers).Error; err != nil {
@@ -385,7 +414,11 @@ func (c *Cache) refreshStats(ctx context.Context) (*CacheStats, error) {
 // COUNT(*) queries.
 func (c *Cache) StartStatsRefresh(ctx context.Context) {
 	// Warm the cache on startup (background so it doesn't block server start)
-	go c.refreshStats(context.Background())
+	go func() {
+		if _, err := c.refreshStats(context.Background()); err != nil {
+			log.Printf("stats warm refresh failed: %v", err)
+		}
+	}()
 
 	// Periodic refresh
 	go func() {
@@ -396,7 +429,9 @@ func (c *Cache) StartStatsRefresh(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				c.refreshStats(context.Background())
+				if _, err := c.refreshStats(context.Background()); err != nil {
+					log.Printf("stats background refresh failed: %v", err)
+				}
 			}
 		}
 	}()

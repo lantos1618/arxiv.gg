@@ -19,7 +19,7 @@ Please be respectful and constructive in all interactions. We aim to maintain a 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/tmc/arxiv.git
+   git clone https://github.com/lantos1618/arxiv.gg.git
    cd arxiv
    ```
 

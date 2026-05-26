@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tmc/arxiv"
+	"github.com/lantos1618/arxiv.gg"
 )
 
 //go:embed templates/*.html
@@ -100,6 +100,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		indexNowKey:         indexNowKey,
 		officialArxivPapers: officialArxivPapers,
 		officialArxivAsOf:   officialArxivPapersAsOf,
+		trustProxyHeaders:   trustProxyHeaders,
 		publicEmbeddingLimiter: newRateLimiter(
 			6,
 			time.Minute,
@@ -149,7 +150,6 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/search", srv.handleSearch)
 	mux.HandleFunc("/login", srv.handleLogin)
-	mux.HandleFunc("/login/verify", srv.handleLoginVerify)
 	mux.HandleFunc("/auth/google/start", srv.handleGoogleOAuthStart)
 	mux.HandleFunc("/auth/google/callback", srv.handleGoogleOAuthCallback)
 	mux.HandleFunc("/logout", srv.handleLogout)
@@ -212,6 +212,7 @@ type server struct {
 	indexNowKey            string
 	officialArxivPapers    int64
 	officialArxivAsOf      string
+	trustProxyHeaders      bool
 	publicEmbeddingLimiter *rateLimiter
 	loginLimiter           *rateLimiter
 }
@@ -285,8 +286,10 @@ func (s *server) coverageSignal(stats *arxiv.CacheStats) coverageSignal {
 
 // paperBroadcaster manages real-time paper update subscriptions
 type paperBroadcaster struct {
-	subscribers map[chan paperEvent]struct{}
-	mu          sync.RWMutex
+	subscribers   map[chan paperEvent]struct{}
+	subscriberIPs map[chan paperEvent]string
+	byIP          map[string]int
+	mu            sync.RWMutex
 }
 
 type paperEvent struct {
@@ -296,22 +299,46 @@ type paperEvent struct {
 
 func newPaperBroadcaster() *paperBroadcaster {
 	return &paperBroadcaster{
-		subscribers: make(map[chan paperEvent]struct{}),
+		subscribers:   make(map[chan paperEvent]struct{}),
+		subscriberIPs: make(map[chan paperEvent]string),
+		byIP:          make(map[string]int),
 	}
 }
 
-func (b *paperBroadcaster) Subscribe() chan paperEvent {
+const (
+	maxSSEConnections      = 1000
+	maxSSEConnectionsPerIP = 6
+)
+
+func (b *paperBroadcaster) Subscribe(ip string) (chan paperEvent, bool) {
 	ch := make(chan paperEvent, 10)
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.subscribers) >= maxSSEConnections {
+		return nil, false
+	}
+	if b.byIP[ip] >= maxSSEConnectionsPerIP {
+		return nil, false
+	}
 	b.subscribers[ch] = struct{}{}
-	b.mu.Unlock()
-	return ch
+	b.subscriberIPs[ch] = ip
+	b.byIP[ip]++
+	return ch, true
 }
 
 func (b *paperBroadcaster) Unsubscribe(ch chan paperEvent) {
 	b.mu.Lock()
-	delete(b.subscribers, ch)
-	close(ch)
+	if _, ok := b.subscribers[ch]; ok {
+		if ip := b.subscriberIPs[ch]; ip != "" {
+			b.byIP[ip]--
+			if b.byIP[ip] <= 0 {
+				delete(b.byIP, ip)
+			}
+			delete(b.subscriberIPs, ch)
+		}
+		delete(b.subscribers, ch)
+		close(ch)
+	}
 	b.mu.Unlock()
 }
 
@@ -573,7 +600,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"Coverage": s.coverageSignal(stats),
 		"Query":    "",
 	}
-	templates.ExecuteTemplate(w, "index", data)
+	s.renderTemplate(w, r, "index", data)
 }
 
 // handleAPIRoot renders a simple HTML overview for /api/v1/.
@@ -589,7 +616,7 @@ func (s *server) handleAPIRoot(w http.ResponseWriter, r *http.Request) {
 		"Title":   "API",
 		"BaseURL": base,
 	}
-	templates.ExecuteTemplate(w, "api", data)
+	s.renderTemplate(w, r, "api", data)
 }
 
 func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -658,11 +685,11 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 				"Papers":          []arxiv.Paper{},
 				"SemanticResults": []arxiv.SemanticResult{},
 			}
-			templates.ExecuteTemplate(w, "search", data)
+			s.renderTemplate(w, r, "search", data)
 			return
 		}
 
-		queryEmbedding, err := s.generateQueryEmbedding(query)
+		queryEmbedding, err := s.generateQueryEmbedding(ctx, query)
 		if err != nil {
 			http.Error(w, "Failed to generate query embedding: "+err.Error(), http.StatusServiceUnavailable)
 			return
@@ -697,7 +724,7 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	templates.ExecuteTemplate(w, "search", data)
+	s.renderTemplate(w, r, "search", data)
 }
 
 type refInfo struct {
@@ -1007,7 +1034,7 @@ func (s *server) renderPaper(w http.ResponseWriter, r *http.Request, id string) 
 		"HasEmbedding":   hasEmbedding,
 		"LocalMode":      s.localMode,
 	}
-	templates.ExecuteTemplate(w, "paper", data)
+	s.renderTemplate(w, r, "paper", data)
 }
 
 func (s *server) handleAuthor(w http.ResponseWriter, r *http.Request) {
@@ -1039,7 +1066,7 @@ func (s *server) handleAuthor(w http.ResponseWriter, r *http.Request) {
 		"Papers":         papers,
 		"PaperCount":     len(papers),
 	}
-	templates.ExecuteTemplate(w, "author", data)
+	s.renderTemplate(w, r, "author", data)
 }
 
 func (s *server) handlePDF(w http.ResponseWriter, r *http.Request) {
@@ -1780,7 +1807,7 @@ func (s *server) handleCategory(w http.ResponseWriter, r *http.Request) {
 		"DisplayName":    categoryDisplayName(category),
 		"Papers":         papers,
 	}
-	templates.ExecuteTemplate(w, "category", data)
+	s.renderTemplate(w, r, "category", data)
 }
 
 func (s *server) handleCategories(w http.ResponseWriter, r *http.Request) {
@@ -1797,7 +1824,7 @@ func (s *server) handleCategories(w http.ResponseWriter, r *http.Request) {
 		"CanonicalURL": canonicalURL("/categories"),
 		"Categories":   categories,
 	}
-	templates.ExecuteTemplate(w, "categories", data)
+	s.renderTemplate(w, r, "categories", data)
 }
 
 func (s *server) handleAdminEmbeddings(w http.ResponseWriter, r *http.Request) {
@@ -1835,5 +1862,5 @@ func (s *server) handleAdminEmbeddings(w http.ResponseWriter, r *http.Request) {
 		"PercentComplete":  percentComplete,
 		"EstimatedMinutes": estimatedMinutes,
 	}
-	templates.ExecuteTemplate(w, "admin_embeddings", data)
+	s.renderTemplate(w, r, "admin_embeddings", data)
 }

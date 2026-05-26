@@ -93,7 +93,7 @@ arxiv/
 ## Why This Structure?
 
 1. **Flat is idiomatic**: Go libraries commonly use a single package
-2. **Simple imports**: `import "github.com/tmc/arxiv"` gives access to everything
+2. **Simple imports**: `import "github.com/lantos1618/arxiv.gg"` gives access to everything
 3. **No circular dependencies**: All code in same package
 4. **Clear file names**: Each file has single responsibility
 5. **Tests alongside code**: Go convention for discoverability
@@ -120,7 +120,7 @@ type GraphEdge struct { ... }       // Edge in graph
 ## Usage Example
 
 ```go
-import "github.com/tmc/arxiv"
+import "github.com/lantos1618/arxiv.gg"
 
 // Open cache
 cache, err := arxiv.Open("/path/to/cache")

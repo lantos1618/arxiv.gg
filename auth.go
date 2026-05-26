@@ -105,15 +105,29 @@ func (c *Cache) ConsumeLoginCode(ctx context.Context, email, code string) (*User
 			matched = candidate
 			break
 		}
-		_ = c.db.WithContext(ctx).Model(candidate).Update("attempts", gorm.Expr("attempts + 1")).Error
+		if err := c.db.WithContext(ctx).
+			Model(&LoginCode{}).
+			Where("id = ? AND used_at IS NULL AND attempts < ?", candidate.ID, maxLoginCodeAttempts).
+			Update("attempts", gorm.Expr("attempts + 1")).Error; err != nil {
+			return nil, fmt.Errorf("update login attempts: %w", err)
+		}
 	}
 	if matched == nil {
 		return nil, fmt.Errorf("invalid or expired code")
 	}
 
-	matched.UsedAt = &now
-	if err := c.db.WithContext(ctx).Save(matched).Error; err != nil {
-		return nil, fmt.Errorf("mark login code used: %w", err)
+	consume := c.db.WithContext(ctx).
+		Model(&LoginCode{}).
+		Where("id = ? AND used_at IS NULL AND expires_at > ? AND attempts < ?", matched.ID, now, maxLoginCodeAttempts).
+		Updates(map[string]any{
+			"used_at":  now,
+			"attempts": gorm.Expr("attempts + 1"),
+		})
+	if consume.Error != nil {
+		return nil, fmt.Errorf("mark login code used: %w", consume.Error)
+	}
+	if consume.RowsAffected != 1 {
+		return nil, fmt.Errorf("invalid or expired code")
 	}
 
 	user, err := c.FindOrCreateUser(ctx, normalized, "", "", false, "email", now)

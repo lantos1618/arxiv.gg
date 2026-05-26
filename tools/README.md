@@ -54,3 +54,36 @@ python3 generate_embeddings.py ~/.cache/arxiv --batch-size 64
 - Each embedding is ~1.5KB (384 dims × 4 bytes)
 - 2.4M papers = ~3.6GB storage
 
+## Qwen v2 GPU Pipeline
+
+The v2 pipeline keeps production MiniLM embeddings untouched while backfilling
+1024d Qwen vectors into separate pgvector tables.
+
+Run the model once on a GPU worker:
+
+```bash
+cd ~/arxiv-embedding-worker
+source .venv/bin/activate
+QWEN_EMBEDDING_DEVICE=cuda uvicorn qwen_embedding_service:app --host 127.0.0.1 --port 8010
+```
+
+Create an SSH tunnel from the DB/app box:
+
+```bash
+ssh -N -L 8010:127.0.0.1:8010 ubuntu@GPU_HOST
+```
+
+Backfill abstract embeddings from the DB/app box:
+
+```bash
+QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
+python3 tools/qwen_embeddings_v2.py --limit 10000 --batch-size 16
+```
+
+Backfill full-paper chunks separately:
+
+```bash
+python3 tools/chunk_full_papers.py --limit 1000
+QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
+python3 tools/qwen_chunk_embeddings_v2.py --limit 10000 --batch-size 16
+```

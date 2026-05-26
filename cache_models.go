@@ -112,6 +112,61 @@ func (Embedding) TableName() string {
 	return "embeddings"
 }
 
+// EmbeddingV2 stores next-generation paper-level embeddings.
+// Vector is managed via raw SQL because pgvector dimensions are database types.
+type EmbeddingV2 struct {
+	PaperID       string    `gorm:"primaryKey;column:paper_id"`
+	Scope         string    `gorm:"primaryKey;column:scope"` // abstract, title, etc.
+	Model         string    `gorm:"primaryKey;column:model"`
+	Dim           int       `gorm:"primaryKey;column:dim"`
+	SourceHash    string    `gorm:"column:source_hash;index"`
+	TextChars     int       `gorm:"column:text_chars"`
+	TokenEstimate int       `gorm:"column:token_estimate"`
+	Created       time.Time `gorm:"column:created;autoCreateTime"`
+	Updated       time.Time `gorm:"column:updated;autoUpdateTime"`
+	// Vector is managed via raw SQL (pgvector type in PostgreSQL)
+}
+
+func (EmbeddingV2) TableName() string {
+	return "embeddings_v2"
+}
+
+// PaperChunk stores section/chunk text for future full-paper semantic search.
+type PaperChunk struct {
+	ID            string    `gorm:"primaryKey;column:id"`
+	PaperID       string    `gorm:"column:paper_id;index"`
+	Scope         string    `gorm:"column:scope;index"` // pdf_text, source, abstract
+	Section       string    `gorm:"column:section;index"`
+	ChunkIndex    int       `gorm:"column:chunk_index"`
+	Text          string    `gorm:"column:text;type:text"`
+	TextHash      string    `gorm:"column:text_hash;index"`
+	TextChars     int       `gorm:"column:text_chars"`
+	TokenEstimate int       `gorm:"column:token_estimate"`
+	Created       time.Time `gorm:"column:created;autoCreateTime"`
+	Updated       time.Time `gorm:"column:updated;autoUpdateTime"`
+}
+
+func (PaperChunk) TableName() string {
+	return "paper_chunks"
+}
+
+// ChunkEmbeddingV2 stores next-generation full-paper chunk embeddings.
+type ChunkEmbeddingV2 struct {
+	ChunkID       string    `gorm:"primaryKey;column:chunk_id"`
+	Model         string    `gorm:"primaryKey;column:model"`
+	Dim           int       `gorm:"primaryKey;column:dim"`
+	SourceHash    string    `gorm:"column:source_hash;index"`
+	TextChars     int       `gorm:"column:text_chars"`
+	TokenEstimate int       `gorm:"column:token_estimate"`
+	Created       time.Time `gorm:"column:created;autoCreateTime"`
+	Updated       time.Time `gorm:"column:updated;autoUpdateTime"`
+	// Vector is managed via raw SQL (pgvector type in PostgreSQL)
+}
+
+func (ChunkEmbeddingV2) TableName() string {
+	return "chunk_embeddings_v2"
+}
+
 // EmbeddingJobStatus represents the status of an embedding job.
 type EmbeddingJobStatus string
 
@@ -139,10 +194,10 @@ func (EmbeddingJob) TableName() string {
 
 // AuthorCollaboration represents a co-author relationship between two authors.
 type AuthorCollaboration struct {
-	Author1     string `gorm:"primaryKey;column:author1;index"`
-	Author2     string `gorm:"primaryKey;column:author2;index"`
-	PaperCount  int    `gorm:"column:paper_count"`
-	PaperIDs    string `gorm:"column:paper_ids;type:text"` // JSON array of paper IDs
+	Author1     string    `gorm:"primaryKey;column:author1;index"`
+	Author2     string    `gorm:"primaryKey;column:author2;index"`
+	PaperCount  int       `gorm:"column:paper_count"`
+	PaperIDs    string    `gorm:"column:paper_ids;type:text"` // JSON array of paper IDs
 	FirstCollab time.Time `gorm:"column:first_collab"`
 	LastCollab  time.Time `gorm:"column:last_collab"`
 }
@@ -163,4 +218,55 @@ type AuthorEmbedding struct {
 
 func (AuthorEmbedding) TableName() string {
 	return "author_embeddings"
+}
+
+// User represents a signed-in arXiv.gg account.
+type User struct {
+	ID            string     `gorm:"primaryKey;column:id"`
+	Email         string     `gorm:"column:email;uniqueIndex"`
+	Name          string     `gorm:"column:name"`
+	PictureURL    string     `gorm:"column:picture_url"`
+	EmailVerified bool       `gorm:"column:email_verified;default:false"`
+	AuthProvider  string     `gorm:"column:auth_provider"`
+	Plan          string     `gorm:"column:plan;index;default:free"`
+	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt     time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+	LastLoginAt   *time.Time `gorm:"column:last_login_at"`
+}
+
+func (User) TableName() string {
+	return "users"
+}
+
+// LoginCode stores short-lived email login codes.
+type LoginCode struct {
+	ID        string     `gorm:"primaryKey;column:id"`
+	Email     string     `gorm:"column:email;index"`
+	CodeSalt  string     `gorm:"column:code_salt"`
+	CodeHash  string     `gorm:"column:code_hash"`
+	Attempts  int        `gorm:"column:attempts;default:0"`
+	CreatedAt time.Time  `gorm:"column:created_at;autoCreateTime"`
+	ExpiresAt time.Time  `gorm:"column:expires_at;index"`
+	UsedAt    *time.Time `gorm:"column:used_at;index"`
+}
+
+func (LoginCode) TableName() string {
+	return "login_codes"
+}
+
+// UserSession stores server-side sessions. Cookies hold only the raw token.
+type UserSession struct {
+	ID         string    `gorm:"primaryKey;column:id"`
+	UserID     string    `gorm:"column:user_id;index"`
+	TokenHash  string    `gorm:"column:token_hash;uniqueIndex"`
+	UserAgent  string    `gorm:"column:user_agent"`
+	IP         string    `gorm:"column:ip"`
+	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt  time.Time `gorm:"column:updated_at;autoUpdateTime"`
+	ExpiresAt  time.Time `gorm:"column:expires_at;index"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at"`
+}
+
+func (UserSession) TableName() string {
+	return "user_sessions"
 }

@@ -105,6 +105,11 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 			time.Minute,
 			trustProxyHeaders,
 		),
+		loginLimiter: newRateLimiter(
+			12,
+			10*time.Minute,
+			trustProxyHeaders,
+		),
 	}
 
 	// Start embedding worker if enabled
@@ -143,6 +148,12 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	// Web routes
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/search", srv.handleSearch)
+	mux.HandleFunc("/login", srv.handleLogin)
+	mux.HandleFunc("/login/verify", srv.handleLoginVerify)
+	mux.HandleFunc("/auth/google/start", srv.handleGoogleOAuthStart)
+	mux.HandleFunc("/auth/google/callback", srv.handleGoogleOAuthCallback)
+	mux.HandleFunc("/logout", srv.handleLogout)
+	mux.HandleFunc("/account", srv.handleAccount)
 	mux.HandleFunc("/paper/", srv.handlePaper)
 	mux.HandleFunc("/abs/", srv.handleAbs)
 	mux.HandleFunc("/author/", srv.handleAuthor)
@@ -202,6 +213,7 @@ type server struct {
 	officialArxivPapers    int64
 	officialArxivAsOf      string
 	publicEmbeddingLimiter *rateLimiter
+	loginLimiter           *rateLimiter
 }
 
 func configuredIndexNowKey() string {

@@ -6,6 +6,8 @@
 /bin/
 /test_data/
 .env
+__pycache__/
+*.pyc
 
 # IDE
 .vscode/

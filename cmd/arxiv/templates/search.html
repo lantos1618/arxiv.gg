@@ -26,15 +26,15 @@
 <div id="paper-results">
 {{if .IsSemantic}}
 {{if .NoEmbeddings}}
-<div class="alert alert-warning">
-		<h3>Idea Search Not Available</h3>
-		<p>Idea search needs the catalog prepared before it can find related papers by concept.</p>
+<div class="empty-state">
+	<h3>Idea search is warming up</h3>
+	<p>The catalog needs to be prepared before it can find related papers by concept.</p>
 	<div class="embedding-actions">
 		<div class="action-buttons">
 				<button class="btn btn-secondary" id="generate-embeddings-btn" data-help="Prepare the paper catalog for idea search and related-work recommendations.">Prepare Catalog</button>
 				<span id="embeddings-status" class="loading" style="display:none;">Preparing catalog...</span>
 		</div>
-		<p style="margin-top: 1rem;"><strong>Or use CLI:</strong> <code>arxiv reindex --embeddings</code></p>
+		<p>CLI: <code>arxiv reindex --embeddings</code></p>
 	</div>
 </div>
 {{else}}

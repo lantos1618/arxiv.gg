@@ -2,7 +2,7 @@
 {{template "head" .}}
 <h1>Sign in</h1>
 
-{{if .Error}}<p class="alert error">{{.Error}}</p>{{end}}
+{{if .Error}}<p class="inline-notice error">{{.Error}}</p>{{end}}
 
 {{if .GoogleEnabled}}
 <div class="auth-panel">
@@ -18,7 +18,7 @@
 	<p class="auth-note">Full-body search is available after sign-in and free while we test it.</p>
 </div>
 {{else}}
-<p class="alert error">Google sign-in is not configured yet.</p>
+<p class="inline-notice error">Google sign-in is not configured yet.</p>
 {{end}}
 
 {{template "foot" .}}

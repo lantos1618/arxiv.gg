@@ -1,0 +1,86 @@
+{{define "admin_users"}}
+{{template "head" .}}
+<style>
+	.admin-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
+	.admin-tabs a { padding: 0.35rem 0.65rem; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #111827; }
+	.admin-tabs a.active { border-color: #0066cc; color: #0066cc; background: #f0f7ff; }
+	.admin-section { margin: 1.5rem 0; }
+	.admin-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; }
+	.admin-metric { border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.85rem; background: #fff; }
+	.admin-metric-label { color: #4b5563; font-size: 0.82rem; }
+	.admin-metric-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
+	.admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+	.admin-table th, .admin-table td { border-bottom: 1px solid #e5e7eb; padding: 0.55rem 0.45rem; text-align: left; vertical-align: top; }
+	.admin-table th { color: #374151; font-weight: 700; background: #f9fafb; }
+	.placeholder-row td { color: #92400e; background: #fffbeb; }
+	@media (max-width: 760px) {
+		.admin-table { display: block; overflow-x: auto; white-space: nowrap; }
+	}
+</style>
+
+<h1>Admin Users</h1>
+<p class="inline-notice">Real users from the <code>users</code> table. Anonymous visitors do not have user rows.</p>
+
+<div class="admin-tabs">
+	<a href="/admin">Overview</a>
+	<a class="active" href="/admin/users">Users</a>
+	<a href="/admin/audit">Audit</a>
+</div>
+
+<div class="admin-section">
+	<div class="admin-kpis">
+		<div class="admin-metric"><div class="admin-metric-label">Total users</div><div class="admin-metric-value">{{formatInt .Stats.Users.TotalUsers}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">New 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.New24h}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">New 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.New7d}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">New 30d</div><div class="admin-metric-value">{{formatInt .Stats.Users.New30d}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">Active 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.Active24h}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">Active 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.Active7d}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">Free</div><div class="admin-metric-value">{{formatInt .Stats.Users.FreeUsers}}</div></div>
+		<div class="admin-metric"><div class="admin-metric-label">Paid</div><div class="admin-metric-value">{{formatInt .Stats.Users.PaidUsers}}</div></div>
+	</div>
+</div>
+
+<div class="admin-section">
+	<h2>Recent Users</h2>
+	<table class="admin-table">
+		<thead>
+			<tr><th>Email</th><th>Name</th><th>Plan</th><th>Provider</th><th>Verified</th><th>Created</th><th>Last login</th><th>Last seen</th></tr>
+		</thead>
+		<tbody>
+			{{range .Stats.RecentUsers}}
+			<tr>
+				<td>{{.Email}}</td>
+				<td>{{if .Name}}{{.Name}}{{else}}-{{end}}</td>
+				<td>{{.Plan}}</td>
+				<td>{{.Provider}}</td>
+				<td>{{.Verified}}</td>
+				<td>{{timeStamp .CreatedAt}}</td>
+				<td>{{timeOrDash .LastLoginAt}}</td>
+				<td>{{timeOrDash .LastSeenAt}}</td>
+			</tr>
+			{{else}}
+			<tr><td colspan="8">No users yet.</td></tr>
+			{{end}}
+			<tr class="placeholder-row">
+				<td colspan="8">PLACEHOLDER: per-user search counts, saved searches, billing status, and feature usage are not tracked yet.</td>
+			</tr>
+		</tbody>
+	</table>
+</div>
+
+<div class="admin-section">
+	<h2>Plan Rules</h2>
+	<table class="admin-table">
+		<thead><tr><th>Plan</th><th>Who</th><th>Access</th><th>Billing</th></tr></thead>
+		<tbody>
+			{{range .Plans}}
+			<tr {{if .Placeholder}}class="placeholder-row"{{end}}>
+				<td>{{.Plan}}</td><td>{{.Who}}</td><td>{{.Access}}</td><td>{{.Billing}}</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</div>
+
+{{template "foot" .}}
+{{end}}

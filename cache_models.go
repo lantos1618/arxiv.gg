@@ -270,3 +270,18 @@ type UserSession struct {
 func (UserSession) TableName() string {
 	return "user_sessions"
 }
+
+// AdminAuditLog records human admin reads and future admin mutations.
+type AdminAuditLog struct {
+	ID         string    `gorm:"primaryKey;column:id"`
+	AdminEmail string    `gorm:"column:admin_email;index"`
+	Action     string    `gorm:"column:action;index"`
+	TargetType string    `gorm:"column:target_type;index"`
+	TargetID   string    `gorm:"column:target_id;index"`
+	Details    string    `gorm:"column:details;type:text"`
+	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime;index"`
+}
+
+func (AdminAuditLog) TableName() string {
+	return "admin_audit_log"
+}

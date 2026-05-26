@@ -407,6 +407,7 @@
 	<a href="/">Home</a><span>|</span>
 	<a href="/categories">Categories</a><span>|</span>
 	<a href="/api/v1/">API</a><span>|</span>
+	{{if .CurrentUserIsAdmin}}<a href="/admin">Admin</a><span>|</span>{{end}}
 	{{with .CurrentUser}}
 		<a href="/account">{{.Email}}</a><span>|</span>
 		<form method="post" action="/logout"><button class="nav-button" type="submit">Sign out</button></form>

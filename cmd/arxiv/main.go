@@ -104,6 +104,14 @@ func cmdFetch(ctx context.Context, cacheDir string, args []string) {
 		if paper.PDFPath != "" {
 			fmt.Printf("  PDF: %s\n", paper.PDFPath)
 		}
+		if opts.DownloadPDF {
+			text, err := cache.EnsurePDFText(ctx, id)
+			if err != nil {
+				log.Printf("  PDF text: %v", err)
+			} else {
+				fmt.Printf("  PDF text: %d chars\n", len(text))
+			}
+		}
 		if opts.GenerateEmbedding {
 			fmt.Printf("  Embedding: Generating in background...\n")
 		}
@@ -120,6 +128,7 @@ func cmdSync(ctx context.Context, cacheDir string, args []string) {
 	fs := flag.NewFlagSet("sync", flag.ExitOnError)
 	set := fs.String("set", "", "arXiv set to sync (e.g., cs, physics)")
 	from := fs.String("from", "", "Start date (YYYY-MM-DD)")
+	batchSize := fs.Int("batch", 1000, "Metadata records to insert per database batch")
 	fs.Parse(args)
 
 	cache, err := arxiv.Open(cacheDir)
@@ -129,7 +138,8 @@ func cmdSync(ctx context.Context, cacheDir string, args []string) {
 	defer cache.Close()
 
 	opts := &arxiv.SyncOptions{
-		Set: *set,
+		Set:       *set,
+		BatchSize: *batchSize,
 		Progress: func(fetched, total int) {
 			if total > 0 {
 				fmt.Printf("\rSyncing: %d / %d papers (%.1f%%)", fetched, total, float64(fetched)/float64(total)*100)
@@ -147,6 +157,7 @@ func cmdSync(ctx context.Context, cacheDir string, args []string) {
 	}
 
 	fmt.Println("Starting metadata sync (this downloads ~2.4M paper metadata)...")
+	fmt.Printf("Database batch size: %d\n", *batchSize)
 	fmt.Println("Press Ctrl+C to stop; sync will resume from where it left off.")
 	if err := cache.SyncMetadata(ctx, opts); err != nil {
 		log.Fatalf("sync: %v", err)

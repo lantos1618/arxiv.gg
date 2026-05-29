@@ -1,11 +1,31 @@
-# Semantic Search Implementation Plan
+# Semantic Search
 
-> **Status:** Placeholder API exists, full implementation needed
+> **Status:** Production MiniLM search is live. Qwen3-Embedding-8B abstract
+> vectors are being backfilled in `embeddings_v2` for higher-quality retrieval
+> and are indexed with HNSW for low-latency nearest-neighbor search.
 
 ## Current State
-- API endpoint `/api/v1/search/semantic` exists but returns error
-- Database has `embeddings` table ready
-- Python script referenced (`generate_embeddings.py`) not in codebase
+- API endpoint `/api/v1/search/semantic` serves production semantic search.
+- MiniLM vectors live in `embeddings.vector` with an HNSW index.
+- Qwen abstract vectors live in `embeddings_v2.vector` where
+  `scope = 'abstract'`, `model = 'Qwen/Qwen3-Embedding-8B'`, and `dim = 1024`.
+- Qwen abstract search should use the partial HNSW index
+  `idx_embeddings_v2_qwen_abstract_vector_hnsw`; see
+  `deploy/sql/2026-05-29-qwen-abstract-hnsw-index.sql`.
+- Full-paper chunk vectors live in `chunk_embeddings_v2.vector` and should use
+  `idx_chunk_embeddings_v2_qwen_vector_hnsw`; see
+  `deploy/sql/2026-05-29-qwen-chunk-hnsw-index.sql`.
+
+## Performance Notes
+- MiniLM is smaller and cheaper to serve, but less nuanced.
+- Qwen3-Embedding-8B is larger and better for research intent, but needs a
+  vector index; without HNSW, 1024d search over ~646k rows took about 1.3s warm
+  and 7s cold in production tests.
+- With the Qwen HNSW index, tested Qwen search was about 13-26ms for nearest
+  neighbor lookup before result rendering.
+- Full-paper chunks are materially heavier than abstracts. On an L40S,
+  3,000-character chunks needed smaller batches than abstracts; batch size 16
+  was stable after a batch size 64 run exhausted GPU memory.
 
 ## Implementation Plan
 

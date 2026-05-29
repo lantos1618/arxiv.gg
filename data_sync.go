@@ -32,7 +32,7 @@ func (c *Cache) SyncMetadata(ctx context.Context, opts *SyncOptions) error {
 	if opts == nil {
 		opts = &SyncOptions{}
 	}
-	if opts.BatchSize == 0 {
+	if opts.BatchSize <= 0 {
 		opts.BatchSize = 1000
 	}
 
@@ -77,12 +77,15 @@ func (c *Cache) SyncMetadata(ctx context.Context, opts *SyncOptions) error {
 			opts.Progress(totalFetched, resp.CompleteListSize)
 		}
 
-		// Commit batch if full
+		// Commit exact sub-batches if full. OAI pages can be larger than
+		// opts.BatchSize, so keep flushing until the remainder is under the limit.
 		if len(batch) >= opts.BatchSize {
-			if err := c.insertPapers(ctx, batch); err != nil {
-				return fmt.Errorf("insert papers: %w", err)
+			for len(batch) >= opts.BatchSize {
+				if err := c.insertPapers(ctx, batch[:opts.BatchSize]); err != nil {
+					return fmt.Errorf("insert papers: %w", err)
+				}
+				batch = batch[opts.BatchSize:]
 			}
-			batch = batch[:0]
 		}
 
 		// Save resumption token

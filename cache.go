@@ -145,6 +145,7 @@ func (c *Cache) initSchema() error {
 	if err := c.db.AutoMigrate(
 		&Paper{},
 		&Citation{},
+		&CategoryStat{},
 		&SyncState{},
 		&DownloadQueueItem{},
 		&Embedding{},

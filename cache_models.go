@@ -75,6 +75,17 @@ func (Citation) TableName() string {
 	return "citations"
 }
 
+// CategoryStat stores precomputed category counts for fast category listings.
+type CategoryStat struct {
+	Name      string    `gorm:"primaryKey;column:name"`
+	Count     int       `gorm:"column:count"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (CategoryStat) TableName() string {
+	return "category_counts"
+}
+
 // SyncState stores sync metadata.
 type SyncState struct {
 	Key   string `gorm:"primaryKey"`

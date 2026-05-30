@@ -2,8 +2,11 @@ package arxiv
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Search searches papers by title/abstract text using full-text search.
@@ -29,6 +32,10 @@ func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Pap
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, 0, nil
+	}
+
+	if c.dbType == DBTypePostgres {
+		return c.quickSearchPostgres(ctx, query, limit)
 	}
 
 	likePattern := "%" + query + "%"
@@ -68,6 +75,89 @@ func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Pap
 	err := c.db.WithContext(ctx).Raw(sql, args...).Scan(&papers).Error
 
 	return papers, int(total), err
+}
+
+func (c *Cache) quickSearchPostgres(ctx context.Context, query string, limit int) ([]Paper, int, error) {
+	if papers, ok, err := c.quickSearchPostgresID(ctx, query, limit); ok || err != nil {
+		return papers, len(papers), err
+	}
+
+	fetchLimit := limit + 1
+	var papers []Paper
+	err := c.withPostgresSearchLimit(ctx, query, func(tx *gorm.DB) error {
+		return tx.Raw(`
+			SELECT id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded,
+			       ts_rank(search_vector, plainto_tsquery('english', ?)) AS rank
+			FROM papers
+			WHERE search_vector @@ plainto_tsquery('english', ?)
+			ORDER BY rank DESC, created DESC NULLS LAST
+			LIMIT ?
+		`, query, query, fetchLimit).Scan(&papers).Error
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(papers) == 0 {
+		return c.quickSearchPostgresFallback(ctx, query, limit)
+	}
+	if len(papers) > limit {
+		papers = papers[:limit]
+	}
+	return papers, len(papers), nil
+}
+
+func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit int) ([]Paper, bool, error) {
+	if !looksLikePaperIDPrefix(query) {
+		return nil, false, nil
+	}
+	upper, ok := nextStringPrefix(query)
+	if !ok {
+		return nil, false, nil
+	}
+
+	var papers []Paper
+	err := c.db.WithContext(ctx).
+		Model(&Paper{}).
+		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded").
+		Where("id >= ? AND id < ?", query, upper).
+		Order("id DESC").
+		Limit(limit).
+		Find(&papers).Error
+	return papers, len(papers) > 0, err
+}
+
+func (c *Cache) quickSearchPostgresFallback(ctx context.Context, query string, limit int) ([]Paper, int, error) {
+	likePattern := "%" + query + "%"
+	var papers []Paper
+	err := c.db.WithContext(ctx).
+		Model(&Paper{}).
+		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded").
+		Where("title ILIKE ? OR authors ILIKE ? OR categories ILIKE ?", likePattern, likePattern, likePattern).
+		Order("created DESC NULLS LAST").
+		Limit(limit).
+		Find(&papers).Error
+	return papers, len(papers), err
+}
+
+func looksLikePaperIDPrefix(query string) bool {
+	if query == "" || strings.ContainsAny(query, " \t\r\n") || len(query) > 32 {
+		return false
+	}
+	return strings.ContainsAny(query, "0123456789./")
+}
+
+func nextStringPrefix(prefix string) (string, bool) {
+	if prefix == "" {
+		return "", false
+	}
+	b := []byte(prefix)
+	for i := len(b) - 1; i >= 0; i-- {
+		if b[i] < 0xff {
+			b[i]++
+			return string(b[:i+1]), true
+		}
+	}
+	return "", false
 }
 
 // searchSQLite uses FTS5 for full-text search
@@ -142,14 +232,11 @@ func (c *Cache) searchPostgres(ctx context.Context, query, category string, limi
 	args = append(args, limit)
 
 	var papers []Paper
-	err := c.db.WithContext(ctx).Raw(sql, args...).Scan(&papers).Error
+	err := c.withPostgresSearchLimit(ctx, query, func(tx *gorm.DB) error {
+		return tx.Raw(sql, args...).Scan(&papers).Error
+	})
 	if err != nil {
 		// Fallback to ILIKE search if tsvector not populated
-		return c.searchPostgresFallback(ctx, query, category, limit)
-	}
-
-	if len(papers) == 0 {
-		// Try fallback if no results (might be tsvector not populated)
 		return c.searchPostgresFallback(ctx, query, category, limit)
 	}
 
@@ -170,6 +257,26 @@ func (c *Cache) searchPostgresFallback(ctx context.Context, query, category stri
 	return papers, err
 }
 
+func (c *Cache) withPostgresSearchLimit(ctx context.Context, query string, fn func(*gorm.DB) error) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		searchLimit := 1000
+		if len(strings.Fields(query)) > 1 {
+			searchLimit = 5000
+		}
+		searchLimitSQL := "SET LOCAL gin_fuzzy_search_limit = 1000"
+		if searchLimit == 5000 {
+			searchLimitSQL = "SET LOCAL gin_fuzzy_search_limit = 5000"
+		}
+		if err := tx.Exec(searchLimitSQL).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("SET LOCAL jit = off").Error; err != nil {
+			return err
+		}
+		return fn(tx)
+	})
+}
+
 // SearchByAuthor searches papers by author name.
 func (c *Cache) SearchByAuthor(ctx context.Context, author string, limit int) ([]Paper, error) {
 	if limit <= 0 {
@@ -187,14 +294,17 @@ func (c *Cache) SearchByAuthor(ctx context.Context, author string, limit int) ([
 	flipped := flipAuthorName(author)
 
 	var err error
+	query := c.db.WithContext(ctx).
+		Model(&Paper{}).
+		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded, fetched_at")
 	if flipped != "" {
-		err = c.db.WithContext(ctx).
+		err = query.
 			Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").
 			Order("created DESC").
 			Limit(limit).
 			Find(&papers).Error
 	} else {
-		err = c.db.WithContext(ctx).
+		err = query.
 			Where("authors "+likeOp+" ?", "%"+author+"%").
 			Order("created DESC").
 			Limit(limit).
@@ -218,6 +328,34 @@ type CategoryCount struct {
 
 // ListCategories returns all categories with their paper counts.
 func (c *Cache) ListCategories(ctx context.Context) ([]CategoryCount, error) {
+	if c.dbType == DBTypePostgres {
+		categories, err := c.listStoredCategories(ctx)
+		if err == nil && len(categories) > 0 {
+			return categories, nil
+		}
+	}
+
+	categories, err := c.listCategoriesFromPapers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.dbType == DBTypePostgres {
+		_ = c.storeCategoryCounts(ctx, categories)
+	}
+	return categories, nil
+}
+
+func (c *Cache) listStoredCategories(ctx context.Context) ([]CategoryCount, error) {
+	var categories []CategoryCount
+	err := c.db.WithContext(ctx).
+		Table("category_counts").
+		Select("name, count").
+		Order("count DESC, name ASC").
+		Scan(&categories).Error
+	return categories, err
+}
+
+func (c *Cache) listCategoriesFromPapers(ctx context.Context) ([]CategoryCount, error) {
 	// Categories are space-separated in the categories column
 	// We need to split and count each individual category
 	var papers []Paper
@@ -237,16 +375,31 @@ func (c *Cache) ListCategories(ctx context.Context) ([]CategoryCount, error) {
 		result = append(result, CategoryCount{Name: name, Count: count})
 	}
 
-	// Sort by count descending
-	for i := 0; i < len(result); i++ {
-		for j := i + 1; j < len(result); j++ {
-			if result[j].Count > result[i].Count {
-				result[i], result[j] = result[j], result[i]
-			}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count == result[j].Count {
+			return result[i].Name < result[j].Name
 		}
-	}
+		return result[i].Count > result[j].Count
+	})
 
 	return result, nil
+}
+
+func (c *Cache) storeCategoryCounts(ctx context.Context, categories []CategoryCount) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("DELETE FROM category_counts").Error; err != nil {
+			return err
+		}
+		for _, category := range categories {
+			if err := tx.Create(&CategoryStat{
+				Name:  category.Name,
+				Count: category.Count,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ListRecentPapersLite lists recently fetched papers with only the columns needed
@@ -310,14 +463,7 @@ func (c *Cache) ListPapers(ctx context.Context, category string, offset, limit i
 // CountSitemapPapers counts paper pages that should be exposed to crawlers.
 func (c *Cache) CountSitemapPapers(ctx context.Context) (int64, error) {
 	var count int64
-	err := c.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*)
-		FROM (
-			SELECT id || '' AS sitemap_id
-			FROM papers
-			GROUP BY id || ''
-		) AS deduped
-	`).Scan(&count).Error
+	err := c.db.WithContext(ctx).Model(&Paper{}).Count(&count).Error
 	return count, err
 }
 
@@ -329,9 +475,8 @@ func (c *Cache) ListSitemapPapers(ctx context.Context, offset, limit int) ([]Pap
 
 	var papers []Paper
 	err := c.db.WithContext(ctx).Raw(`
-		SELECT id || '' AS id, MAX(updated) AS updated
+		SELECT id, updated
 		FROM papers
-		GROUP BY id || ''
 		ORDER BY id ASC
 		LIMIT ? OFFSET ?
 	`, limit, offset).Scan(&papers).Error

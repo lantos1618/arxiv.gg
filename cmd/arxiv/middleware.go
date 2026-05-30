@@ -243,6 +243,7 @@ func responseCacheKey(r *http.Request) (string, bool) {
 	path := r.URL.Path
 	if path == "/" ||
 		path == "/categories" ||
+		path == "/api/v1/categories" ||
 		path == "/robots.txt" ||
 		path == "/sitemap.xml" ||
 		path == "/sitemap-static.xml" ||

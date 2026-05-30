@@ -12,9 +12,14 @@
 - Qwen abstract search should use the partial HNSW index
   `idx_embeddings_v2_qwen_abstract_vector_hnsw`; see
   `deploy/sql/2026-05-29-qwen-abstract-hnsw-index.sql`.
+- Qwen abstract backfills support `--refresh-stale`, which compares the stored
+  source hash with current title + abstract text and rewrites changed vectors.
 - Full-paper chunk vectors live in `chunk_embeddings_v2.vector` and should use
   `idx_chunk_embeddings_v2_qwen_vector_hnsw`; see
   `deploy/sql/2026-05-29-qwen-chunk-hnsw-index.sql`.
+- Full-paper chunks use stable IDs based on `paper_id + scope + chunk_index`.
+  If extracted PDF text changes, the chunk text hash changes and the Qwen chunk
+  backfill refreshes stale vectors instead of silently keeping old embeddings.
 
 ## Performance Notes
 - MiniLM is smaller and cheaper to serve, but less nuanced.

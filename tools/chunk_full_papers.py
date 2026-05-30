@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Create full-paper text chunks for the paid semantic-search layer.
+Create full-paper text chunks for the full-paper semantic-search layer.
 
 This does not generate embeddings. It writes deterministic chunks to
 paper_chunks so a GPU worker can embed chunk_embeddings_v2 later.
@@ -13,6 +13,8 @@ import re
 from urllib.parse import urlparse
 
 import psycopg2
+
+DEFAULT_SCOPE = "pdf_text"
 
 
 def db_connect():
@@ -52,6 +54,10 @@ def ensure_schema(conn):
             "CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_scope "
             "ON paper_chunks(paper_id, scope, chunk_index)"
         )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_paper_chunks_scope_created "
+            "ON paper_chunks(scope, created DESC, paper_id, chunk_index)"
+        )
     conn.commit()
 
 
@@ -81,8 +87,8 @@ def chunk_text(text, chunk_chars, overlap_chars):
     return chunks
 
 
-def stable_chunk_id(paper_id, scope, index, text):
-    raw = f"{paper_id}\x00{scope}\x00{index}\x00{text}".encode("utf-8")
+def stable_chunk_id(paper_id, scope, index):
+    raw = f"{paper_id}\x00{scope}\x00{index}".encode("utf-8")
     return "chk_" + hashlib.sha256(raw).hexdigest()[:32]
 
 
@@ -90,34 +96,52 @@ def text_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def fetch_papers(conn, limit):
+def fetch_papers(conn, limit, scope, paper_id=None, refresh_existing=False, exclude_ids=None):
+    clauses = [
+        "p.pdf_text IS NOT NULL",
+        "length(p.pdf_text) > 0",
+    ]
+    params = []
+    if exclude_ids:
+        clauses.append("NOT (p.id = ANY(%s))")
+        params.append(exclude_ids)
+    if paper_id:
+        clauses.append("p.id = %s")
+        params.append(paper_id)
+    elif not refresh_existing:
+        clauses.append(
+            """
+            NOT EXISTS (
+                SELECT 1 FROM paper_chunks c
+                WHERE c.paper_id = p.id AND c.scope = %s
+            )
+            """
+        )
+        params.append(scope)
+    params.append(limit)
+
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT id, pdf_text
             FROM papers p
-            WHERE p.pdf_text IS NOT NULL
-              AND length(p.pdf_text) > 0
-              AND NOT EXISTS (
-                  SELECT 1 FROM paper_chunks c
-                  WHERE c.paper_id = p.id AND c.scope = 'pdf_text'
-              )
+            WHERE {" AND ".join(clauses)}
             ORDER BY p.fetched_at DESC NULLS LAST, p.created DESC NULLS LAST
             LIMIT %s
             """,
-            (limit,),
+            params,
         )
         return cur.fetchall()
 
 
-def store_chunks(conn, paper_id, chunks):
+def store_chunks(conn, paper_id, scope, chunks):
     rows = []
     for i, chunk in enumerate(chunks):
         rows.append(
             (
-                stable_chunk_id(paper_id, "pdf_text", i, chunk),
+                stable_chunk_id(paper_id, scope, i),
                 paper_id,
-                "pdf_text",
+                scope,
                 "body",
                 i,
                 chunk,
@@ -126,26 +150,51 @@ def store_chunks(conn, paper_id, chunks):
                 max(1, len(chunk) // 4),
             )
         )
-    if not rows:
-        return 0
+    new_ids = [row[0] for row in rows]
     with conn.cursor() as cur:
-        cur.executemany(
-            """
-            INSERT INTO paper_chunks
-                (id, paper_id, scope, section, chunk_index, text, text_hash,
-                 text_chars, token_estimate, created, updated)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
-            ON CONFLICT (id) DO UPDATE SET
-                text = EXCLUDED.text,
-                text_hash = EXCLUDED.text_hash,
-                text_chars = EXCLUDED.text_chars,
-                token_estimate = EXCLUDED.token_estimate,
-                updated = now()
-            """,
-            rows,
-        )
+        if rows:
+            cur.executemany(
+                """
+                INSERT INTO paper_chunks
+                    (id, paper_id, scope, section, chunk_index, text, text_hash,
+                     text_chars, token_estimate, created, updated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+                ON CONFLICT (id) DO UPDATE SET
+                    section = EXCLUDED.section,
+                    chunk_index = EXCLUDED.chunk_index,
+                    text = EXCLUDED.text,
+                    text_hash = EXCLUDED.text_hash,
+                    text_chars = EXCLUDED.text_chars,
+                    token_estimate = EXCLUDED.token_estimate,
+                    updated = CASE
+                        WHEN paper_chunks.text_hash IS DISTINCT FROM EXCLUDED.text_hash THEN now()
+                        ELSE paper_chunks.updated
+                    END
+                """,
+                rows,
+            )
+
+        if new_ids:
+            cur.execute(
+                """
+                SELECT id FROM paper_chunks
+                WHERE paper_id = %s AND scope = %s AND NOT (id = ANY(%s))
+                """,
+                (paper_id, scope, new_ids),
+            )
+        else:
+            cur.execute(
+                "SELECT id FROM paper_chunks WHERE paper_id = %s AND scope = %s",
+                (paper_id, scope),
+            )
+        stale_ids = [row[0] for row in cur.fetchall()]
+        if stale_ids:
+            cur.execute("SELECT to_regclass('public.chunk_embeddings_v2')")
+            if cur.fetchone()[0]:
+                cur.execute("DELETE FROM chunk_embeddings_v2 WHERE chunk_id = ANY(%s)", (stale_ids,))
+            cur.execute("DELETE FROM paper_chunks WHERE id = ANY(%s)", (stale_ids,))
     conn.commit()
-    return len(rows)
+    return len(rows), len(stale_ids)
 
 
 def main():
@@ -154,28 +203,42 @@ def main():
     parser.add_argument("--select-batch-size", type=int, default=100)
     parser.add_argument("--chunk-chars", type=int, default=3000)
     parser.add_argument("--overlap-chars", type=int, default=300)
+    parser.add_argument("--scope", default=DEFAULT_SCOPE)
+    parser.add_argument("--paper-id", default="")
+    parser.add_argument("--refresh-existing", action="store_true")
     args = parser.parse_args()
 
     conn = db_connect()
     ensure_schema(conn)
     processed = 0
     total_chunks = 0
+    total_stale = 0
+    seen_ids = []
     while processed < args.limit:
         remaining = args.limit - processed
         batch_limit = min(args.select_batch_size, remaining)
-        papers = fetch_papers(conn, batch_limit)
+        papers = fetch_papers(
+            conn,
+            batch_limit,
+            args.scope,
+            paper_id=args.paper_id or None,
+            refresh_existing=args.refresh_existing,
+            exclude_ids=seen_ids,
+        )
         if not papers:
             break
         for paper_id, pdf_text in papers:
+            seen_ids.append(paper_id)
             chunks = chunk_text(pdf_text, args.chunk_chars, args.overlap_chars)
-            stored = store_chunks(conn, paper_id, chunks)
+            stored, stale = store_chunks(conn, paper_id, args.scope, chunks)
             total_chunks += stored
+            total_stale += stale
             processed += 1
-            print(f"{paper_id}: chunks={stored}", flush=True)
+            print(f"{paper_id}: chunks={stored} stale_removed={stale}", flush=True)
         if len(papers) < batch_limit:
             break
     conn.close()
-    print(f"done papers={processed} chunks={total_chunks}")
+    print(f"done papers={processed} chunks={total_chunks} stale_removed={total_stale}")
 
 
 if __name__ == "__main__":

@@ -302,6 +302,9 @@ func (c *Cache) initPostgresSchema() error {
 	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_scope ON paper_chunks(paper_id, scope, chunk_index)`); err != nil {
 		return err
 	}
+	if err := c.execPostgresSchema(`CREATE INDEX IF NOT EXISTS idx_paper_chunks_scope_created ON paper_chunks(scope, created DESC, paper_id, chunk_index)`); err != nil {
+		return err
+	}
 	if err := c.execPostgresSchema(`ALTER TABLE chunk_embeddings_v2 ADD COLUMN IF NOT EXISTS vector vector(1024)`); err != nil {
 		return err
 	}

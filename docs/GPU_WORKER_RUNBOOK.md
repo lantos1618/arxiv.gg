@@ -72,6 +72,10 @@ source .venv/bin/activate
 python3 tools/chunk_full_papers.py --limit 100000 --select-batch-size 200
 ```
 
+Use `--refresh-existing` after changing chunk size or text extraction. The
+chunker removes stale chunk rows and their old vectors, and the embedder
+refreshes vectors when a chunk's `text_hash` changes.
+
 Then embed those chunks through the GPU service:
 
 ```bash

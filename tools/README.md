@@ -80,10 +80,26 @@ QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
 python3 tools/qwen_embeddings_v2.py --limit 10000 --batch-size 16
 ```
 
+Refresh Qwen abstracts whose stored source hash no longer matches the title +
+abstract text:
+
+```bash
+QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
+python3 tools/qwen_embeddings_v2.py --limit 10000 --batch-size 16 --refresh-stale
+```
+
 Backfill full-paper chunks separately:
 
 ```bash
 python3 tools/chunk_full_papers.py --limit 1000
+QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
+python3 tools/qwen_chunk_embeddings_v2.py --limit 10000 --batch-size 16
+```
+
+Refresh already-chunked papers after changing chunk size or text extraction:
+
+```bash
+python3 tools/chunk_full_papers.py --limit 1000 --refresh-existing
 QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
 python3 tools/qwen_chunk_embeddings_v2.py --limit 10000 --batch-size 16
 ```

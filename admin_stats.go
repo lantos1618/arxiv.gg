@@ -19,16 +19,24 @@ type AdminStats struct {
 	RecentAuditLog []AdminAuditRow
 }
 
+const (
+	adminQwenModel = "Qwen/Qwen3-Embedding-8B"
+	adminQwenDim   = 1024
+)
+
 type AdminEmbeddingStats struct {
-	MiniLMAbstracts     int64
-	QwenAbstracts       int64
-	FullAbstracts       int64
-	MissingAbstractText int64
-	FullPaperChunks     int64
-	FullPaperEmbeddings int64
-	PendingMiniLM       int64
-	PendingQwenAbstract int64
-	PendingFullPaper    int64
+	MiniLMAbstracts      int64
+	QwenAbstracts        int64
+	FullAbstracts        int64
+	MissingAbstractText  int64
+	FullPaperTexts       int64
+	FullPaperChunked     int64
+	FullPaperChunks      int64
+	FullPaperEmbeddings  int64
+	PendingMiniLM        int64
+	PendingQwenAbstract  int64
+	PendingFullPaperText int64
+	PendingFullPaper     int64
 }
 
 type AdminUserStats struct {
@@ -116,21 +124,85 @@ func (c *Cache) countEmbeddingsForAdmin(ctx context.Context, out *AdminEmbedding
 		return err
 	}
 	if err := c.db.WithContext(ctx).Model(&EmbeddingV2{}).
-		Where("scope = ? AND model LIKE ? AND dim = ?", "abstract", "%Qwen%", 1024).
+		Where("scope = ? AND model = ? AND dim = ?", "abstract", adminQwenModel, adminQwenDim).
 		Count(&out.QwenAbstracts).Error; err != nil {
 		return err
 	}
-	if err := c.db.WithContext(ctx).Model(&PaperChunk{}).Count(&out.FullPaperChunks).Error; err != nil {
+	if err := c.db.WithContext(ctx).Model(&Paper{}).
+		Where("pdf_text IS NOT NULL AND length(pdf_text) > 0").
+		Count(&out.FullPaperTexts).Error; err != nil {
 		return err
 	}
-	if err := c.db.WithContext(ctx).Model(&ChunkEmbeddingV2{}).Count(&out.FullPaperEmbeddings).Error; err != nil {
+	if err := c.db.WithContext(ctx).Model(&PaperChunk{}).
+		Where("scope = ?", "pdf_text").
+		Distinct("paper_id").
+		Count(&out.FullPaperChunked).Error; err != nil {
+		return err
+	}
+	if err := c.db.WithContext(ctx).Model(&PaperChunk{}).
+		Where("scope = ?", "pdf_text").
+		Count(&out.FullPaperChunks).Error; err != nil {
+		return err
+	}
+	if err := c.countFullPaperEmbeddings(ctx, &out.FullPaperEmbeddings); err != nil {
+		return err
+	}
+	if err := c.countPendingFullPaperEmbeddings(ctx, &out.PendingFullPaper); err != nil {
 		return err
 	}
 	out.MissingAbstractText = maxInt64(totalPapers-out.FullAbstracts, 0)
 	out.PendingMiniLM = maxInt64(out.FullAbstracts-out.MiniLMAbstracts, 0)
 	out.PendingQwenAbstract = maxInt64(out.FullAbstracts-out.QwenAbstracts, 0)
-	out.PendingFullPaper = maxInt64(out.FullPaperChunks-out.FullPaperEmbeddings, 0)
+	out.PendingFullPaperText = maxInt64(out.FullPaperTexts-out.FullPaperChunked, 0)
 	return nil
+}
+
+func (c *Cache) countFullPaperEmbeddings(ctx context.Context, total *int64) error {
+	if c.dbType != DBTypePostgres {
+		*total = 0
+		return nil
+	}
+	sqlDB, err := c.db.DB()
+	if err != nil {
+		return err
+	}
+	row := sqlDB.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM chunk_embeddings_v2 e
+		JOIN paper_chunks c ON c.id = e.chunk_id
+		WHERE c.scope = 'pdf_text'
+		  AND e.model = $1
+		  AND e.dim = $2
+		  AND e.vector IS NOT NULL
+	`, adminQwenModel, adminQwenDim)
+	return row.Scan(total)
+}
+
+func (c *Cache) countPendingFullPaperEmbeddings(ctx context.Context, pending *int64) error {
+	if c.dbType != DBTypePostgres {
+		*pending = 0
+		return nil
+	}
+	sqlDB, err := c.db.DB()
+	if err != nil {
+		return err
+	}
+	row := sqlDB.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM paper_chunks c
+		LEFT JOIN chunk_embeddings_v2 e
+		  ON e.chunk_id = c.id
+		 AND e.model = $1
+		 AND e.dim = $2
+		WHERE c.scope = 'pdf_text'
+		  AND COALESCE(c.text, '') <> ''
+		  AND (
+		      e.chunk_id IS NULL
+		      OR e.vector IS NULL
+		      OR e.source_hash IS DISTINCT FROM c.text_hash
+		  )
+	`, adminQwenModel, adminQwenDim)
+	return row.Scan(pending)
 }
 
 func (c *Cache) countUsersForAdmin(ctx context.Context, out *AdminUserStats, now time.Time) error {

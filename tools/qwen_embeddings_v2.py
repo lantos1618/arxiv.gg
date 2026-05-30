@@ -8,39 +8,25 @@ separate table for evaluation/backfill.
 """
 
 import argparse
-import hashlib
-import json
 import os
 import sys
-import time
-import urllib.error
-import urllib.request
-from urllib.parse import urlparse
 
-import psycopg2
+from qwen_backfill_common import db_connect
+from qwen_backfill_common import encode_remote
+from qwen_backfill_common import normalize_text
+from qwen_backfill_common import run_backfill
+from qwen_backfill_common import source_hash
+from qwen_backfill_common import vector_literal
 
 
 DEFAULT_MODEL = "Qwen/Qwen3-Embedding-8B"
 DEFAULT_DIM = 1024
 
 
-def db_connect():
-    db_url = os.environ.get("DATABASE_URL", "")
-    if not db_url.startswith("postgres"):
-        raise SystemExit("DATABASE_URL must be a PostgreSQL URL")
-    parsed = urlparse(db_url)
-    return psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        user=parsed.username,
-        password=parsed.password,
-        dbname=parsed.path.lstrip("/"),
-    )
-
-
 def ensure_schema(conn):
     with conn.cursor() as cur:
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS embeddings_v2 (
@@ -58,30 +44,48 @@ def ensure_schema(conn):
             )
             """
         )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_embeddings_v2_lookup "
-            "ON embeddings_v2(scope, model, dim, paper_id)"
-        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_v2_lookup ON embeddings_v2(scope, model, dim, paper_id)")
     conn.commit()
 
 
-def fetch_papers(conn, model, scope, dim, limit, order):
-    order_sql = "p.fetched_at DESC NULLS LAST, p.created DESC NULLS LAST"
+def fetch_papers(conn, model, scope, dim, limit, order, refresh_stale=False):
+    order_sql = "src.fetched_at DESC NULLS LAST, src.created DESC NULLS LAST"
     if order == "random":
         order_sql = "random()"
+    stale_clause = "e.paper_id IS NULL OR e.vector IS NULL"
+    if refresh_stale:
+        stale_clause = """
+            e.paper_id IS NULL
+            OR e.vector IS NULL
+            OR e.source_hash IS DISTINCT FROM encode(digest(
+                CASE
+                    WHEN src.title_text <> '' AND src.abstract_text <> '' THEN src.title_text || '. ' || src.abstract_text
+                    ELSE src.title_text || src.abstract_text
+                END,
+                'sha256'
+            ), 'hex')
+        """
     query = f"""
-        SELECT p.id, p.title, p.abstract
-        FROM papers p
-        WHERE COALESCE(p.title, '') <> ''
-          AND COALESCE(p.abstract, '') <> ''
-          AND NOT EXISTS (
-              SELECT 1
-              FROM embeddings_v2 e
-              WHERE e.paper_id = p.id
-                AND e.scope = %s
-                AND e.model = %s
-                AND e.dim = %s
-          )
+        WITH src AS (
+            SELECT p.id,
+                   p.title,
+                   p.abstract,
+                   trim(COALESCE(p.title, '')) AS title_text,
+                   regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g') AS abstract_text,
+                   p.fetched_at,
+                   p.created
+            FROM papers p
+            WHERE COALESCE(p.title, '') <> ''
+              AND COALESCE(p.abstract, '') <> ''
+        )
+        SELECT src.id, src.title, src.abstract
+        FROM src
+        LEFT JOIN embeddings_v2 e
+          ON e.paper_id = src.id
+         AND e.scope = %s
+         AND e.model = %s
+         AND e.dim = %s
+        WHERE ({stale_clause})
         ORDER BY {order_sql}
         LIMIT %s
     """
@@ -90,20 +94,12 @@ def fetch_papers(conn, model, scope, dim, limit, order):
         return cur.fetchall()
 
 
-def vector_literal(embedding):
-    return "[" + ",".join(str(float(value)) for value in embedding) + "]"
-
-
 def paper_text(title, abstract):
     title = (title or "").strip()
-    abstract = " ".join((abstract or "").split())
+    abstract = normalize_text(abstract)
     if title and abstract:
         return f"{title}. {abstract}"
     return title or abstract
-
-
-def source_hash(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def store_batch(conn, rows, embeddings, model, scope, dim):
@@ -165,27 +161,6 @@ def encode_local(model, texts, batch_size):
     )
 
 
-def encode_remote(service_url, texts, timeout):
-    payload = json.dumps({"texts": texts}).encode("utf-8")
-    req = urllib.request.Request(
-        service_url.rstrip("/") + "/embed/batch",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read()
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", "replace")
-        raise RuntimeError(f"embedding service http {err.code}: {detail}") from err
-    data = json.loads(body)
-    embeddings = data.get("embeddings", [])
-    if len(embeddings) != len(texts):
-        raise RuntimeError(f"embedding service returned {len(embeddings)} vectors for {len(texts)} texts")
-    return embeddings
-
-
 def main():
     parser = argparse.ArgumentParser(description="Generate Qwen v2 abstract embeddings")
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -196,6 +171,7 @@ def main():
     parser.add_argument("--order", choices=["recent", "random"], default="recent")
     parser.add_argument("--service-url", default=os.environ.get("QWEN_EMBEDDING_SERVICE_URL", ""))
     parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument("--refresh-stale", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -211,38 +187,31 @@ def main():
 
     conn = db_connect()
     ensure_schema(conn)
-    started = time.time()
-    processed = 0
-    while processed < args.limit:
-        remaining = args.limit - processed
-        batch_limit = min(args.batch_size, remaining)
-        batch = fetch_papers(conn, args.model, args.scope, args.dim, batch_limit, args.order)
-        if not batch:
-            if processed == 0:
-                print("No papers need v2 embeddings.")
-            break
-        texts = [paper_text(title, abstract) for _, title, abstract in batch]
+
+    def embed_batch(texts):
         if args.service_url:
-            embeddings = encode_remote(args.service_url, texts, args.timeout)
-        else:
-            embeddings = encode_local(local_model, texts, args.batch_size)
-        if not args.dry_run:
-            store_batch(conn, batch, embeddings, args.model, args.scope, args.dim)
-        processed += len(batch)
-        elapsed = time.time() - started
-        rate = processed / elapsed if elapsed else 0
-        print(
-            f"processed={processed}/{args.limit} rate={rate:.2f}/s "
-            f"elapsed={elapsed:.1f}s dry_run={args.dry_run}",
-            flush=True,
-        )
-        if args.dry_run:
-            print("dry-run stops after one streamed batch to avoid reselecting unchanged rows.")
-            break
+            return encode_remote(args.service_url, texts, args.timeout)
+        return encode_local(local_model, texts, args.batch_size)
+
+    run_backfill(
+        args.limit,
+        args.batch_size,
+        args.dry_run,
+        lambda batch_limit: fetch_papers(
+            conn,
+            args.model,
+            args.scope,
+            args.dim,
+            batch_limit,
+            args.order,
+            refresh_stale=args.refresh_stale,
+        ),
+        lambda row: paper_text(row[1], row[2]),
+        embed_batch,
+        lambda rows, embeddings: store_batch(conn, rows, embeddings, args.model, args.scope, args.dim),
+    )
 
     conn.close()
-    total_elapsed = time.time() - started
-    print(f"done processed={processed} seconds={total_elapsed:.1f}")
 
 
 if __name__ == "__main__":

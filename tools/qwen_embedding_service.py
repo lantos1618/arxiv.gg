@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -40,6 +40,12 @@ MAX_TEXT_CHARS = int(os.environ.get("QWEN_MAX_TEXT_CHARS", "24000"))
 
 model: Optional[SentenceTransformer] = None
 started_at = time.time()
+requests_total = 0
+errors_total = 0
+oom_total = 0
+last_success_at: Optional[float] = None
+last_error_at: Optional[float] = None
+last_error = ""
 
 
 class EmbedBatchRequest(BaseModel):
@@ -62,9 +68,42 @@ class HealthResponse(BaseModel):
     dimension: int
     device: str
     max_batch_size: int
+    max_text_chars: int
     uptime_seconds: float
     cuda_allocated_gb: float = 0
     cuda_reserved_gb: float = 0
+    cuda_free_gb: float = 0
+    cuda_total_gb: float = 0
+    requests_total: int = 0
+    errors_total: int = 0
+    oom_total: int = 0
+    last_success_seconds_ago: Optional[float] = None
+    last_error_seconds_ago: Optional[float] = None
+    last_error: str = ""
+
+
+def cuda_memory_gb() -> Tuple[float, float, float, float]:
+    if not torch.cuda.is_available():
+        return 0.0, 0.0, 0.0, 0.0
+    allocated = torch.cuda.memory_allocated() / 1024**3
+    reserved = torch.cuda.memory_reserved() / 1024**3
+    free, total = torch.cuda.mem_get_info()
+    return allocated, reserved, free / 1024**3, total / 1024**3
+
+
+def seconds_ago(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    return round(time.time() - value, 3)
+
+
+def record_error(message: str, is_oom: bool = False) -> None:
+    global errors_total, last_error_at, last_error, oom_total
+    errors_total += 1
+    if is_oom:
+        oom_total += 1
+    last_error_at = time.time()
+    last_error = message[:500]
 
 
 @asynccontextmanager
@@ -96,11 +135,7 @@ app = FastAPI(
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    allocated = 0.0
-    reserved = 0.0
-    if torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**3
-        reserved = torch.cuda.memory_reserved() / 1024**3
+    allocated, reserved, free, total = cuda_memory_gb()
     return HealthResponse(
         status="healthy" if model is not None else "loading",
         ready=model is not None,
@@ -108,14 +143,25 @@ async def health():
         dimension=EMBEDDING_DIM,
         device=DEVICE,
         max_batch_size=MAX_BATCH_SIZE,
+        max_text_chars=MAX_TEXT_CHARS,
         uptime_seconds=time.time() - started_at,
         cuda_allocated_gb=round(allocated, 3),
         cuda_reserved_gb=round(reserved, 3),
+        cuda_free_gb=round(free, 3),
+        cuda_total_gb=round(total, 3),
+        requests_total=requests_total,
+        errors_total=errors_total,
+        oom_total=oom_total,
+        last_success_seconds_ago=seconds_ago(last_success_at),
+        last_error_seconds_ago=seconds_ago(last_error_at),
+        last_error=last_error,
     )
 
 
 @app.post("/embed/batch", response_model=EmbedBatchResponse)
 async def embed_batch(request: EmbedBatchRequest):
+    global requests_total, last_success_at
+
     if model is None:
         raise HTTPException(status_code=503, detail="model not ready")
     if len(request.texts) > MAX_BATCH_SIZE:
@@ -125,16 +171,35 @@ async def embed_batch(request: EmbedBatchRequest):
     if any(text == "" for text in texts):
         raise HTTPException(status_code=400, detail="texts cannot be empty")
 
+    requests_total += 1
     start = time.time()
-    embeddings = model.encode(
-        texts,
-        batch_size=len(texts),
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-        show_progress_bar=False,
-    )
+    try:
+        embeddings = model.encode(
+            texts,
+            batch_size=len(texts),
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+    except torch.cuda.OutOfMemoryError as err:
+        record_error(f"cuda out of memory batch={len(texts)} chars={MAX_TEXT_CHARS}: {err}", is_oom=True)
+        logger.exception("cuda out of memory while embedding batch_size=%s", len(texts))
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        raise HTTPException(status_code=507, detail="cuda out of memory; retry with a smaller batch") from err
+    except RuntimeError as err:
+        if "out of memory" in str(err).lower():
+            record_error(f"cuda out of memory batch={len(texts)} chars={MAX_TEXT_CHARS}: {err}", is_oom=True)
+            logger.exception("cuda out of memory while embedding batch_size=%s", len(texts))
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise HTTPException(status_code=507, detail="cuda out of memory; retry with a smaller batch") from err
+        record_error(f"embedding failed batch={len(texts)}: {err}")
+        logger.exception("embedding failed while embedding batch_size=%s", len(texts))
+        raise HTTPException(status_code=500, detail="embedding failed") from err
     embeddings = np.asarray(embeddings, dtype=np.float32)
     seconds = time.time() - start
+    last_success_at = time.time()
 
     return EmbedBatchResponse(
         embeddings=[row.tolist() for row in embeddings],

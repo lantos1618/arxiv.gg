@@ -12,6 +12,12 @@ from urllib.parse import urlparse
 import psycopg2
 
 
+class EmbeddingServiceError(RuntimeError):
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def db_connect():
     db_url = os.environ.get("DATABASE_URL", "")
     if not db_url.startswith("postgres"):
@@ -51,12 +57,56 @@ def encode_remote(service_url, texts, timeout):
             body = resp.read()
     except urllib.error.HTTPError as err:
         detail = err.read().decode("utf-8", "replace")
-        raise RuntimeError(f"embedding service http {err.code}: {detail}") from err
+        raise EmbeddingServiceError(f"embedding service http {err.code}: {detail}", err.code) from err
+    except (TimeoutError, urllib.error.URLError) as err:
+        raise EmbeddingServiceError(f"embedding service connection failed: {err}") from err
     data = json.loads(body)
     embeddings = data.get("embeddings", [])
     if len(embeddings) != len(texts):
         raise RuntimeError(f"embedding service returned {len(embeddings)} vectors for {len(texts)} texts")
     return embeddings
+
+
+def should_split_batch(err):
+    if isinstance(err, EmbeddingServiceError):
+        if err.status_code in (413, 429, 500, 502, 503, 504, 507):
+            return True
+    message = str(err).lower()
+    return "out of memory" in message or "batch too large" in message or "timeout" in message
+
+
+def encode_with_retries(texts, embed_batch, max_attempts=3, retry_delay=2.0, depth=0):
+    try:
+        return embed_batch(texts)
+    except Exception as err:
+        if len(texts) > 1 and should_split_batch(err):
+            midpoint = max(1, len(texts) // 2)
+            indent = "  " * depth
+            print(
+                f"{indent}embedding batch failed for {len(texts)} texts; "
+                f"splitting into {midpoint}+{len(texts) - midpoint}: {err}",
+                flush=True,
+            )
+            left = encode_with_retries(texts[:midpoint], embed_batch, max_attempts, retry_delay, depth + 1)
+            right = encode_with_retries(texts[midpoint:], embed_batch, max_attempts, retry_delay, depth + 1)
+            return left + right
+
+        last_err = err
+
+    for attempt in range(2, max_attempts + 1):
+        delay = min(30.0, retry_delay * (2 ** (attempt - 2)))
+        print(
+            f"embedding attempt {attempt}/{max_attempts} for {len(texts)} texts "
+            f"after error: {last_err}; sleeping {delay:.1f}s",
+            flush=True,
+        )
+        time.sleep(delay)
+        try:
+            return embed_batch(texts)
+        except Exception as err:
+            last_err = err
+
+    raise last_err
 
 
 def run_backfill(limit, batch_size, dry_run, fetch_batch, text_for_row, embed_batch, store_batch):
@@ -72,7 +122,7 @@ def run_backfill(limit, batch_size, dry_run, fetch_batch, text_for_row, embed_ba
             break
 
         texts = [text_for_row(row) for row in batch]
-        embeddings = embed_batch(texts)
+        embeddings = encode_with_retries(texts, embed_batch)
         if not dry_run:
             store_batch(batch, embeddings)
 

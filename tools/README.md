@@ -96,6 +96,16 @@ QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
 python3 tools/qwen_chunk_embeddings_v2.py --limit 10000 --batch-size 16
 ```
 
+Check the GPU service and recent DB progress:
+
+```bash
+QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
+python3 tools/qwen_pipeline_check.py --scope both --window-minutes 15 --min-recent 1
+```
+
+Backfills retry transient failures and split oversized batches, so a CUDA OOM
+should reduce batch size automatically instead of stopping the whole run.
+
 Refresh already-chunked papers after changing chunk size or text extraction:
 
 ```bash

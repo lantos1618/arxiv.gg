@@ -41,15 +41,16 @@ func DefaultEmbeddingWorkerConfig() EmbeddingWorkerConfig {
 
 // EmbeddingWorker processes embedding jobs in the background.
 type EmbeddingWorker struct {
-	cache    *Cache
-	config   EmbeddingWorkerConfig
-	client   *http.Client
-	mu       sync.RWMutex
-	running  bool
-	stopping bool
-	stats    EmbeddingWorkerStats
-	stopChan chan struct{}
-	doneChan chan struct{}
+	cache               *Cache
+	config              EmbeddingWorkerConfig
+	client              *http.Client
+	mu                  sync.RWMutex
+	running             bool
+	stopping            bool
+	stats               EmbeddingWorkerStats
+	pendingCountUpdated time.Time
+	stopChan            chan struct{}
+	doneChan            chan struct{}
 }
 
 // EmbeddingWorkerStats tracks worker statistics.
@@ -192,8 +193,7 @@ func (w *EmbeddingWorker) processBatch(ctx context.Context) bool {
 		return false
 	}
 
-	// Update pending count
-	pendingCount, _ := w.countPendingPapers(ctx)
+	pendingCount := w.currentPendingEstimate(ctx)
 	w.mu.Lock()
 	w.stats.Pending = pendingCount
 	w.mu.Unlock()
@@ -204,6 +204,9 @@ func (w *EmbeddingWorker) processBatch(ctx context.Context) bool {
 	w.mu.Lock()
 	w.stats.Processed += int64(success)
 	w.stats.Failed += int64(failed)
+	if w.stats.Pending > 0 {
+		w.stats.Pending = maxInt64(w.stats.Pending-int64(success), 0)
+	}
 	if failed > 0 {
 		w.stats.LastError = fmt.Sprintf("%d papers failed in last batch", failed)
 	} else {
@@ -215,6 +218,25 @@ func (w *EmbeddingWorker) processBatch(ctx context.Context) bool {
 		log.Printf("Embedded %d papers (%d failed, %d pending)", success, failed, pendingCount-int64(success))
 	}
 	return true
+}
+
+func (w *EmbeddingWorker) currentPendingEstimate(ctx context.Context) int64 {
+	w.mu.RLock()
+	pending := w.stats.Pending
+	fresh := !w.pendingCountUpdated.IsZero() && time.Since(w.pendingCountUpdated) < 10*time.Minute
+	w.mu.RUnlock()
+	if fresh && pending > 0 {
+		return pending
+	}
+
+	count, err := w.countPendingPapers(ctx)
+	if err != nil {
+		return pending
+	}
+	w.mu.Lock()
+	w.pendingCountUpdated = time.Now()
+	w.mu.Unlock()
+	return count
 }
 
 // checkServiceHealth checks if the embedding service is responding.
@@ -257,7 +279,7 @@ func (w *EmbeddingWorker) getPendingPapers(ctx context.Context, limit int) ([]Pa
 			SELECT p.id, p.title, p.abstract FROM papers p
 			WHERE p.title != '' AND p.abstract != ''
 			AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.paper_id = p.id)
-			ORDER BY p.fetched_at DESC NULLS LAST
+			ORDER BY p.id DESC
 			LIMIT ?
 		`, limit).
 		Scan(&papers).Error

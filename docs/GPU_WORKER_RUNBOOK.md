@@ -22,6 +22,9 @@ Start the service on the GPU box:
 ```bash
 cd ~/arxiv-embedding-worker
 source .venv/bin/activate
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export QWEN_MAX_BATCH_SIZE=128
+export QWEN_MAX_TEXT_CHARS=4096
 QWEN_EMBEDDING_DEVICE=cuda \
 uvicorn tools.qwen_embedding_service:app --host 127.0.0.1 --port 8010
 ```
@@ -56,11 +59,15 @@ From the arxiv.gg app box:
 cd /home/ubuntu/arxiv
 source .venv/bin/activate
 QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
-python3 tools/qwen_embeddings_v2.py --limit 700000 --batch-size 16
+python3 tools/qwen_embeddings_v2.py --limit 700000 --batch-size 128
 ```
 
 This writes Qwen 1024d abstract vectors into `embeddings_v2` and does not touch
 the existing production MiniLM embeddings.
+
+The backfill script retries transient service failures and splits oversized
+batches recursively. A single CUDA OOM should shrink the work unit instead of
+killing the whole run.
 
 ## 4. Run Full-Body Search Prep
 
@@ -85,7 +92,24 @@ python3 tools/qwen_chunk_embeddings_v2.py --limit 500000 --batch-size 16
 
 Full-body search is available after sign-in and free while we test it.
 
-## 5. Operational Notes
+## 5. Pipeline Checks
+
+Run a manual check from the app box:
+
+```bash
+cd /home/ubuntu/arxiv
+QWEN_EMBEDDING_SERVICE_URL=http://127.0.0.1:8010 \
+python3 tools/qwen_pipeline_check.py --scope both --window-minutes 15 --min-recent 1
+```
+
+For systemd or cron, run the same command every few minutes and alert on a
+non-zero exit. Use `--scope abstract` when only the abstract backfill is
+expected to be moving; use `--scope chunks` when full-paper chunks are queued.
+
+The check fails when the GPU service is not ready or when pending rows exist but
+no new vectors were written in the selected window.
+
+## 6. Operational Notes
 
 - Keep Postgres on the main app box. Do not copy or replace the production DB.
 - Keep the GPU service bound to `127.0.0.1`; expose it only through SSH or a

@@ -98,21 +98,28 @@ def fetch_papers(conn, model, scope, dim, limit, order, refresh_stale=False, aft
 
 
 def fetch_papers_by_id(conn, model, scope, dim, limit, refresh_stale=False, after_id=""):
-    stale_clause = "e.paper_id IS NULL OR e.vector IS NULL"
-    if refresh_stale:
-        stale_clause = """
-            e.paper_id IS NULL
-            OR e.vector IS NULL
-            OR e.source_hash IS DISTINCT FROM encode(digest(
-                CASE
-                    WHEN trim(COALESCE(p.title, '')) <> ''
-                     AND regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g') <> ''
-                    THEN trim(COALESCE(p.title, '')) || '. ' || regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g')
-                    ELSE trim(COALESCE(p.title, '')) || regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g')
-                END,
-                'sha256'
-            ), 'hex')
+    if not refresh_stale:
+        query = """
+            SELECT p.id, p.title, p.abstract
+            FROM papers p
+            WHERE p.id > %s
+              AND COALESCE(p.title, '') <> ''
+              AND COALESCE(p.abstract, '') <> ''
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM embeddings_v2 e
+                  WHERE e.paper_id = p.id
+                    AND e.scope = %s
+                    AND e.model = %s
+                    AND e.dim = %s
+              )
+            ORDER BY p.id
+            LIMIT %s
         """
+        with conn.cursor() as cur:
+            cur.execute(query, (after_id, scope, model, dim, limit))
+            return cur.fetchall()
+
     query = f"""
         SELECT p.id, p.title, p.abstract
         FROM papers p
@@ -124,7 +131,19 @@ def fetch_papers_by_id(conn, model, scope, dim, limit, refresh_stale=False, afte
         WHERE p.id > %s
           AND COALESCE(p.title, '') <> ''
           AND COALESCE(p.abstract, '') <> ''
-          AND ({stale_clause})
+          AND (
+              e.paper_id IS NULL
+              OR e.vector IS NULL
+              OR e.source_hash IS DISTINCT FROM encode(digest(
+                  CASE
+                      WHEN trim(COALESCE(p.title, '')) <> ''
+                       AND regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g') <> ''
+                      THEN trim(COALESCE(p.title, '')) || '. ' || regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g')
+                      ELSE trim(COALESCE(p.title, '')) || regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g')
+                  END,
+                  'sha256'
+              ), 'hex')
+          )
         ORDER BY p.id
         LIMIT %s
     """

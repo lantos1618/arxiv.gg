@@ -48,7 +48,10 @@ def ensure_schema(conn):
     conn.commit()
 
 
-def fetch_papers(conn, model, scope, dim, limit, order, refresh_stale=False):
+def fetch_papers(conn, model, scope, dim, limit, order, refresh_stale=False, after_id=""):
+    if order == "id":
+        return fetch_papers_by_id(conn, model, scope, dim, limit, refresh_stale, after_id)
+
     order_sql = "src.fetched_at DESC NULLS LAST, src.created DESC NULLS LAST"
     if order == "random":
         order_sql = "random()"
@@ -91,6 +94,42 @@ def fetch_papers(conn, model, scope, dim, limit, order, refresh_stale=False):
     """
     with conn.cursor() as cur:
         cur.execute(query, (scope, model, dim, limit))
+        return cur.fetchall()
+
+
+def fetch_papers_by_id(conn, model, scope, dim, limit, refresh_stale=False, after_id=""):
+    stale_clause = "e.paper_id IS NULL OR e.vector IS NULL"
+    if refresh_stale:
+        stale_clause = """
+            e.paper_id IS NULL
+            OR e.vector IS NULL
+            OR e.source_hash IS DISTINCT FROM encode(digest(
+                CASE
+                    WHEN trim(COALESCE(p.title, '')) <> ''
+                     AND regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g') <> ''
+                    THEN trim(COALESCE(p.title, '')) || '. ' || regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g')
+                    ELSE trim(COALESCE(p.title, '')) || regexp_replace(trim(COALESCE(p.abstract, '')), '\\s+', ' ', 'g')
+                END,
+                'sha256'
+            ), 'hex')
+        """
+    query = f"""
+        SELECT p.id, p.title, p.abstract
+        FROM papers p
+        LEFT JOIN embeddings_v2 e
+          ON e.paper_id = p.id
+         AND e.scope = %s
+         AND e.model = %s
+         AND e.dim = %s
+        WHERE p.id > %s
+          AND COALESCE(p.title, '') <> ''
+          AND COALESCE(p.abstract, '') <> ''
+          AND ({stale_clause})
+        ORDER BY p.id
+        LIMIT %s
+    """
+    with conn.cursor() as cur:
+        cur.execute(query, (scope, model, dim, after_id, limit))
         return cur.fetchall()
 
 
@@ -168,7 +207,7 @@ def main():
     parser.add_argument("--scope", default="abstract")
     parser.add_argument("--limit", type=int, default=10000)
     parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--order", choices=["recent", "random"], default="recent")
+    parser.add_argument("--order", choices=["id", "recent", "random"], default="id")
     parser.add_argument("--service-url", default=os.environ.get("QWEN_EMBEDDING_SERVICE_URL", ""))
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--refresh-stale", action="store_true")
@@ -193,11 +232,11 @@ def main():
             return encode_remote(args.service_url, texts, args.timeout)
         return encode_local(local_model, texts, args.batch_size)
 
-    run_backfill(
-        args.limit,
-        args.batch_size,
-        args.dry_run,
-        lambda batch_limit: fetch_papers(
+    last_id = ""
+
+    def fetch_batch(batch_limit):
+        nonlocal last_id
+        rows = fetch_papers(
             conn,
             args.model,
             args.scope,
@@ -205,7 +244,17 @@ def main():
             batch_limit,
             args.order,
             refresh_stale=args.refresh_stale,
-        ),
+            after_id=last_id,
+        )
+        if args.order == "id" and rows:
+            last_id = rows[-1][0]
+        return rows
+
+    run_backfill(
+        args.limit,
+        args.batch_size,
+        args.dry_run,
+        fetch_batch,
         lambda row: paper_text(row[1], row[2]),
         embed_batch,
         lambda rows, embeddings: store_batch(conn, rows, embeddings, args.model, args.scope, args.dim),

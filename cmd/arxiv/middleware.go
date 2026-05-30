@@ -31,7 +31,7 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 			"style-src 'self' 'unsafe-inline'",
 			"img-src 'self' data: https:",
 			"font-src 'self' data: https://cdn.jsdelivr.net",
-			"connect-src 'self' https://www.google-analytics.com",
+			"connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com",
 			"upgrade-insecure-requests",
 		}, "; "))
 		next.ServeHTTP(w, r)

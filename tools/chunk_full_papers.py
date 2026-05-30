@@ -96,15 +96,12 @@ def text_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def fetch_papers(conn, limit, scope, paper_id=None, refresh_existing=False, exclude_ids=None):
+def fetch_papers(conn, limit, scope, paper_id=None, refresh_existing=False, offset=0):
     clauses = [
         "p.pdf_text IS NOT NULL",
         "length(p.pdf_text) > 0",
     ]
     params = []
-    if exclude_ids:
-        clauses.append("NOT (p.id = ANY(%s))")
-        params.append(exclude_ids)
     if paper_id:
         clauses.append("p.id = %s")
         params.append(paper_id)
@@ -119,6 +116,7 @@ def fetch_papers(conn, limit, scope, paper_id=None, refresh_existing=False, excl
         )
         params.append(scope)
     params.append(limit)
+    params.append(offset)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -126,8 +124,9 @@ def fetch_papers(conn, limit, scope, paper_id=None, refresh_existing=False, excl
             SELECT id, pdf_text
             FROM papers p
             WHERE {" AND ".join(clauses)}
-            ORDER BY p.fetched_at DESC NULLS LAST, p.created DESC NULLS LAST
+            ORDER BY p.fetched_at DESC NULLS LAST, p.created DESC NULLS LAST, p.id
             LIMIT %s
+            OFFSET %s
             """,
             params,
         )
@@ -213,22 +212,24 @@ def main():
     processed = 0
     total_chunks = 0
     total_stale = 0
-    seen_ids = []
-    while processed < args.limit:
-        remaining = args.limit - processed
+    target_limit = 1 if args.paper_id else args.limit
+    while processed < target_limit:
+        remaining = target_limit - processed
+        if remaining <= 0:
+            break
         batch_limit = min(args.select_batch_size, remaining)
+        offset = processed if args.refresh_existing and not args.paper_id else 0
         papers = fetch_papers(
             conn,
             batch_limit,
             args.scope,
             paper_id=args.paper_id or None,
             refresh_existing=args.refresh_existing,
-            exclude_ids=seen_ids,
+            offset=offset,
         )
         if not papers:
             break
         for paper_id, pdf_text in papers:
-            seen_ids.append(paper_id)
             chunks = chunk_text(pdf_text, args.chunk_chars, args.overlap_chars)
             stored, stale = store_chunks(conn, paper_id, args.scope, chunks)
             total_chunks += stored

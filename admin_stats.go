@@ -22,6 +22,8 @@ type AdminStats struct {
 type AdminEmbeddingStats struct {
 	MiniLMAbstracts     int64
 	QwenAbstracts       int64
+	FullAbstracts       int64
+	MissingAbstractText int64
 	FullPaperChunks     int64
 	FullPaperEmbeddings int64
 	PendingMiniLM       int64
@@ -105,6 +107,11 @@ func (c *Cache) AdminStats(ctx context.Context) (*AdminStats, error) {
 }
 
 func (c *Cache) countEmbeddingsForAdmin(ctx context.Context, out *AdminEmbeddingStats, totalPapers int64) error {
+	if err := c.db.WithContext(ctx).Model(&Paper{}).
+		Where("COALESCE(title, '') <> '' AND COALESCE(abstract, '') <> ''").
+		Count(&out.FullAbstracts).Error; err != nil {
+		return err
+	}
 	if err := c.db.WithContext(ctx).Model(&Embedding{}).Count(&out.MiniLMAbstracts).Error; err != nil {
 		return err
 	}
@@ -119,8 +126,9 @@ func (c *Cache) countEmbeddingsForAdmin(ctx context.Context, out *AdminEmbedding
 	if err := c.db.WithContext(ctx).Model(&ChunkEmbeddingV2{}).Count(&out.FullPaperEmbeddings).Error; err != nil {
 		return err
 	}
-	out.PendingMiniLM = maxInt64(totalPapers-out.MiniLMAbstracts, 0)
-	out.PendingQwenAbstract = maxInt64(totalPapers-out.QwenAbstracts, 0)
+	out.MissingAbstractText = maxInt64(totalPapers-out.FullAbstracts, 0)
+	out.PendingMiniLM = maxInt64(out.FullAbstracts-out.MiniLMAbstracts, 0)
+	out.PendingQwenAbstract = maxInt64(out.FullAbstracts-out.QwenAbstracts, 0)
 	out.PendingFullPaper = maxInt64(out.FullPaperChunks-out.FullPaperEmbeddings, 0)
 	return nil
 }

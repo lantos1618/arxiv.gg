@@ -45,14 +45,19 @@
 			<div class="admin-metric-note">Real rows in papers.</div>
 		</div>
 		<div class="admin-metric">
+			<div class="admin-metric-label">Full abstracts</div>
+			<div class="admin-metric-value">{{formatInt .Stats.Embeddings.FullAbstracts}}</div>
+			<div class="admin-metric-note">{{percent .Stats.Embeddings.FullAbstracts .Stats.Cache.TotalPapers}} have title + abstract text.</div>
+		</div>
+		<div class="admin-metric">
 			<div class="admin-metric-label">MiniLM embeddings</div>
 			<div class="admin-metric-value">{{formatInt .Stats.Embeddings.MiniLMAbstracts}}</div>
-			<div class="admin-metric-note">{{percent .Stats.Embeddings.MiniLMAbstracts .Stats.Cache.TotalPapers}} of papers.</div>
+			<div class="admin-metric-note">{{percent .Stats.Embeddings.MiniLMAbstracts .Stats.Embeddings.FullAbstracts}} of full abstracts.</div>
 		</div>
 		<div class="admin-metric">
 			<div class="admin-metric-label">Qwen abstracts</div>
 			<div class="admin-metric-value">{{formatInt .Stats.Embeddings.QwenAbstracts}}</div>
-			<div class="admin-metric-note">{{percent .Stats.Embeddings.QwenAbstracts .Stats.Cache.TotalPapers}} of papers.</div>
+			<div class="admin-metric-note">{{percent .Stats.Embeddings.QwenAbstracts .Stats.Embeddings.FullAbstracts}} of full abstracts.</div>
 		</div>
 	</div>
 </div>
@@ -62,6 +67,12 @@
 	<table class="admin-table">
 		<thead><tr><th>Track</th><th>Done</th><th>Remaining</th><th>Source</th></tr></thead>
 		<tbody>
+			<tr>
+				<td>Full abstracts available</td>
+				<td>{{formatInt .Stats.Embeddings.FullAbstracts}}</td>
+				<td>{{formatInt .Stats.Embeddings.MissingAbstractText}}</td>
+				<td><span class="status-real">REAL</span> papers with title + abstract text</td>
+			</tr>
 			<tr>
 				<td>Abstract semantic search, MiniLM 384d</td>
 				<td>{{formatInt .Stats.Embeddings.MiniLMAbstracts}}</td>

@@ -9,34 +9,19 @@ Expected flow:
 """
 
 import argparse
-import hashlib
-import json
 import os
 import sys
-import time
-import urllib.error
-import urllib.request
-from urllib.parse import urlparse
 
-import psycopg2
+from qwen_backfill_common import db_connect
+from qwen_backfill_common import encode_remote
+from qwen_backfill_common import normalize_text
+from qwen_backfill_common import run_backfill
+from qwen_backfill_common import source_hash
+from qwen_backfill_common import vector_literal
 
 
 DEFAULT_MODEL = "Qwen/Qwen3-Embedding-8B"
 DEFAULT_DIM = 1024
-
-
-def db_connect():
-    db_url = os.environ.get("DATABASE_URL", "")
-    if not db_url.startswith("postgres"):
-        raise SystemExit("DATABASE_URL must be a PostgreSQL URL")
-    parsed = urlparse(db_url)
-    return psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        user=parsed.username,
-        password=parsed.password,
-        dbname=parsed.path.lstrip("/"),
-    )
 
 
 def ensure_schema(conn):
@@ -72,64 +57,43 @@ def fetch_chunks(conn, model, dim, scope, limit, order):
     elif order == "random":
         order_sql = "random()"
     query = f"""
-        SELECT c.id, c.text, c.text_hash, c.text_chars, c.token_estimate
+        SELECT c.id,
+               c.text,
+               c.text_hash,
+               c.text_chars,
+               c.token_estimate,
+               CASE WHEN e.chunk_id IS NULL THEN 'missing' ELSE 'stale' END AS reason
         FROM paper_chunks c
+        LEFT JOIN chunk_embeddings_v2 e
+          ON e.chunk_id = c.id
+         AND e.model = %s
+         AND e.dim = %s
         WHERE c.scope = %s
           AND COALESCE(c.text, '') <> ''
-          AND NOT EXISTS (
-              SELECT 1
-              FROM chunk_embeddings_v2 e
-              WHERE e.chunk_id = c.id
-                AND e.model = %s
-                AND e.dim = %s
+          AND (
+              e.chunk_id IS NULL
+              OR e.vector IS NULL
+              OR e.source_hash IS DISTINCT FROM c.text_hash
           )
         ORDER BY {order_sql}
         LIMIT %s
     """
     with conn.cursor() as cur:
-        cur.execute(query, (scope, model, dim, limit))
+        cur.execute(query, (model, dim, scope, limit))
         return cur.fetchall()
-
-
-def vector_literal(embedding):
-    return "[" + ",".join(str(float(value)) for value in embedding) + "]"
-
-
-def text_hash(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def encode_remote(service_url, texts, timeout):
-    payload = json.dumps({"texts": texts}).encode("utf-8")
-    req = urllib.request.Request(
-        service_url.rstrip("/") + "/embed/batch",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read()
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", "replace")
-        raise RuntimeError(f"embedding service http {err.code}: {detail}") from err
-    data = json.loads(body)
-    embeddings = data.get("embeddings", [])
-    if len(embeddings) != len(texts):
-        raise RuntimeError(f"embedding service returned {len(embeddings)} vectors for {len(texts)} texts")
-    return embeddings
 
 
 def store_batch(conn, rows, embeddings, model, dim):
     payload = []
-    for (chunk_id, text, stored_hash, text_chars, token_estimate), embedding in zip(rows, embeddings):
-        source_hash = stored_hash or text_hash(text)
+    for (chunk_id, text, stored_hash, text_chars, token_estimate, _reason), embedding in zip(rows, embeddings):
+        text = normalize_text(text)
+        row_hash = stored_hash or source_hash(text)
         payload.append(
             (
                 chunk_id,
                 model,
                 dim,
-                source_hash,
+                row_hash,
                 text_chars or len(text),
                 token_estimate or max(1, len(text) // 4),
                 vector_literal(embedding),
@@ -177,34 +141,25 @@ def main():
     ensure_schema(conn)
 
     print(f"using embedding service={args.service_url} model={args.model} dim={args.dim}")
-    started = time.time()
-    processed = 0
-    while processed < args.limit:
-        remaining = args.limit - processed
-        batch_limit = min(args.batch_size, remaining)
-        batch = fetch_chunks(conn, args.model, args.dim, args.scope, batch_limit, args.order)
-        if not batch:
-            if processed == 0:
-                print("No chunks need v2 embeddings.")
-            break
-        texts = [" ".join((text or "").split()) for _, text, _, _, _ in batch]
-        embeddings = encode_remote(args.service_url, texts, args.timeout)
-        if not args.dry_run:
-            store_batch(conn, batch, embeddings, args.model, args.dim)
-        processed += len(batch)
-        elapsed = time.time() - started
-        rate = processed / elapsed if elapsed else 0
-        print(
-            f"processed={processed}/{args.limit} rate={rate:.2f}/s "
-            f"elapsed={elapsed:.1f}s dry_run={args.dry_run}",
-            flush=True,
-        )
-        if args.dry_run:
-            print("dry-run stops after one streamed batch to avoid reselecting unchanged rows.")
-            break
+    reason_totals = {"missing": 0, "stale": 0}
 
+    def fetch_batch(batch_limit):
+        rows = fetch_chunks(conn, args.model, args.dim, args.scope, batch_limit, args.order)
+        for row in rows:
+            reason_totals[row[5]] = reason_totals.get(row[5], 0) + 1
+        return rows
+
+    run_backfill(
+        args.limit,
+        args.batch_size,
+        args.dry_run,
+        fetch_batch,
+        lambda row: normalize_text(row[1]),
+        lambda texts: encode_remote(args.service_url, texts, args.timeout),
+        lambda rows, embeddings: store_batch(conn, rows, embeddings, args.model, args.dim),
+    )
     conn.close()
-    print(f"done processed={processed} seconds={time.time() - started:.1f}")
+    print(f"reasons missing={reason_totals.get('missing', 0)} stale={reason_totals.get('stale', 0)}")
 
 
 if __name__ == "__main__":

@@ -117,6 +117,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 
 	// Start background stats refresh so homepage never blocks on COUNT(*) queries
 	cache.StartStatsRefresh(ctx)
+	cache.StartAdminStatsRefresh(ctx)
 
 	srv := &server{
 		cache:               cache,

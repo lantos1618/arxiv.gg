@@ -22,6 +22,7 @@ type AdminStats struct {
 const (
 	adminQwenModel = "Qwen/Qwen3-Embedding-8B"
 	adminQwenDim   = 1024
+	adminStatsTTL  = time.Minute
 )
 
 type AdminEmbeddingStats struct {
@@ -76,6 +77,45 @@ type AdminAuditRow struct {
 // AdminStats returns real dashboard numbers from the database. Anything not
 // represented here should be shown by the UI as a placeholder, not invented.
 func (c *Cache) AdminStats(ctx context.Context) (*AdminStats, error) {
+	c.adminStatsMu.RLock()
+	if c.cachedAdminStats != nil && time.Since(c.adminStatsUpdated) < adminStatsTTL {
+		stats := cloneAdminStats(c.cachedAdminStats)
+		c.adminStatsMu.RUnlock()
+		return stats, nil
+	}
+	var stale *AdminStats
+	if c.cachedAdminStats != nil {
+		stale = cloneAdminStats(c.cachedAdminStats)
+	}
+	c.adminStatsMu.RUnlock()
+
+	if stale != nil {
+		if c.adminStatsRefreshMu.TryLock() {
+			go func() {
+				defer c.adminStatsRefreshMu.Unlock()
+				if _, err := c.refreshAdminStatsLocked(context.Background()); err != nil {
+					fmt.Printf("admin stats background refresh failed: %v\n", err)
+				}
+			}()
+		}
+		return stale, nil
+	}
+
+	c.adminStatsRefreshMu.Lock()
+	defer c.adminStatsRefreshMu.Unlock()
+
+	c.adminStatsMu.RLock()
+	if c.cachedAdminStats != nil && time.Since(c.adminStatsUpdated) < adminStatsTTL {
+		stats := cloneAdminStats(c.cachedAdminStats)
+		c.adminStatsMu.RUnlock()
+		return stats, nil
+	}
+	c.adminStatsMu.RUnlock()
+
+	return c.refreshAdminStatsLocked(ctx)
+}
+
+func (c *Cache) refreshAdminStatsLocked(ctx context.Context) (*AdminStats, error) {
 	now := time.Now().UTC()
 	cacheStats, err := c.Stats(ctx)
 	if err != nil {
@@ -111,15 +151,70 @@ func (c *Cache) AdminStats(ctx context.Context) (*AdminStats, error) {
 	}
 	stats.RecentAuditLog = recentAudit
 
-	return stats, nil
+	c.adminStatsMu.Lock()
+	c.cachedAdminStats = cloneAdminStats(stats)
+	c.adminStatsUpdated = time.Now()
+	c.adminStatsMu.Unlock()
+
+	return cloneAdminStats(stats), nil
+}
+
+// StartAdminStatsRefresh warms the admin dashboard snapshot and refreshes it in
+// the background. Admin pages can tolerate a short lag, but they should never
+// make every click block on large exact COUNT queries.
+func (c *Cache) StartAdminStatsRefresh(ctx context.Context) {
+	go func() {
+		c.adminStatsRefreshMu.Lock()
+		defer c.adminStatsRefreshMu.Unlock()
+		if _, err := c.refreshAdminStatsLocked(context.Background()); err != nil {
+			fmt.Printf("admin stats warm refresh failed: %v\n", err)
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(adminStatsTTL)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if !c.adminStatsRefreshMu.TryLock() {
+					continue
+				}
+				if _, err := c.refreshAdminStatsLocked(context.Background()); err != nil {
+					fmt.Printf("admin stats background refresh failed: %v\n", err)
+				}
+				c.adminStatsRefreshMu.Unlock()
+			}
+		}
+	}()
+}
+
+func cloneAdminStats(stats *AdminStats) *AdminStats {
+	if stats == nil {
+		return nil
+	}
+	clone := *stats
+	if stats.EmbeddingJobs != nil {
+		clone.EmbeddingJobs = make(map[string]int64, len(stats.EmbeddingJobs))
+		for status, count := range stats.EmbeddingJobs {
+			clone.EmbeddingJobs[status] = count
+		}
+	}
+	clone.RecentUsers = append([]AdminUserRow(nil), stats.RecentUsers...)
+	clone.RecentAuditLog = append([]AdminAuditRow(nil), stats.RecentAuditLog...)
+	return &clone
 }
 
 func (c *Cache) countEmbeddingsForAdmin(ctx context.Context, out *AdminEmbeddingStats, totalPapers int64) error {
 	if err := c.db.WithContext(ctx).Model(&Paper{}).
-		Where("COALESCE(title, '') <> '' AND COALESCE(abstract, '') <> ''").
-		Count(&out.FullAbstracts).Error; err != nil {
+		Where("title IS NULL OR title = '' OR abstract IS NULL OR abstract = ''").
+		Count(&out.MissingAbstractText).Error; err != nil {
 		return err
 	}
+	out.FullAbstracts = maxInt64(totalPapers-out.MissingAbstractText, 0)
+
 	if err := c.db.WithContext(ctx).Model(&Embedding{}).Count(&out.MiniLMAbstracts).Error; err != nil {
 		return err
 	}
@@ -150,7 +245,6 @@ func (c *Cache) countEmbeddingsForAdmin(ctx context.Context, out *AdminEmbedding
 	if err := c.countPendingFullPaperEmbeddings(ctx, &out.PendingFullPaper); err != nil {
 		return err
 	}
-	out.MissingAbstractText = maxInt64(totalPapers-out.FullAbstracts, 0)
 	out.PendingMiniLM = maxInt64(out.FullAbstracts-out.MiniLMAbstracts, 0)
 	out.PendingQwenAbstract = maxInt64(out.FullAbstracts-out.QwenAbstracts, 0)
 	out.PendingFullPaperText = maxInt64(out.FullPaperTexts-out.FullPaperChunked, 0)

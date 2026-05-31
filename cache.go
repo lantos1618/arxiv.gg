@@ -48,6 +48,14 @@ type Cache struct {
 	statsRefreshMu sync.Mutex
 	cachedStats    *CacheStats
 	statsUpdated   time.Time
+
+	// Cached admin dashboard snapshot. The admin page combines several large
+	// COUNT queries, so serve a short-lived snapshot instead of making every
+	// browser refresh walk multi-million-row tables.
+	adminStatsMu        sync.RWMutex
+	adminStatsRefreshMu sync.Mutex
+	cachedAdminStats    *AdminStats
+	adminStatsUpdated   time.Time
 }
 
 // DBType returns the database type in use.

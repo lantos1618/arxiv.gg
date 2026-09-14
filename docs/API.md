@@ -91,7 +91,7 @@ curl -N --get 'https://arxiv.gg/api/v1/search/stream' \
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/v1/categories` | Category list |
-| `GET` | `/api/v1/stats` | Catalog/download/Qwen/SSE coverage signals |
+| `GET` | `/api/v1/stats` | Catalog/download/Qwen/SSE counts |
 | `GET` | `/api/v1/authors/profile?author=...` | Author profile |
 | `GET` | `/api/v1/authors/collaborators?author=...&limit=100` | Collaborators; max 200 |
 | `GET` | `/api/v1/authors/similar?author=...&limit=10` | Similar authors; max 50 |
@@ -99,6 +99,8 @@ curl -N --get 'https://arxiv.gg/api/v1/search/stream' \
 | `GET` | `/api/v1/authors/graph?author=...&depth=1` | Collaboration graph; depth 1 or 2 |
 | `POST` | `/api/v1/authors/build-graph` | Rebuild author graph/embeddings; admin only |
 | `GET` | `/api/v1/papers/recent/stream` | SSE stream of newly fetched papers |
+
+`/api/v1/stats` returns periodically refreshed local catalog counts. `OfficialArxivPapers` and `OfficialArxivPapersAsOf` are a configured historical reference, not a live arXiv total. The deprecated string field `OfficialArxivCoveragePercent` is empty (unavailable): dividing the current local count by that reference does not establish corpus coverage.
 
 ## Pipeline Status And Retired Endpoint
 

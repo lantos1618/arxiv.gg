@@ -1172,18 +1172,19 @@ func (s *server) handleAPIStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Include live connection count
-	coverage := s.coverageSignal(stats)
 	response := map[string]interface{}{
-		"TotalPapers":                  stats.TotalPapers,
-		"PDFsDownloaded":               stats.PDFsDownloaded,
-		"SourcesDownloaded":            stats.SourcesDownloaded,
-		"QueuedDownloads":              stats.QueuedDownloads,
-		"EmbeddingsCount":              stats.EmbeddingsCount,
-		"QwenEmbeddingsCount":          stats.QwenEmbeddingsCount,
-		"SSEConnections":               s.paperBroadcast.Count(),
-		"OfficialArxivPapers":          coverage.OfficialTotal,
-		"OfficialArxivPapersAsOf":      coverage.AsOf,
-		"OfficialArxivCoveragePercent": coverage.Percent,
+		"TotalPapers":             stats.TotalPapers,
+		"PDFsDownloaded":          stats.PDFsDownloaded,
+		"SourcesDownloaded":       stats.SourcesDownloaded,
+		"QueuedDownloads":         stats.QueuedDownloads,
+		"EmbeddingsCount":         stats.EmbeddingsCount,
+		"QwenEmbeddingsCount":     stats.QwenEmbeddingsCount,
+		"SSEConnections":          s.paperBroadcast.Count(),
+		"OfficialArxivPapers":     s.officialArxivPapers,
+		"OfficialArxivPapersAsOf": s.officialArxivAsOf,
+		// Deprecated: a current local count divided by a dated reference is not coverage.
+		// Preserve the existing string field, using empty to mean unavailable.
+		"OfficialArxivCoveragePercent": "",
 	}
 
 	respondJSON(w, http.StatusOK, APIResponse{

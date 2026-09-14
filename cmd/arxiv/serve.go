@@ -96,6 +96,7 @@ var templates = template.Must(template.New("").Funcs(template.FuncMap{
 	},
 }).ParseFS(templateFS, "templates/*.html"))
 
+// Historical reference retained for API compatibility; it cannot measure current coverage.
 const defaultOfficialArxivPapers = 3045638
 const defaultOfficialArxivPapersAsOf = "2026-05-16"
 
@@ -430,27 +431,6 @@ func formatInt(n int64) string {
 		b.WriteString(s[i : i+3])
 	}
 	return b.String()
-}
-
-type coverageSignal struct {
-	LocalTotal    int64
-	OfficialTotal int64
-	Percent       string
-	AsOf          string
-}
-
-func (s *server) coverageSignal(stats *arxiv.CacheStats) coverageSignal {
-	coverage := coverageSignal{
-		OfficialTotal: s.officialArxivPapers,
-		AsOf:          s.officialArxivAsOf,
-	}
-	if stats != nil {
-		coverage.LocalTotal = stats.TotalPapers
-	}
-	if coverage.OfficialTotal > 0 {
-		coverage.Percent = fmt.Sprintf("%.1f", float64(coverage.LocalTotal)/float64(coverage.OfficialTotal)*100)
-	}
-	return coverage
 }
 
 // paperBroadcaster manages real-time paper update subscriptions
@@ -804,7 +784,6 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"CanonicalURL":   canonicalURL("/"),
 		"StructuredData": homeStructuredData(),
 		"Stats":          stats,
-		"Coverage":       s.coverageSignal(stats),
 		"Query":          "",
 	}
 	s.renderTemplate(w, r, "index", data)

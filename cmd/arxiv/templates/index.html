@@ -24,7 +24,7 @@
 	<div class="search-dropdown" id="search-dropdown" data-mathjax></div>
 </div>
 <div id="search-results" class="search-results" data-mathjax></div>
-<p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Papers currently cached and searchable on this arXiv.gg instance.">{{formatInt .Stats.TotalPapers}}</span> cached and searchable · <span id="stat-official" class="helpable" tabindex="0" data-help="Configured official arXiv article count used only as a coverage reference.">{{formatInt .Coverage.OfficialTotal}}</span> official arXiv papers as of {{.Coverage.AsOf}} · {{.Coverage.Percent}}% cached coverage · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts</p>
+<p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Paper records cached by this arXiv.gg instance. Counts refresh periodically; reload for the latest snapshot.">{{formatInt .Stats.TotalPapers}}</span> papers cached and searchable · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts</p>
 
 <div id="recent-papers">
 <h2>Recent Papers</h2>
@@ -43,8 +43,6 @@
 	const btnQuick = document.getElementById('btn-quick');
 	const btnSemantic = document.getElementById('btn-semantic');
 	const btnDeep = document.getElementById('btn-deep');
-	const statTotal = document.getElementById('stat-total');
-	const statEmbed = document.getElementById('stat-embed');
 	const isSignedIn = {{if .CurrentUser}}true{{else}}false{{end}};
 	let timeout = null;
 	let selectedIndex = -1;
@@ -52,11 +50,6 @@
 		let searchController = null;
 		let searchRequestId = 0;
 		const authorDisplayLimit = 12;
-
-	function updateStats(paper) {
-		const current = parseInt(statTotal.textContent.replace(/[^0-9]/g, ''), 10) || 0;
-		statTotal.textContent = (current + 1).toLocaleString();
-	}
 
 		function renderAuthors(authors) {
 			const allAuthors = authors.replace(/ and /g, ', ').split(',').map(a => a.trim()).filter(a => a);
@@ -143,7 +136,7 @@
 						removed.remove();
 					}
 					if (window.typesetMath) window.typesetMath(recentList.firstElementChild);
-					updateStats(data.paper);
+					// The stream is not a complete change log; keep the server count snapshot.
 					break;
 				case 'timeout': retryRecentPapers(); break;
 				case 'error':

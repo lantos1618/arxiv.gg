@@ -110,7 +110,7 @@ const recentList = {
 const context = {
   recentList,
   renderRecentPaper: paper => '<div class="paper">' + paper.ID + '</div>',
-  updateStats: () => {}, escapeHtml: value => value,
+  escapeHtml: value => value,
   document: { hidden: false, addEventListener: (event, fn) => listeners[event] = fn },
   navigator: { onLine: true },
   window: {

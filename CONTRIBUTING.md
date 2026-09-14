@@ -4,7 +4,7 @@ Thanks for contributing. Keep changes focused, explain user-visible behavior, an
 
 ## Prerequisites
 
-- Go 1.25, matching `go.mod`
+- Go 1.26.8, matching `go.mod`
 - PostgreSQL with pgvector for production-path development
 - Python 3 and a CUDA-capable environment when changing Qwen workers
 - `pdftotext` from Poppler when changing PDF ingestion

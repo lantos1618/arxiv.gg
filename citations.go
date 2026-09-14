@@ -416,21 +416,34 @@ func (c *Cache) GetCitationGraph(ctx context.Context, paperID string) (*Citation
 	if err != nil {
 		return nil, err
 	}
-	citedByCount, _ := c.CitedByCount(ctx, paperID)
+	refs, err := c.References(ctx, paperID)
+	if err != nil {
+		return nil, err
+	}
+	citedBy, err := c.CitedBy(ctx, paperID, 100)
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{paperID}
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+	}
+	for _, citing := range citedBy {
+		ids = append(ids, citing.ID)
+	}
+	details, err := c.citationPaperDetails(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	addNode(paper.ID, GraphNode{
 		ID:        paper.ID,
 		Title:     paper.Title,
 		Authors:   paper.Authors,
 		Year:      paper.Created.Year(),
-		Citations: citedByCount,
+		Citations: details[paperID].Citations,
 		Cached:    true,
 	})
 
-	// Get references (papers this one cites)
-	refs, err := c.References(ctx, paperID)
-	if err != nil {
-		return nil, err
-	}
 	refIDs := make(map[string]bool)
 	for _, ref := range refs {
 		title := ref.Title
@@ -438,46 +451,36 @@ func (c *Cache) GetCitationGraph(ctx context.Context, paperID string) (*Citation
 			title = ref.ID
 		}
 		year := yearFromID(ref.ID)
-		citations, _ := c.CitedByCount(ctx, ref.ID)
-		// Get authors if we have metadata
+		detail := details[ref.ID]
 		var authors string
-		if ref.HasTitle {
-			if p, err := c.GetPaper(ctx, ref.ID); err == nil {
-				authors = p.Authors
-				year = p.Created.Year()
-			}
+		if ref.HasTitle && detail.HasMetadata {
+			authors = detail.Authors
+			year = detail.Created.Year()
 		}
 		addNode(ref.ID, GraphNode{
 			ID:        ref.ID,
 			Title:     title,
 			Authors:   authors,
 			Year:      year,
-			Citations: citations,
+			Citations: detail.Citations,
 			Cached:    ref.HasTitle,
 		})
 		addEdge(paperID, ref.ID)
 		refIDs[ref.ID] = true
 	}
 
-	// Get citing papers (papers that cite this one)
-	citedBy, err := c.CitedBy(ctx, paperID, 100)
-	if err != nil {
-		return nil, err
-	}
 	for _, citing := range citedBy {
-		citations, _ := c.CitedByCount(ctx, citing.ID)
-		var authors string
+		detail := details[citing.ID]
 		var year int
-		if p, err := c.GetPaper(ctx, citing.ID); err == nil {
-			authors = p.Authors
-			year = p.Created.Year()
+		if detail.HasMetadata {
+			year = detail.Created.Year()
 		}
 		addNode(citing.ID, GraphNode{
 			ID:        citing.ID,
 			Title:     citing.Title,
-			Authors:   authors,
+			Authors:   detail.Authors,
 			Year:      year,
-			Citations: citations,
+			Citations: detail.Citations,
 			Cached:    true,
 		})
 		addEdge(citing.ID, paperID)
@@ -485,28 +488,19 @@ func (c *Cache) GetCitationGraph(ctx context.Context, paperID string) (*Citation
 
 	// Find edges between references (if they cite each other)
 	if len(refIDs) > 0 {
-		// Complex citation graph query - use raw SQL for efficiency
-		sqlDB, _ := c.db.DB()
-		p1 := c.bindVar(1)
-		p2 := c.bindVar(2)
-		rows, err := sqlDB.QueryContext(ctx, `
-			SELECT from_id, to_id FROM citations
-			WHERE from_id IN (SELECT to_id FROM citations WHERE from_id = `+p1+`)
-			  AND to_id IN (SELECT to_id FROM citations WHERE from_id = `+p2+`)
-		`, paperID, paperID)
+		var edges []Citation
+		err := c.withCitationQuery(ctx, func() error {
+			return c.db.WithContext(ctx).Raw(`
+				SELECT from_id, to_id FROM citations
+				WHERE from_id IN (SELECT to_id FROM citations WHERE from_id = ?)
+				  AND to_id IN (SELECT to_id FROM citations WHERE from_id = ?)
+			`, paperID, paperID).Scan(&edges).Error
+		})
 		if err != nil {
 			return nil, fmt.Errorf("query reference citation edges: %w", err)
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var from, to string
-			if err := rows.Scan(&from, &to); err != nil {
-				return nil, fmt.Errorf("scan reference citation edge: %w", err)
-			}
-			addEdge(from, to)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("iterate reference citation edges: %w", err)
+		for _, edge := range edges {
+			addEdge(edge.FromID, edge.ToID)
 		}
 	}
 
@@ -542,54 +536,152 @@ func (c *Cache) GetPaperList(ctx context.Context, paperID string) ([]PaperListIt
 	if err != nil {
 		return nil, err
 	}
+	citedBy, err := c.CitedBy(ctx, paperID, 100)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(refs)+len(citedBy))
+	for _, ref := range refs {
+		ids = append(ids, ref.ID)
+	}
+	for _, citing := range citedBy {
+		ids = append(ids, citing.ID)
+	}
+	details, err := c.citationPaperDetails(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	for _, ref := range refs {
 		title := ref.Title
 		if title == "" {
 			title = ref.ID
 		}
 		year := yearFromID(ref.ID)
-		citations, _ := c.CitedByCount(ctx, ref.ID)
+		detail := details[ref.ID]
 		var authors string
-		if ref.HasTitle {
-			if p, err := c.GetPaper(ctx, ref.ID); err == nil {
-				authors = p.Authors
-				year = p.Created.Year()
-			}
+		if ref.HasTitle && detail.HasMetadata {
+			authors = detail.Authors
+			year = detail.Created.Year()
 		}
 		items = append(items, PaperListItem{
 			ID:        ref.ID,
 			Title:     title,
 			Authors:   authors,
 			Year:      year,
-			Citations: citations,
+			Citations: detail.Citations,
 			Cached:    ref.HasTitle,
 			IsRef:     true,
 		})
 	}
 
-	// Get citing papers
-	citedBy, err := c.CitedBy(ctx, paperID, 100)
-	if err != nil {
-		return nil, err
-	}
 	for _, citing := range citedBy {
-		citations, _ := c.CitedByCount(ctx, citing.ID)
-		var authors string
+		detail := details[citing.ID]
 		var year int
-		if p, err := c.GetPaper(ctx, citing.ID); err == nil {
-			authors = p.Authors
-			year = p.Created.Year()
+		if detail.HasMetadata {
+			year = detail.Created.Year()
 		}
 		items = append(items, PaperListItem{
 			ID:        citing.ID,
 			Title:     citing.Title,
-			Authors:   authors,
+			Authors:   detail.Authors,
 			Year:      year,
-			Citations: citations,
+			Citations: detail.Citations,
 			Cached:    true,
 			IsCiting:  true,
 		})
 	}
 
 	return items, nil
+}
+
+// citationPaperDetail contains only fields needed by the graph and sidebar.
+// Keep this separate from paperLRU: a partial Paper must never replace full metadata.
+type citationPaperDetail struct {
+	Authors     string
+	Created     time.Time
+	Citations   int
+	HasMetadata bool
+}
+
+// citationPaperDetails avoids two queries per related paper on a cold cache.
+// Batches also keep large bibliographies below backend parameter limits.
+func (c *Cache) citationPaperDetails(ctx context.Context, ids []string) (map[string]citationPaperDetail, error) {
+	details := make(map[string]citationPaperDetail, len(ids))
+	var missingPapers, missingCounts []string
+	for _, id := range ids {
+		if _, ok := details[id]; ok {
+			continue
+		}
+		detail := citationPaperDetail{}
+		if c.paperLRU != nil {
+			if cached, ok := c.paperLRU.Get(id); ok {
+				if paper, ok := cached.(*Paper); ok && paper != nil {
+					detail.Authors, detail.Created, detail.HasMetadata = paper.Authors, paper.Created, true
+				}
+			}
+		}
+		if !detail.HasMetadata {
+			if cached, ok := c.getDetailCache(detailKey("citation_metadata", id)); ok {
+				if metadata, ok := cached.(citationPaperDetail); ok {
+					detail = metadata
+				} else {
+					missingPapers = append(missingPapers, id)
+				}
+			} else {
+				missingPapers = append(missingPapers, id)
+			}
+		}
+		count, cachedCount := c.getDetailCache(detailKey("cited_by_count", id))
+		if citations, ok := count.(int); cachedCount && ok {
+			detail.Citations = citations
+		} else {
+			missingCounts = append(missingCounts, id)
+		}
+		details[id] = detail
+	}
+
+	const batchSize = 500
+	for start := 0; start < len(missingPapers); start += batchSize {
+		batch := missingPapers[start:min(start+batchSize, len(missingPapers))]
+		var papers []Paper
+		err := c.withCitationQuery(ctx, func() error {
+			return c.db.WithContext(ctx).Select("id", "authors", "created").Where("id IN ?", batch).Find(&papers).Error
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load citation paper metadata: %w", err)
+		}
+		for _, paper := range papers {
+			detail := details[paper.ID]
+			detail.Authors, detail.Created, detail.HasMetadata = paper.Authors, paper.Created, true
+			details[paper.ID] = detail
+		}
+		for _, id := range batch {
+			metadata := details[id]
+			metadata.Citations = 0 // Citation counts have their own independently refreshed cache.
+			c.putDetailCache(detailKey("citation_metadata", id), citationTTL, metadata)
+		}
+	}
+	for start := 0; start < len(missingCounts); start += batchSize {
+		batch := missingCounts[start:min(start+batchSize, len(missingCounts))]
+		var counts []struct {
+			ToID  string
+			Count int
+		}
+		err := c.withCitationQuery(ctx, func() error {
+			return c.db.WithContext(ctx).Model(&Citation{}).Select("to_id, COUNT(*) AS count").
+				Where("to_id IN ?", batch).Group("to_id").Scan(&counts).Error
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load citation counts: %w", err)
+		}
+		for _, count := range counts {
+			detail := details[count.ToID]
+			detail.Citations = count.Count
+			details[count.ToID] = detail
+		}
+		for _, id := range batch {
+			c.putDetailCache(detailKey("cited_by_count", id), citationTTL, details[id].Citations)
+		}
+	}
+	return details, nil
 }

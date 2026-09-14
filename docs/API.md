@@ -159,3 +159,7 @@ Requests are capped at 256 KiB. Batches contain at most 20 requests and a maximu
 Client IP comes from the socket unless `TRUST_PROXY_HEADERS=true` and the direct peer is loopback or a private-network proxy. Enable header trust only behind a sanitizing trusted proxy.
 
 Selected successful GET responses are cached with ETags. Query-bearing, authenticated, personalized, SSE, mutation, and error responses are not treated as interchangeable public cache entries. Clients should still honor response `Cache-Control` and `Vary` headers.
+
+## Search input bounds
+
+Browser, REST, and MCP search queries accept at most 2,048 UTF-8 bytes before trimming. Oversized or whitespace-only API queries return a validation error before database or inference work; an empty browser search redirects home. Public embedding readiness responses expose job progress while withholding worker errors, query text, and lease details. Worker and administrator diagnostics remain available through authenticated operations.

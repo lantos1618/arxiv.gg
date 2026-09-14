@@ -412,8 +412,37 @@ type CategoryCount struct {
 	Count int
 }
 
-// ListCategories returns all categories with their paper counts.
+// ListCategories returns all categories with their paper counts. Cache the
+// complete snapshot briefly: checking metadata freshness itself scans papers
+// on PostgreSQL, so repeated requests must not each run that check.
 func (c *Cache) ListCategories(ctx context.Context) ([]CategoryCount, error) {
+	const cacheKey = "category_counts"
+	if cached, ok := c.getDetailCache(cacheKey); ok {
+		if categories, ok := cached.([]CategoryCount); ok {
+			return append([]CategoryCount(nil), categories...), nil
+		}
+	}
+	value, err, _ := c.detailFlights.Do(cacheKey, func() (interface{}, error) {
+		if cached, ok := c.getDetailCache(cacheKey); ok {
+			if categories, ok := cached.([]CategoryCount); ok {
+				return categories, nil
+			}
+		}
+		categories, err := c.listCategoriesUncached(ctx)
+		if err != nil {
+			return nil, err
+		}
+		c.putDetailCache(cacheKey, time.Minute, categories)
+		return categories, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	categories := value.([]CategoryCount)
+	return append([]CategoryCount(nil), categories...), nil
+}
+
+func (c *Cache) listCategoriesUncached(ctx context.Context) ([]CategoryCount, error) {
 	if c.dbType == DBTypePostgres {
 		categories, err := c.listStoredCategories(ctx)
 		fresh, freshnessErr := c.categoryCountsFresh(ctx)

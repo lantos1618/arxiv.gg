@@ -12,7 +12,7 @@ go vet ./...
 git diff --check
 ```
 
-Use `go test ./... -run TestName` for a focused Go test. The module requires Go 1.25.
+Use `go test ./... -run TestName` for a focused Go test. The module requires Go 1.26.8.
 
 ## Product Boundary
 

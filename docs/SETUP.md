@@ -113,3 +113,7 @@ An application startup that prints `Using SQLite database` is not a successful p
 ## Production
 
 Use [DEPLOYMENT_RUNBOOK_2026-05-15.md](DEPLOYMENT_RUNBOOK_2026-05-15.md). Preserve the external PostgreSQL volume, build an immutable release from a clean commit, back up schema, apply reviewed SQL, and retain the exact previous image for rollback.
+
+## Optional Google Analytics
+
+Set `GOOGLE_ANALYTICS_ID` to a GA4 measurement ID in the deployment environment. The shared tag loads asynchronously as the page is parsed, without a fixed delay. Tracking is limited to anonymous public pages; signed-in visits and sensitive account, login, API setup, and admin pages are excluded. Pageview totals therefore do not represent every visit. Leave the variable empty to disable analytics.

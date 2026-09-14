@@ -71,6 +71,36 @@ type mcpError struct {
 	Message string `json:"message"`
 }
 
+// mcpClientError marks messages composed only from public validation or status
+// information. Unexpected backend errors are logged, never sent to tool users.
+type mcpPublicError struct{ message string }
+
+func (err *mcpPublicError) Error() string { return err.message }
+
+func mcpClientError(format string, args ...any) error {
+	return &mcpPublicError{message: fmt.Sprintf(format, args...)}
+}
+
+func mcpSafeErrorMessage(err error) string {
+	var public *mcpPublicError
+	if errors.As(err, &public) {
+		return public.message
+	}
+	logAPIInternalError("MCP tool execution", err)
+	if errors.Is(err, errQwenQueryEmbeddingQueued) {
+		return "search results are being prepared; retry shortly"
+	}
+	return "tool is temporarily unavailable; retry shortly"
+}
+
+func mcpSemanticFallback(err error) (reasonCode, notice string, retryAfter int) {
+	logAPIInternalError("MCP semantic search fallback", err)
+	if errors.Is(err, errQwenQueryEmbeddingQueued) {
+		return "query_embedding_queued", "Semantic results are being prepared; showing Quick results now.", qwenQueryRetryAfterSeconds
+	}
+	return "semantic_unavailable", "Semantic search is temporarily unavailable; showing Quick results.", 30
+}
+
 type mcpToolContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
@@ -240,7 +270,7 @@ func (s *server) mcpResponseForRequest(ctx context.Context, req mcpRequest, user
 	case "tools/call":
 		result, err := s.callMCPTool(ctx, req.Params, user)
 		if err != nil {
-			return mcpResultResponse(req.ID, mcpToolTextResult(err.Error(), true))
+			return mcpResultResponse(req.ID, mcpToolTextResult(mcpSafeErrorMessage(err), true))
 		}
 		return mcpResultResponse(req.ID, result)
 	default:
@@ -394,7 +424,7 @@ func (s *server) callMCPTool(ctx context.Context, params json.RawMessage, user *
 		Arguments json.RawMessage `json:"arguments"`
 	}
 	if err := json.Unmarshal(params, &call); err != nil {
-		return nil, fmt.Errorf("invalid tools/call params")
+		return nil, mcpClientError("invalid tools/call params")
 	}
 
 	switch call.Name {
@@ -434,7 +464,7 @@ func (s *server) callMCPTool(ctx context.Context, params json.RawMessage, user *
 		return mcpToolJSONResult(data)
 	case "arxiv_account":
 		if user == nil {
-			return nil, fmt.Errorf("account auth required; pass Authorization: Bearer <api key> or sign in in the browser")
+			return nil, mcpClientError("account auth required; pass Authorization: Bearer <api key> or sign in in the browser")
 		}
 		return mcpToolJSONResult(mcpAccountSummary(user))
 	case "arxiv_search":
@@ -448,7 +478,7 @@ func (s *server) callMCPTool(ctx context.Context, params json.RawMessage, user *
 	case "arxiv_cited_by":
 		return s.callMCPCitedBy(ctx, call.Arguments)
 	default:
-		return nil, fmt.Errorf("unknown tool %q", call.Name)
+		return nil, mcpClientError("unknown tool %q", call.Name)
 	}
 }
 
@@ -460,21 +490,22 @@ func (s *server) callMCPSearch(ctx context.Context, raw json.RawMessage, user *a
 		Limit    int    `json:"limit"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
-		return nil, fmt.Errorf("invalid arxiv_search arguments")
+		return nil, mcpClientError("invalid arxiv_search arguments")
 	}
-	args.Query = strings.TrimSpace(args.Query)
-	if args.Query == "" {
-		return nil, fmt.Errorf("query is required")
+	query, err := validateSearchQuery(args.Query)
+	if err != nil {
+		return nil, mcpClientError("%s", err)
 	}
+	args.Query = query
 	limit := clampInt(args.Limit, 10, 1, 50)
 
 	mode, err := parseSearchMode(args.Mode, searchModeQuick)
 	if err != nil {
-		return nil, err
+		return nil, mcpClientError("%s", err)
 	}
 	category, err := validateSearchCategory(args.Category)
 	if err != nil {
-		return nil, err
+		return nil, mcpClientError("%s", err)
 	}
 
 	var data any
@@ -486,15 +517,10 @@ func (s *server) callMCPSearch(ctx context.Context, raw json.RawMessage, user *a
 			if searchErr != nil {
 				return nil, searchErr
 			}
-			reasonCode := "semantic_unavailable"
-			retryAfter := 30
-			if errors.Is(err, errQwenQueryEmbeddingQueued) {
-				reasonCode = "query_embedding_queued"
-				retryAfter = qwenQueryRetryAfterSeconds
-			}
+			reasonCode, notice, retryAfter := mcpSemanticFallback(err)
 			data = map[string]any{
 				"mode": searchModeQuick, "requestedMode": searchModeSemantic, "category": category,
-				"fallback": map[string]any{"used": true, "reasonCode": reasonCode, "notice": err.Error()},
+				"fallback": map[string]any{"used": true, "reasonCode": reasonCode, "notice": notice},
 				"retry":    map[string]any{"recommended": true, "afterSeconds": retryAfter},
 				"count":    len(papers), "total": total, "papers": papers,
 			}
@@ -507,7 +533,7 @@ func (s *server) callMCPSearch(ctx context.Context, raw json.RawMessage, user *a
 		data = map[string]any{"mode": searchModeKeyword, "category": category, "count": len(papers), "papers": papers}
 	case searchModeDeep:
 		if user == nil {
-			return nil, fmt.Errorf("deep search requires account auth; pass Authorization: Bearer <api key> or sign in in the browser")
+			return nil, mcpClientError("deep search requires account auth; pass Authorization: Bearer <api key> or sign in in the browser")
 		}
 		data, err = s.deepSearchForMCP(ctx, args.Query, category, limit)
 		if err != nil {
@@ -529,7 +555,7 @@ func (s *server) deepSearchForMCP(ctx context.Context, query, category string, l
 		return nil, err
 	}
 	if !ready {
-		return nil, fmt.Errorf("deep search is warming up; try quick mode")
+		return nil, mcpClientError("deep search is warming up; try quick mode")
 	}
 	embedding, err := s.generateQwenQueryEmbedding(ctx, query)
 	if err != nil {
@@ -553,7 +579,7 @@ func (s *server) semanticSearchForMCP(ctx context.Context, query, category strin
 		return nil, err
 	}
 	if stats.QwenEmbeddingsCount == 0 {
-		return nil, fmt.Errorf("semantic search is warming up; using Quick fallback")
+		return nil, mcpClientError("semantic search is warming up; using Quick fallback")
 	}
 	embedding, err := s.generateQwenQueryEmbedding(ctx, query)
 	if err != nil {
@@ -576,7 +602,7 @@ func (s *server) callMCPGetPaper(ctx context.Context, raw json.RawMessage) (map[
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
-		return nil, fmt.Errorf("invalid arxiv_get_paper arguments")
+		return nil, mcpClientError("invalid arxiv_get_paper arguments")
 	}
 	id := extractArxivID(args.ID)
 	if id == "" {
@@ -584,12 +610,12 @@ func (s *server) callMCPGetPaper(ctx context.Context, raw json.RawMessage) (map[
 	}
 	id = stripArxivVersion(id)
 	if id == "" {
-		return nil, fmt.Errorf("id is required")
+		return nil, mcpClientError("id is required")
 	}
 
 	paper, err := s.cache.GetPaper(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("paper %s not found", id)
+		return nil, mcpClientError("paper %s not found", id)
 	}
 	return mcpToolJSONResult(map[string]any{
 		"paper":        paper,
@@ -604,7 +630,7 @@ func (s *server) callMCPRelatedPapers(ctx context.Context, raw json.RawMessage) 
 		Limit int    `json:"limit"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
-		return nil, fmt.Errorf("invalid arxiv_related_papers arguments")
+		return nil, mcpClientError("invalid arxiv_related_papers arguments")
 	}
 	id := extractArxivID(args.ID)
 	if id == "" {
@@ -612,10 +638,10 @@ func (s *server) callMCPRelatedPapers(ctx context.Context, raw json.RawMessage) 
 	}
 	id = stripArxivVersion(id)
 	if id == "" {
-		return nil, fmt.Errorf("id is required")
+		return nil, mcpClientError("id is required")
 	}
 	if !s.cache.HasQwenEmbedding(ctx, id) {
-		return nil, fmt.Errorf("paper %s is not ready for related-work maps", id)
+		return nil, mcpClientError("paper %s is not ready for related-work maps", id)
 	}
 
 	limit := clampInt(args.Limit, 20, 1, 80)
@@ -636,7 +662,7 @@ func (s *server) callMCPRelatedPapers(ctx context.Context, raw json.RawMessage) 
 func (s *server) callMCPCitations(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
 	id, err := mcpPaperIDArgument(raw)
 	if err != nil {
-		return nil, fmt.Errorf("invalid arxiv_citations arguments: %w", err)
+		return nil, mcpClientError("invalid arxiv_citations arguments: %v", err)
 	}
 	references, err := s.cache.References(ctx, id)
 	if err != nil {
@@ -659,11 +685,11 @@ func (s *server) callMCPCitedBy(ctx context.Context, raw json.RawMessage) (map[s
 		Limit int    `json:"limit"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
-		return nil, fmt.Errorf("invalid arxiv_cited_by arguments")
+		return nil, mcpClientError("invalid arxiv_cited_by arguments")
 	}
 	id := normalizeMCPPaperID(args.ID)
 	if id == "" {
-		return nil, fmt.Errorf("id is required")
+		return nil, mcpClientError("id is required")
 	}
 	limit := clampInt(args.Limit, 50, 1, 200)
 	papers, err := s.cache.CitedBy(ctx, id, limit)
@@ -691,7 +717,7 @@ func mcpPaperIDArgument(raw json.RawMessage) (string, error) {
 	}
 	id := normalizeMCPPaperID(args.ID)
 	if id == "" {
-		return "", fmt.Errorf("id is required")
+		return "", mcpClientError("id is required")
 	}
 	return id, nil
 }

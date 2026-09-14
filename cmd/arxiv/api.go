@@ -53,6 +53,29 @@ const (
 
 var arxivCategoryPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*(?:\.[A-Za-z0-9-]+)?$`)
 
+const maxSearchQueryBytes = 2048
+
+func validateSearchQuery(query string) (string, error) {
+	// Check the raw length before trimming so whitespace cannot bypass the cap.
+	if len(query) > maxSearchQueryBytes {
+		return "", fmt.Errorf("search query must be at most %d bytes", maxSearchQueryBytes)
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", fmt.Errorf("query is required")
+	}
+	return query, nil
+}
+
+func parseSearchQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
+	query, err := validateSearchQuery(r.URL.Query().Get("q"))
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, APIResponse{Success: false, Error: err.Error()})
+		return "", false
+	}
+	return query, true
+}
+
 func parseSearchMode(raw string, fallback searchMode) (searchMode, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
@@ -342,12 +365,8 @@ func (s *server) handleAPISearchSemantic(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		respondJSON(w, http.StatusBadRequest, APIResponse{
-			Success: false,
-			Error:   "query parameter 'q' required",
-		})
+	query, ok := parseSearchQuery(w, r)
+	if !ok {
 		return
 	}
 
@@ -561,12 +580,8 @@ func (s *server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		respondJSON(w, http.StatusBadRequest, APIResponse{
-			Success: false,
-			Error:   "query parameter 'q' required",
-		})
+	query, ok := parseSearchQuery(w, r)
+	if !ok {
 		return
 	}
 
@@ -607,12 +622,8 @@ func (s *server) handleAPISearchQuick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		respondJSON(w, http.StatusBadRequest, APIResponse{
-			Success: false,
-			Error:   "query parameter 'q' required",
-		})
+	query, ok := parseSearchQuery(w, r)
+	if !ok {
 		return
 	}
 
@@ -667,12 +678,8 @@ func (s *server) handleAPISearchStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		respondJSON(w, http.StatusBadRequest, APIResponse{
-			Success: false,
-			Error:   "query parameter 'q' required",
-		})
+	query, ok := parseSearchQuery(w, r)
+	if !ok {
 		return
 	}
 
@@ -1333,12 +1340,8 @@ func (s *server) handleAPISearchPDF(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		respondJSON(w, http.StatusBadRequest, APIResponse{
-			Success: false,
-			Error:   "query parameter 'q' required",
-		})
+	query, ok := parseSearchQuery(w, r)
+	if !ok {
 		return
 	}
 
@@ -1454,12 +1457,39 @@ func (s *server) handleAPIEmbeddings(w http.ResponseWriter, r *http.Request) {
 			"paper":        paper,
 			"hasEmbedding": true,
 			"mapReady":     mapReady,
-			"status":       status,
+			"status":       publicQwenPaperStatus(status),
 			"statusUrl":    "/api/v1/papers/" + path + "/embedding-status",
 			"generator":    generator,
 			"message":      "embedding generated successfully",
 		},
 	})
+}
+
+// publicQwenPaperStatus keeps readiness information while withholding worker
+// diagnostics and leases. Copy jobs so administrative data remains untouched.
+func publicQwenPaperStatus(status *arxiv.QwenPaperEmbeddingStatus) *arxiv.QwenPaperEmbeddingStatus {
+	if status == nil {
+		return nil
+	}
+	public := *status
+	public.Jobs = make([]arxiv.QwenEmbeddingJob, len(status.Jobs))
+	for i, job := range status.Jobs {
+		public.Jobs[i] = arxiv.QwenEmbeddingJob{
+			ID:          job.ID,
+			PaperID:     job.PaperID,
+			Kind:        job.Kind,
+			Scope:       job.Scope,
+			Model:       job.Model,
+			Dim:         job.Dim,
+			Status:      job.Status,
+			Priority:    job.Priority,
+			Attempts:    job.Attempts,
+			CreatedAt:   job.CreatedAt,
+			UpdatedAt:   job.UpdatedAt,
+			CompletedAt: job.CompletedAt,
+		}
+	}
+	return &public
 }
 
 func (s *server) handleAPIEmbeddingStatus(w http.ResponseWriter, r *http.Request) {
@@ -1499,7 +1529,7 @@ func (s *server) handleAPIEmbeddingStatus(w http.ResponseWriter, r *http.Request
 		Data: map[string]interface{}{
 			"paperId":   paperID,
 			"paper":     summarizePaper(paper),
-			"status":    status,
+			"status":    publicQwenPaperStatus(status),
 			"statusUrl": "/api/v1/papers/" + paperID + "/embedding-status",
 		},
 	})
@@ -1520,7 +1550,7 @@ func (s *server) respondQwenEmbeddingQueued(w http.ResponseWriter, r *http.Reque
 			"hasEmbedding": status.AbstractReady,
 			"mapReady":     status.MapReady,
 			"queued":       true,
-			"status":       status,
+			"status":       publicQwenPaperStatus(status),
 			"statusUrl":    "/api/v1/papers/" + paper.ID + "/embedding-status",
 			"message":      message,
 		},
@@ -2117,6 +2147,10 @@ var (
 const qwenQueryRetryAfterSeconds = 75
 
 func (s *server) generateQwenQueryEmbedding(ctx context.Context, query string) ([]float32, error) {
+	query, err := validateSearchQuery(query)
+	if err != nil {
+		return nil, err
+	}
 	if embedding, ok, err := s.cache.GetQwenQueryEmbedding(ctx, query); err != nil {
 		return nil, err
 	} else if ok {

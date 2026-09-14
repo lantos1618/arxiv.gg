@@ -84,39 +84,96 @@
 			'<div class="paper-categories">' + cats + '</div></div>';
 	}
 
+	let recentEventSource = null;
+	let recentRetryTimer = null;
+	let recentRetryDelay = 1000;
+	let recentPageActive = true;
+
+	function recentPapersVisible() {
+		return recentPageActive && !document.hidden && navigator.onLine !== false;
+	}
+
+	function stopRecentPapers() {
+		if (recentRetryTimer !== null) {
+			clearTimeout(recentRetryTimer);
+			recentRetryTimer = null;
+		}
+		if (recentEventSource) {
+			recentEventSource.close();
+			recentEventSource = null;
+		}
+	}
+
+	function retryRecentPapers() {
+		stopRecentPapers();
+		if (!recentPapersVisible()) return;
+		recentRetryTimer = setTimeout(() => {
+			recentRetryTimer = null;
+			loadRecentPapers();
+		}, recentRetryDelay);
+		recentRetryDelay = Math.min(recentRetryDelay * 2, 30000);
+	}
+
 	function loadRecentPapers() {
+		if (!recentPapersVisible() || recentEventSource || recentRetryTimer !== null) return;
 		const eventSource = new EventSource('/api/v1/papers/recent/stream?limit=50');
-		let paperCount = 0;
-		let initialLoadComplete = false;
+		recentEventSource = eventSource;
+		const initialPapers = [];
 		eventSource.onmessage = function(e) {
+			if (recentEventSource !== eventSource) return;
 			const data = JSON.parse(e.data);
 			switch (data.type) {
-				case 'start': recentList.innerHTML = ''; break;
+				case 'start': initialPapers.length = 0; break;
 				case 'paper':
-					paperCount++;
-					recentList.insertAdjacentHTML('beforeend', renderRecentPaper(data.paper, data.hasEmbedding));
-					if (window.typesetMath) window.typesetMath(recentList.lastElementChild);
+					initialPapers.push(renderRecentPaper(data.paper, data.hasEmbedding));
 					break;
 				case 'complete':
-					initialLoadComplete = true;
-					if (paperCount === 0) recentList.innerHTML = '<p>No papers are cached in this arXiv.gg instance yet.</p>';
+					recentRetryDelay = 1000;
+					// Keep the previous list visible until the new snapshot is ready.
+					if (window.MathJax?.typesetClear) window.MathJax.typesetClear([recentList]);
+					recentList.innerHTML = initialPapers.join('') || '<p>No papers are cached in this arXiv.gg instance yet.</p>';
+					if (window.typesetMath) window.typesetMath(recentList);
 					break;
 				case 'new':
-					paperCount++;
 					recentList.insertAdjacentHTML('afterbegin', renderRecentPaper(data.paper, data.hasEmbedding).replace('class="paper"', 'class="paper paper-new"'));
+					// A long-lived tab should not accumulate an unbounded paper list.
+					while (recentList.children.length > 50) {
+						const removed = recentList.lastElementChild;
+						if (window.MathJax?.typesetClear) window.MathJax.typesetClear([removed]);
+						removed.remove();
+					}
 					if (window.typesetMath) window.typesetMath(recentList.firstElementChild);
 					updateStats(data.paper);
 					break;
-				case 'timeout': eventSource.close(); setTimeout(loadRecentPapers, 100); break;
-				case 'error': recentList.innerHTML = '<p class="error">Error: ' + escapeHtml(data.error) + '</p>'; eventSource.close(); break;
+				case 'timeout': retryRecentPapers(); break;
+				case 'error':
+					if (!recentList.querySelector('.paper')) recentList.innerHTML = '<p class="error">Error: ' + escapeHtml(data.error) + '</p>';
+					retryRecentPapers();
+					break;
 			}
 		};
 		eventSource.onerror = function() {
-			if (!initialLoadComplete && paperCount === 0) recentList.innerHTML = '<p class="error">Failed to load.</p>';
-			eventSource.close();
-			setTimeout(loadRecentPapers, 5000);
+			if (recentEventSource !== eventSource) return;
+			if (!recentList.querySelector('.paper')) recentList.innerHTML = '<p class="error">Recent papers are temporarily unavailable. Retrying...</p>';
+			retryRecentPapers();
 		};
 	}
+
+	function updateRecentPapersVisibility() {
+		if (recentPapersVisible()) loadRecentPapers();
+		else stopRecentPapers();
+	}
+	document.addEventListener('visibilitychange', updateRecentPapersVisibility);
+	window.addEventListener('offline', stopRecentPapers);
+	window.addEventListener('online', updateRecentPapersVisibility);
+	window.addEventListener('pagehide', () => {
+		recentPageActive = false;
+		stopRecentPapers();
+	});
+	window.addEventListener('pageshow', () => {
+		recentPageActive = true;
+		updateRecentPapersVisibility();
+	});
 	loadRecentPapers();
 
 		function escapeHtml(s) {

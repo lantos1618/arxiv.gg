@@ -34,7 +34,7 @@ See [Semantic Search](docs/SEMANTIC_SEARCH.md) and the [GPU Worker Runbook](docs
 
 ## Prerequisites
 
-- Go 1.25, matching `go.mod`
+- Go 1.26.8, matching `go.mod`
 - PostgreSQL with the pgvector extension for a supported application deployment
 - Python 3 plus the worker dependencies for Qwen ingestion or serving
 - `pdftotext` from Poppler for PDF text extraction

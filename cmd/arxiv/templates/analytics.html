@@ -1,0 +1,17 @@
+{{define "analytics"}}
+{{if .GoogleAnalyticsID}}<script>
+(function() {
+	if (window.__arxivAnalyticsLoaded) return;
+	window.__arxivAnalyticsLoaded = true;
+	const analyticsID = {{.GoogleAnalyticsID}};
+	window.dataLayer = window.dataLayer || [];
+	window.gtag = function(){ window.dataLayer.push(arguments); };
+	window.gtag('js', new Date());
+	window.gtag('config', analyticsID, { transport_type: 'beacon' });
+	const script = document.createElement('script');
+	script.async = true;
+	script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(analyticsID);
+	document.head.appendChild(script);
+})();
+</script>{{end}}
+{{end}}

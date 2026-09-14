@@ -36,28 +36,7 @@
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Title}} - arXiv.gg</title>
 	{{if .StructuredData}}<script type="application/ld+json">{{.StructuredData}}</script>{{end}}
-		{{if .GoogleAnalyticsID}}<script>
-		(function() {
-			const analyticsID = '{{.GoogleAnalyticsID}}';
-		function loadAnalytics() {
-			if (window.__arxivAnalyticsLoaded) return;
-			window.__arxivAnalyticsLoaded = true;
-			window.dataLayer = window.dataLayer || [];
-			window.gtag = function(){ window.dataLayer.push(arguments); };
-			window.gtag('js', new Date());
-			window.gtag('config', analyticsID, { transport_type: 'beacon' });
-			const script = document.createElement('script');
-			script.async = true;
-			script.src = 'https://www.googletagmanager.com/gtag/js?id=' + analyticsID;
-			document.head.appendChild(script);
-		}
-		function scheduleAnalytics() {
-			setTimeout(loadAnalytics, 5000);
-		}
-		if (document.readyState === 'complete') scheduleAnalytics();
-		else window.addEventListener('load', scheduleAnalytics, { once: true });
-		})();
-		</script>{{end}}
+		{{template "analytics" .}}
 	<script>
 	(function() {
 		function hasMath(root) {

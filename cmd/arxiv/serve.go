@@ -838,9 +838,14 @@ func (s *server) handleAPIRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if query == "" {
-		http.Redirect(w, r, "/", http.StatusFound)
+	rawQuery := r.URL.Query().Get("q")
+	query, err := validateSearchQuery(rawQuery)
+	if err != nil {
+		if len(rawQuery) <= maxSearchQueryBytes && strings.TrimSpace(rawQuery) == "" {
+			http.Redirect(w, r, "/", http.StatusFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		return
 	}
 

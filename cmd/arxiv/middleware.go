@@ -218,24 +218,24 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		// SSE endpoints require http.Flusher - skip caching wrapper
-		if strings.Contains(r.URL.Path, "/stream") || strings.Contains(r.URL.Path, "/generate") {
+		variesByCookie := responseCacheVariesByCookie(r.URL.Path)
+
+		if shouldBypassResponseCache(r) {
+			if variesByCookie {
+				appendVary(w.Header(), "Cookie")
+			}
+			w.Header().Set("Cache-Control", "private, no-store")
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Only the streaming endpoints need to bypass the buffering writer.
+		if r.URL.Path == "/api/v1/search/stream" || r.URL.Path == "/api/v1/papers/recent/stream" || r.URL.Path == "/api/v1/embeddings/generate" {
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		key, ok := responseCacheKey(r)
 		if !ok {
-			next.ServeHTTP(w, r)
-			return
-		}
-		variesByCookie := responseCacheVariesByCookie(r.URL.Path)
-
-		if shouldBypassResponseCache(r) {
-			if variesByCookie {
-				appendVary(w.Header(), "Cookie")
-				w.Header().Set("Cache-Control", "private, no-store")
-			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -288,7 +288,11 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 		if cw.statusCode == 0 {
 			cw.statusCode = http.StatusOK
 		}
-		if cw.statusCode == http.StatusOK && cw.Header().Get("Cache-Control") == "" {
+		shareable := responseCanBeShared(cw.Header())
+		if !shareable && (cw.Header().Get("Cache-Control") == "" || len(cw.Header().Values("Set-Cookie")) > 0) {
+			cw.Header().Set("Cache-Control", "private, no-store")
+		}
+		if cw.statusCode == http.StatusOK && shareable && cw.Header().Get("Cache-Control") == "" {
 			cw.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cm.maxAge.Seconds())))
 		}
 		copyHeader(w.Header(), cw.Header())
@@ -296,7 +300,7 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 		_, _ = w.Write(cw.data)
 
 		// Store successful responses in cache for future requests
-		if cw.statusCode == http.StatusOK && len(cw.data) > 0 {
+		if cw.statusCode == http.StatusOK && shareable && len(cw.data) > 0 {
 			if int64(len(cw.data)) > cm.maxItemSize {
 				return
 			}
@@ -325,6 +329,32 @@ func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 			cm.mu.Unlock()
 		}
 	})
+}
+
+// The cache has no revalidation or arbitrary Vary-key support. Cookie variation
+// is safe only because all recognized authentication credentials bypass it.
+func responseCanBeShared(headers http.Header) bool {
+	if len(headers.Values("Set-Cookie")) > 0 {
+		return false
+	}
+	for _, value := range headers.Values("Cache-Control") {
+		for _, directive := range strings.Split(value, ",") {
+			name, _, _ := strings.Cut(strings.TrimSpace(directive), "=")
+			switch strings.ToLower(name) {
+			case "private", "no-store", "no-cache":
+				return false
+			}
+		}
+	}
+	for _, value := range headers.Values("Vary") {
+		for _, field := range strings.Split(value, ",") {
+			field = strings.TrimSpace(field)
+			if field != "" && !strings.EqualFold(field, "Cookie") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func responseCacheKey(r *http.Request) (string, bool) {
@@ -375,6 +405,7 @@ func shouldBypassResponseCache(r *http.Request) bool {
 	}
 	if r.URL.Query().Get("admin_token") != "" ||
 		r.Header.Get("Authorization") != "" ||
+		r.Header.Get("X-API-Key") != "" ||
 		r.Header.Get("X-Admin-Token") != "" {
 		return true
 	}
@@ -449,8 +480,9 @@ type rateLimiter struct {
 }
 
 type visitor struct {
-	count    int
-	lastSeen time.Time
+	count       int
+	windowStart time.Time
+	lastSeen    time.Time
 }
 
 // newRateLimiter creates a new rate limiter
@@ -502,8 +534,8 @@ func (rl *rateLimiter) Allow(r *http.Request) bool {
 	v, exists := rl.visitors[ip]
 	now := time.Now()
 
-	if !exists || now.Sub(v.lastSeen) > rl.window {
-		rl.visitors[ip] = &visitor{count: 1, lastSeen: now}
+	if !exists || now.Sub(v.windowStart) >= rl.window {
+		rl.visitors[ip] = &visitor{count: 1, windowStart: now, lastSeen: now}
 		return true
 	}
 

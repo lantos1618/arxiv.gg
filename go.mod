@@ -1,8 +1,6 @@
 module github.com/lantos1618/arxiv.gg
 
-go 1.25.0
-
-toolchain go1.25.10
+go 1.26.8
 
 require (
 	github.com/glebarez/sqlite v1.11.0

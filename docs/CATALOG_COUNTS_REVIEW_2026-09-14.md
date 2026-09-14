@@ -18,3 +18,9 @@ The correction displays the server's local count snapshot and removes the offici
 The Qwen count represents distinct paper IDs with stored abstract vectors for the configured Qwen model and dimension. It does not audit source-hash freshness or orphaned vectors; no Qwen integrity scan or data mutation was part of this correction.
 
 Validation: homepage regression using the reported counts, stats API compatibility regression, and the existing Node-executed recent-paper lifecycle checks. Full `go test ./... -count=1`, `go test -race ./... -count=1`, `go vet ./...`, and `git diff --check` passed. No database schema changes are required.
+
+## Preparation within the cached catalog
+
+The homepage now also shows the fraction of cached papers with prepared abstract embeddings: `QwenEmbeddingsCount / TotalPapers`, formatted to one decimal place using the existing percentage formatter. The reported counts yield **83.8% prepared for semantic search**. This uses the same local snapshot as both displayed counts and does not estimate coverage of the official arXiv catalog. The percentage is omitted for an empty catalog or inconsistent counts; it is never clamped to invent coverage.
+
+Template regressions cover the reported counts, partial/full/no preparation, an empty catalog, and inconsistent counts.

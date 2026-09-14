@@ -24,7 +24,7 @@
 	<div class="search-dropdown" id="search-dropdown" data-mathjax></div>
 </div>
 <div id="search-results" class="search-results" data-mathjax></div>
-<p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Paper records cached by this arXiv.gg instance. Counts refresh periodically; reload for the latest snapshot.">{{formatInt .Stats.TotalPapers}}</span> papers cached and searchable · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts</p>
+<p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Paper records cached by this arXiv.gg instance. Counts refresh periodically; reload for the latest snapshot.">{{formatInt .Stats.TotalPapers}}</span> papers cached and searchable · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts{{if and (gt .Stats.TotalPapers 0) (ge .Stats.QwenEmbeddingsCount 0) (le .Stats.QwenEmbeddingsCount .Stats.TotalPapers)}} · <span id="stat-prepared-percent" class="helpable" tabindex="0" data-help="Prepared abstracts divided by papers cached on arXiv.gg.">{{percent .Stats.QwenEmbeddingsCount .Stats.TotalPapers}}</span> prepared for semantic search{{end}}</p>
 
 <div id="recent-papers">
 <h2>Recent Papers</h2>

@@ -28,7 +28,7 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 			"object-src 'none'",
 			"frame-ancestors 'none'",
 			"form-action 'self'",
-			"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://d3js.org https://www.googletagmanager.com",
+			"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://d3js.org https://www.googletagmanager.com https://static.cloudflareinsights.com",
 			"style-src 'self' 'unsafe-inline'",
 			"img-src 'self' data: https:",
 			"font-src 'self' data: https://cdn.jsdelivr.net",

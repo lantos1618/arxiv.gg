@@ -116,6 +116,7 @@
 			.nav-button { border: 0; background: transparent; color: #0066cc; padding: 0; font: inherit; cursor: pointer; }
 			.nav-button:hover { text-decoration: underline; }
 			.site-footer { margin: 2.5rem 0 0; padding-top: 1rem; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 0.78rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+			.site-footer-source { flex-basis: 100%; }
 			.site-footer-separator { color: #94a3b8; }
 		.meta { font-size: 0.875rem; color: #64748b; margin-bottom: 0.5rem; min-height: 1.5rem; }
 		.meta code { font-family: monospace; background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 3px; }
@@ -439,10 +440,7 @@
 <ul class="files">
 {{range .Files}}<li><a href="/src/{{$.Paper.ID}}/{{.}}">{{.}}</a></li>{{end}}
 </ul>
-{{end}}{{else}}
-<h2>Source Files</h2>
-<p><i class="btn-icon">📁</i> Source files are served from <a href="https://arxiv.org/src/{{.Paper.ID}}" target="_blank" rel="noopener noreferrer">arXiv.org</a> for compliance</p>
-{{end}}
+{{end}}{{end}}
 
 <script>
 (function() {

@@ -357,7 +357,7 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 	}
 	viewData["BuildDate"] = buildDateLabel()
 	viewData["BuildCommit"] = buildCommitLabel()
-	if currentUser == nil && thirdPartyScriptsAllowed(r.URL.Path) {
+	if thirdPartyScriptsAllowed(r.URL.Path) {
 		viewData["GoogleAnalyticsID"] = s.googleAnalyticsID
 	}
 	viewData["BingSiteVerificationID"] = s.bingSiteVerificationID

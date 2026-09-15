@@ -47,7 +47,7 @@ Before-change origin HTTP sample (three sequential requests per route, no load t
 - Synchronous D3 loading and source-status polling on paper pages remain potential frontend optimizations; no browser timing was measured here.
 - The cache has limited HTTP revalidation support (for example, explicit max-age=0); no current handler using that combination was identified.
 - This review did not perform an OS-image or fully resolved Python/remote GPU-worker dependency audit, a live OAuth flow, or a browser-to-Google receipt test. It does not establish that every attack path is safe.
-- GA counts still exclude signed-in users, sensitive pages, blocked scripts, and some automated requests. Use eligible pageviews and geography for advertising estimates.
+- At the time of this review, GA excluded signed-in users, sensitive pages, blocked scripts, and some automated requests. The signed-in exclusion is superseded by the [analytics follow-up](ANALYTICS_COLLECTION_REVIEW_2026-09-15.md); the other measurement limits remain.
 
 ## Sources
 

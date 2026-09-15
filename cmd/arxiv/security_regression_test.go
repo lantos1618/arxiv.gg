@@ -112,24 +112,47 @@ func TestAnalyticsIdentifiersAreConfiguredTemplateData(t *testing.T) {
 }
 
 func TestSensitivePagesDoNotLoadThirdPartyAnalytics(t *testing.T) {
-	for _, path := range []string{"/login", "/account", "/api/v1/", "/admin", "/auth/google/callback"} {
-		rec := httptest.NewRecorder()
-		(&server{googleAnalyticsID: "G-TEST123"}).renderTemplate(rec, httptest.NewRequest(http.MethodGet, path, nil), "head", map[string]any{"Title": "Sensitive"})
-		if strings.Contains(rec.Body.String(), "G-TEST123") || strings.Contains(rec.Body.String(), "googletagmanager") {
-			t.Fatalf("sensitive path %s loaded analytics", path)
+	for _, signedIn := range []bool{false, true} {
+		for _, path := range []string{"/login", "/account", "/account/api-key/regenerate", "/api/v1/", "/admin", "/admin/users", "/auth/google/start", "/auth/google/callback"} {
+			rec := httptest.NewRecorder()
+			data := map[string]any{"Title": "Sensitive"}
+			if signedIn {
+				data["CurrentUser"] = &arxiv.User{ID: "user_test", Email: "reader@example.com"}
+			}
+			(&server{googleAnalyticsID: "G-TEST123"}).renderTemplate(rec, httptest.NewRequest(http.MethodGet, path, nil), "head", data)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("render %s: status=%d body=%s", path, rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "G-TEST123") || strings.Contains(rec.Body.String(), "googletagmanager") {
+				t.Fatalf("sensitive path %s loaded analytics (signed in: %v)", path, signedIn)
+			}
 		}
 	}
 }
 
-func TestSignedInPagesDoNotLoadThirdPartyAnalytics(t *testing.T) {
-	rec := httptest.NewRecorder()
-	user := &arxiv.User{ID: "user_test", Email: "reader@example.com"}
-	(&server{googleAnalyticsID: "G-TEST123"}).renderTemplate(rec, httptest.NewRequest(http.MethodGet, "/abs/2501.00001", nil), "head", map[string]any{
-		"Title":       "Paper",
-		"CurrentUser": user,
-	})
-	if strings.Contains(rec.Body.String(), "G-TEST123") || strings.Contains(rec.Body.String(), "googletagmanager") {
-		t.Fatal("signed-in page loaded third-party analytics")
+func TestPublicPagesLoadAnalyticsForSignedInAndAnonymousReaders(t *testing.T) {
+	for _, signedIn := range []bool{false, true} {
+		for _, page := range []struct{ path, template string }{
+			{path: "/", template: "head"},
+			{path: "/abs/2501.00001", template: "paper"},
+			{path: "/category/cs.AI", template: "head"},
+			{path: "/author/Ada%20Lovelace", template: "head"},
+			{path: "/search?q=attention", template: "head"},
+		} {
+			rec := httptest.NewRecorder()
+			data := map[string]any{"Title": "Public page", "Paper": &arxiv.Paper{ID: "2501.00001", Title: "Test paper"}}
+			if signedIn {
+				data["CurrentUser"] = &arxiv.User{ID: "user_test", Email: "reader@example.com"}
+			}
+			(&server{googleAnalyticsID: "G-TEST123"}).renderTemplate(rec, httptest.NewRequest(http.MethodGet, page.path, nil), page.template, data)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("render %s: status=%d body=%s", page.path, rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, "G-TEST123") || strings.Count(body, "https://www.googletagmanager.com/gtag/js?id=") != 1 {
+				t.Fatalf("public page %s must include one analytics loader (signed in: %v)", page.path, signedIn)
+			}
+		}
 	}
 }
 

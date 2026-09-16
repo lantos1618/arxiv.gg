@@ -212,6 +212,11 @@ func generateETag(data []byte) string {
 // Handler wraps an http.Handler with caching
 func (cm *cacheMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Public sitemap documents have their own bounded cache and shared builds.
+		if isSitemapPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// Only cache GET requests
 		if r.Method != http.MethodGet {
 			next.ServeHTTP(w, r)
@@ -368,16 +373,13 @@ func responseCacheKey(r *http.Request) (string, bool) {
 		path == "/robots.txt" ||
 		path == "/security.txt" ||
 		path == "/.well-known/security.txt" ||
-		path == "/sitemap.xml" ||
-		path == "/sitemap-static.xml" ||
 		path == "/BingSiteAuth.xml" ||
 		path == "/favicon.ico" ||
 		path == "/favicon.svg" ||
 		strings.HasPrefix(path, "/abs/") ||
 		strings.HasPrefix(path, "/paper/") ||
 		strings.HasPrefix(path, "/author/") ||
-		strings.HasPrefix(path, "/category/") ||
-		strings.HasPrefix(path, "/sitemaps/") {
+		strings.HasPrefix(path, "/category/") {
 		return path, true
 	}
 	return "", false

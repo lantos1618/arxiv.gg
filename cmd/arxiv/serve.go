@@ -320,9 +320,10 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 }
 
 type server struct {
-	cache     *arxiv.Cache
-	cacheDir  string
-	localMode bool // Enable local PDF/source caching instead of redirecting to arxiv.org
+	cache        *arxiv.Cache
+	sitemapCache sitemapResponseCache
+	cacheDir     string
+	localMode    bool // Enable local PDF/source caching instead of redirecting to arxiv.org
 
 	// Real-time paper broadcast
 	paperBroadcast *paperBroadcaster
@@ -636,15 +637,6 @@ func (s *server) paperSitemapURLs(ctx context.Context, page int) (arxiv.SitemapU
 	return urls, nil
 }
 
-func writeXML(w http.ResponseWriter, r *http.Request, data []byte) {
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.WriteHeader(http.StatusOK)
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(data)
-	}
-}
-
 func rejectNonGetHead(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -660,44 +652,24 @@ func writeServerError(w http.ResponseWriter, status int, publicMessage, operatio
 
 // handleSitemap serves the sitemap index at /sitemap.xml.
 func (s *server) handleSitemap(w http.ResponseWriter, r *http.Request) {
-	if rejectNonGetHead(w, r) {
-		return
-	}
-	ctx := r.Context()
-	index, err := s.sitemapIndex(ctx)
-	if err != nil {
-		writeServerError(w, http.StatusInternalServerError, "sitemap unavailable", "build sitemap index", err)
-		return
-	}
-
-	data, err := arxiv.BuildSitemapIndexXML(index)
-	if err != nil {
-		writeServerError(w, http.StatusInternalServerError, "sitemap unavailable", "encode sitemap index", err)
-		return
-	}
-
-	writeXML(w, r, data)
+	s.serveSitemap(w, r, canonicalURL("/sitemap.xml"), func(ctx context.Context) ([]byte, error) {
+		index, err := s.sitemapIndex(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return arxiv.BuildSitemapIndexXML(index)
+	})
 }
 
 // handleStaticSitemap serves top-level and category URLs.
 func (s *server) handleStaticSitemap(w http.ResponseWriter, r *http.Request) {
-	if rejectNonGetHead(w, r) {
-		return
-	}
-
-	urls, err := s.staticSitemapURLs(r.Context())
-	if err != nil {
-		writeServerError(w, http.StatusInternalServerError, "sitemap unavailable", "build static sitemap", err)
-		return
-	}
-
-	data, err := arxiv.BuildSitemapXML(urls)
-	if err != nil {
-		writeServerError(w, http.StatusInternalServerError, "sitemap unavailable", "encode static sitemap", err)
-		return
-	}
-
-	writeXML(w, r, data)
+	s.serveSitemap(w, r, canonicalURL("/sitemap-static.xml"), func(ctx context.Context) ([]byte, error) {
+		urls, err := s.staticSitemapURLs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return arxiv.BuildSitemapXML(urls)
+	})
 }
 
 // handlePaperSitemap serves chunked paper sitemap files under /sitemaps/.
@@ -705,37 +677,19 @@ func (s *server) handlePaperSitemap(w http.ResponseWriter, r *http.Request) {
 	if rejectNonGetHead(w, r) {
 		return
 	}
-
-	name := strings.TrimPrefix(r.URL.Path, "/sitemaps/")
-	if !strings.HasPrefix(name, "papers-") || !strings.HasSuffix(name, ".xml") {
+	page, ok := sitemapPage(r.URL.Path)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-
-	pageText := strings.TrimSuffix(strings.TrimPrefix(name, "papers-"), ".xml")
-	page, err := strconv.Atoi(pageText)
-	if err != nil || page < 1 {
-		http.NotFound(w, r)
-		return
-	}
-
-	urls, err := s.paperSitemapURLs(r.Context(), page)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-			return
+	key := canonicalURL(fmt.Sprintf("/sitemaps/papers-%d.xml", page))
+	s.serveSitemap(w, r, key, func(ctx context.Context) ([]byte, error) {
+		urls, err := s.paperSitemapURLs(ctx, page)
+		if err != nil {
+			return nil, err
 		}
-		writeServerError(w, http.StatusInternalServerError, "sitemap unavailable", "build paper sitemap", err)
-		return
-	}
-
-	data, err := arxiv.BuildSitemapXML(urls)
-	if err != nil {
-		writeServerError(w, http.StatusInternalServerError, "sitemap unavailable", "encode paper sitemap", err)
-		return
-	}
-
-	writeXML(w, r, data)
+		return arxiv.BuildSitemapXML(urls)
+	})
 }
 
 func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {

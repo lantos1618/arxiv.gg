@@ -603,13 +603,20 @@ func (c *Cache) ListSitemapPapers(ctx context.Context, offset, limit int) ([]Pap
 		limit = 50000
 	}
 
+	// Find the page boundary using only the primary-key index, then load the
+	// requested page by range. A deep OFFSET over id and updated can otherwise
+	// make PostgreSQL scan and sort the entire papers table. The scalar subquery
+	// keeps both steps within one statement and therefore one database snapshot.
 	var papers []Paper
 	err := c.db.WithContext(ctx).Raw(`
 		SELECT id, updated
 		FROM papers
+		WHERE id >= (
+			SELECT id FROM papers ORDER BY id ASC LIMIT 1 OFFSET ?
+		)
 		ORDER BY id ASC
-		LIMIT ? OFFSET ?
-	`, limit, offset).Scan(&papers).Error
+		LIMIT ?
+	`, offset, limit).Scan(&papers).Error
 	return papers, err
 }
 

@@ -280,23 +280,26 @@
 		.site-footer { margin: 2.5rem 0 0; padding-top: 1rem; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 0.78rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
 		.site-footer-source { flex-basis: 100%; }
 		.site-footer-separator { color: #9ca3af; }
-		/* Paper cards - fixed min-height prevents CLS when badges load */
-		.paper { border-bottom: 1px solid #eee; padding: 1rem 0; min-height: 5.5rem; contain: layout style; transition: background-color 0.5s ease; }
+		/* Paper lists: title and readiness, authors, then compact metadata. */
+		.paper { border-bottom: 1px solid #eee; padding: 1.25rem 0; min-height: 5.5rem; contain: layout style; transition: background-color 0.5s ease; }
+		.paper-heading { display: flex; align-items: flex-start; gap: 0.75rem; }
 		.paper-new { background-color: #d4edda; animation: fadeHighlight 2s ease-out; }
 		@keyframes fadeHighlight { from { background-color: #28a745; } to { background-color: #d4edda; } }
 		.paper-id { font-family: monospace; color: #666; }
-		.paper-title { font-size: 1.1rem; font-weight: 600; margin: 0.25rem 0; min-height: 1.4rem; }
-		.paper-authors { color: #444; min-height: 1.5rem; }
+		.paper-title { flex: 1; min-width: 0; font-size: 1.1rem; font-weight: 600; line-height: 1.45; margin: 0; min-height: 1.4rem; overflow-wrap: anywhere; }
+		.paper-authors { color: #444; min-height: 1.5rem; margin-top: 0.4rem; overflow-wrap: anywhere; }
 		.paper-authors a, .authors a { display: inline-flex; align-items: center; min-height: 24px; margin-right: 0.15rem; }
 		.more-authors { color: #666; font-size: 0.9em; white-space: nowrap; }
 		.paper-categories { font-size: 0.9rem; color: #666; min-height: 1.2rem; }
-		.paper-abstract { margin: 1rem 0; white-space: pre-wrap; }
-		.paper-meta { font-size: 0.9rem; color: #666; margin: 0.5rem 0; }
+		.paper-abstract { margin: 0.75rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+		.paper-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.6rem; font-size: 0.9rem; color: #666; margin-top: 0.5rem; }
+		.paper-meta .paper-categories { display: contents; }
+		.paper-meta .cat-link, .paper-meta .badge { margin: 0; }
 		.badge { display: inline-block; background: #e0e0e0; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.8rem; margin-right: 0.25rem; }
 		.badge-src { background: #d4edda; }
 		.badge-pdf { background: #cce5ff; }
 		.badge-similarity { background: #fff3cd; color: #856404; font-weight: 600; }
-		.paper > .badge-embed { float: right; margin: 0 0 0.25rem 0.75rem; }
+		.paper-heading > .badge-embed { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 2rem; min-height: 2rem; box-sizing: border-box; margin: 0; }
 		.files { margin: 1rem 0; }
 		.files ul { list-style: none; padding: 0; }
 		.files li { font-family: monospace; padding: 0.25rem 0; }
@@ -383,14 +386,14 @@
 		.search-buttons [data-help]:focus-visible::after {
 			transform: translate(0, 0);
 		}
-		.paper > .badge-embed[data-help]::after {
+		.paper-heading > .badge-embed[data-help]::after {
 			box-sizing: border-box;
 			left: auto;
 			right: 0;
 			transform: translateY(-4px);
 		}
-		.paper > .badge-embed[data-help]:hover::after,
-		.paper > .badge-embed[data-help]:focus-visible::after {
+		.paper-heading > .badge-embed[data-help]:hover::after,
+		.paper-heading > .badge-embed[data-help]:focus-visible::after {
 			transform: translateY(0);
 		}
 		.helpable { cursor: help; }

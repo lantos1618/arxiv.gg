@@ -30,12 +30,16 @@
 {{if .IsDeep}}
 {{range .DeepResults}}
 	<div class="paper">
-		<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.PaperID}}</span>
-		<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches your deep search.">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
-		<div class="paper-title" data-mathjax><a href="{{paperPath .PaperID}}">{{.Paper.Title}}</a></div>
+		<div class="paper-heading">
+			<div class="paper-title" data-mathjax><a href="{{paperPath .PaperID}}">{{.Paper.Title}}</a></div>
+		</div>
 		{{$authors := limitAuthors .Paper.Authors 12}}
 		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-		<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
+		<div class="paper-meta">
+			<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.PaperID}}</span>
+			<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
+			<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches your deep search.">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
+		</div>
 		{{if .Snippet}}<div class="paper-abstract">{{.Snippet}}</div>{{end}}
 	</div>
 {{else}}
@@ -50,12 +54,16 @@
 {{else}}
 	{{range .SemanticResults}}
 	<div class="paper">
-			<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.PaperID}}</span>
-			<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches the idea you searched for.">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
-		<div class="paper-title" data-mathjax><a href="{{paperPath .PaperID}}">{{.Paper.Title}}</a></div>
+		<div class="paper-heading">
+			<div class="paper-title" data-mathjax><a href="{{paperPath .PaperID}}">{{.Paper.Title}}</a></div>
+		</div>
 		{{$authors := limitAuthors .Paper.Authors 12}}
 		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+		<div class="paper-meta">
+			<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.PaperID}}</span>
 			<div class="paper-categories">{{range $i, $c := parseCategories .Paper.Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
+			<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches the idea you searched for.">{{printf "%.0f" (.Similarity | mul 100)}}% match</span>
+		</div>
 	</div>
 {{else}}
 	<p>No prepared abstracts matched this idea.</p>
@@ -64,11 +72,15 @@
 {{else}}
 {{range .Papers}}
 	<div class="paper">
-			<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.ID}}</span>
-		<div class="paper-title" data-mathjax><a href="{{paperPath .ID}}">{{.Title}}</a></div>
+		<div class="paper-heading">
+			<div class="paper-title" data-mathjax><a href="{{paperPath .ID}}">{{.Title}}</a></div>
+		</div>
 		{{$authors := limitAuthors .Authors 12}}
 		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+		<div class="paper-meta">
+			<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.ID}}</span>
 			<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
+		</div>
 	</div>
 {{else}}
 <p>No cached papers matched this Quick Search.</p>
@@ -131,9 +143,11 @@
 			const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠</span>' : '';
 				const simBadge = similarity ? '<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches your search.">' + Math.round(similarity * 100) + '%</span>' : '';
 			const snippetHtml = snippet ? '<div class="paper-abstract">' + escapeHtml(snippet) + '</div>' : '';
-			return '<div class="paper"><span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span> ' + badges + ' ' + simBadge +
-			'<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' +
-			'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-categories">' + cats + '</div>' + snippetHtml + '</div>';
+		return '<div class="paper"><div class="paper-heading">' +
+			'<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' + badges + '</div>' +
+			'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-meta">' +
+			'<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span>' +
+			'<div class="paper-categories">' + cats + '</div>' + simBadge + '</div>' + snippetHtml + '</div>';
 	}
 
 	function cancelActiveSearch() {

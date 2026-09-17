@@ -71,10 +71,11 @@
 			'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '" data-help="Open this arXiv subject area.">' + escapeHtml(c) + '</a>'
 		).join(' ');
 		const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠</span>' : '';
-		return '<div class="paper"><span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span> ' + badges +
-			'<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' +
+		return '<div class="paper"><div class="paper-heading">' +
+			'<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' + badges + '</div>' +
 			'<div class="paper-authors">' + renderAuthors(authors) + '</div>' +
-			'<div class="paper-categories">' + cats + '</div></div>';
+			'<div class="paper-meta"><span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span>' +
+			'<div class="paper-categories">' + cats + '</div></div></div>';
 	}
 
 	let recentEventSource = null;
@@ -427,9 +428,11 @@
 						const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠</span>' : '';
 							const simBadge = similarity ? '<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches your search.">' + Math.round(similarity * 100) + '%</span>' : '';
 						const snippet = data.snippet ? '<div class="paper-abstract">' + escapeHtml(data.snippet) + '</div>' : '';
-						paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span> ' +
-						badges + ' ' + simBadge + '<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' +
-						'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-categories">' + cats + '</div>' + snippet + '</div>');
+					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><div class="paper-heading">' +
+						'<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' + badges + '</div>' +
+						'<div class="paper-authors">' + renderAuthors(authors) + '</div><div class="paper-meta">' +
+						'<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span>' +
+						'<div class="paper-categories">' + cats + '</div>' + simBadge + '</div>' + snippet + '</div>');
 					if (window.typesetMath) window.typesetMath(paperContainer.lastElementChild);
 					statusEl.textContent = resultCount + ' results...';
 					break;

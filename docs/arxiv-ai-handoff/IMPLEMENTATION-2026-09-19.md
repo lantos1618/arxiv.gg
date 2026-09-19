@@ -1,5 +1,7 @@
 # Application implementation — 2026-09-19
 
+Current release disposition: **deployed and checked**. See [RELEASE-2026-09-19.md](RELEASE-2026-09-19.md). The pre-release account below is retained as dated implementation history.
+
 ## Scope and release state
 
 The seven requested priorities are implemented in `/home/ubuntu/arxiv`, based on commit `e7f0026adabfd01af027b608eae96b08db5538ac`, with uncommitted working-tree changes. This entry records the application changes and local evidence available when written. **This batch has not been deployed.** No production restart or application of the reviewed-date SQL is claimed here. Initial combined normal/race tests, vet and build pass. The final settled-tree recheck and any verified release evidence will be appended separately.

@@ -1,0 +1,81 @@
+[
+  {
+    "base": "http://127.0.0.1",
+    "check": "health",
+    "postgres": true
+  },
+  {
+    "base": "http://127.0.0.1",
+    "check": "exact_title",
+    "limit": 1,
+    "firstPaper": "1706.03762",
+    "total": 7735,
+    "seconds": 0.134
+  },
+  {
+    "base": "http://127.0.0.1",
+    "check": "exact_title",
+    "limit": 8,
+    "firstPaper": "1706.03762",
+    "total": 7735,
+    "seconds": 0.152
+  },
+  {
+    "base": "https://arxiv.gg",
+    "check": "health",
+    "postgres": true
+  },
+  {
+    "base": "https://arxiv.gg",
+    "check": "exact_title",
+    "limit": 1,
+    "firstPaper": "1706.03762",
+    "total": 7735,
+    "seconds": 0.205
+  },
+  {
+    "base": "https://arxiv.gg",
+    "check": "exact_title",
+    "limit": 8,
+    "firstPaper": "1706.03762",
+    "total": 7735,
+    "seconds": 0.191
+  },
+  {
+    "check": "reviewed_dates",
+    "paper": "1706.03762",
+    "created": "2017-06-12",
+    "updated": "2023-08-02"
+  },
+  {
+    "check": "reviewed_dates",
+    "paper": "1312.6114",
+    "created": "2013-12-20",
+    "updated": "2022-12-10"
+  },
+  {
+    "check": "reviewed_dates",
+    "paper": "1810.04805",
+    "created": "2018-10-11",
+    "updated": "2019-05-24"
+  },
+  {
+    "check": "semantic_fallback",
+    "http": 206,
+    "reason": "semantic_unavailable"
+  },
+  {
+    "check": "authenticated_admin_access",
+    "http": 200
+  },
+  {
+    "check": "worker_authentication_read_only_nonexistent_job",
+    "unauthenticated": 401,
+    "authenticated": 404
+  },
+  {
+    "check": "sign_in_page",
+    "http": 200,
+    "oauth_completed": false
+  }
+]

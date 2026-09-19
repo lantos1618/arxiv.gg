@@ -1,10 +1,10 @@
 # arXiv.gg — AI implementation brief
 
-Revision: 2.2 · Updated: 2026-09-19 · Original audit: 2026-09-17
+Revision: 2.3 · Updated: 2026-09-19 · Original audit: 2026-09-17
 
 ## Current implementation disposition
 
-The requested September 19 priorities 1–7 are implemented in the application checkout, with scoped local checks. See [IMPLEMENTATION-2026-09-19.md](IMPLEMENTATION-2026-09-19.md) for current evidence and limits, and [IMPLEMENTATION.md](IMPLEMENTATION.md) for historical AXG-001 evidence. AXG-001 retains its locally verified status; AXG-002 through AXG-007 are implemented. AXG-008 has related improvements but remains in progress pending real sign-in/trail validation. No production deployment or production date repair is claimed in these records. The generated route briefs retain the original audit context.
+The requested priorities 1–7 and targeted accessibility changes are deployed on application commit `1ddd5b12339c225f69eb06c7407035d9de380fa7`. [RELEASE-2026-09-19.md](RELEASE-2026-09-19.md) records public acceptance checks, exact images, backups and limits. [IMPLEMENTATION-2026-09-19.md](IMPLEMENTATION-2026-09-19.md) explains the implementation; earlier evidence remains historical. AXG-001 is verified publicly. AXG-002 through AXG-007 retain scoped implemented status with live evidence; this does not certify every research/usability validation goal. AXG-008 remains in progress pending real sign-in/trail validation. The generated route briefs retain the original audit context.
 
 ## Route-based handoff
 

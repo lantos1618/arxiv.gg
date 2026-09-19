@@ -1,0 +1,253 @@
+{
+  "expectedBuild": "1ddd5b1",
+  "startedAt": "2026-09-19T17:26:44.314Z",
+  "checks": [
+    {
+      "name": "home",
+      "path": "/",
+      "width": 320,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 1,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "availability": [
+        {
+          "mode": "semantic",
+          "disabled": true,
+          "label": "🔎\nSemantic · unavailable",
+          "explanation": "Not enabled on this site. Use Quick Search for titles, authors, and keywords."
+        },
+        {
+          "mode": "deep",
+          "disabled": true,
+          "label": "◎\nDeep · unavailable",
+          "explanation": "Not enabled on this site. Signing in does not enable Deep Search."
+        }
+      ],
+      "firstSuggestion": "/abs/1706.03762",
+      "firstResult": "/abs/1706.03762",
+      "layout": {
+        "viewport": 320,
+        "document": 320,
+        "overflow": []
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-home-320.png",
+      "passed": true
+    },
+    {
+      "name": "api",
+      "path": "/api/v1/",
+      "width": 320,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 0,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "contrast": {
+        "normal": {
+          "foreground": "rgb(243, 244, 246)",
+          "background": "rgb(17, 24, 39)",
+          "ratio": 16.119468339438853
+        },
+        "selection": {
+          "foreground": "rgb(17, 24, 39)",
+          "background": "rgb(191, 219, 254)",
+          "ratio": 12.484563858836584
+        }
+      },
+      "keyboardTabs": true,
+      "layout": {
+        "viewport": 320,
+        "document": 320,
+        "overflow": []
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-api-320.png",
+      "passed": true
+    },
+    {
+      "name": "categories",
+      "path": "/categories",
+      "width": 320,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 1,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "subjects": 176,
+      "disciplines": 8,
+      "subjectKeyboard": true,
+      "layout": {
+        "viewport": 320,
+        "document": 320,
+        "overflow": []
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-categories-320.png",
+      "passed": true
+    },
+    {
+      "name": "category",
+      "path": "/category/cs.LG",
+      "width": 320,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 1,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "heading": "Machine Learning",
+      "fetchDates": 200,
+      "layout": {
+        "viewport": 320,
+        "document": 320,
+        "overflow": []
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-category-320.png",
+      "passed": true
+    },
+    {
+      "name": "paper",
+      "path": "/abs/1706.03762",
+      "width": 320,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 1,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "dates": [
+        "2017-06-12",
+        "2023-08-02"
+      ],
+      "relatedCount": 39,
+      "relatedStatus": "39 papers · 3 clusters · embedding map",
+      "fullTitles": true,
+      "relatedKeyboard": true,
+      "layout": {
+        "viewport": 320,
+        "document": 320,
+        "overflow": [
+          {
+            "tag": "g",
+            "id": "",
+            "right": 372
+          },
+          {
+            "tag": "g",
+            "id": "",
+            "right": 367
+          },
+          {
+            "tag": "line",
+            "id": "",
+            "right": 357
+          },
+          {
+            "tag": "line",
+            "id": "",
+            "right": 340
+          },
+          {
+            "tag": "line",
+            "id": "",
+            "right": 336
+          },
+          {
+            "tag": "line",
+            "id": "",
+            "right": 365
+          },
+          {
+            "tag": "line",
+            "id": "",
+            "right": 367
+          },
+          {
+            "tag": "line",
+            "id": "",
+            "right": 325
+          }
+        ]
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-paper-320.png",
+      "passed": true
+    },
+    {
+      "name": "home",
+      "path": "/",
+      "width": 1280,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 1,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "availability": [
+        {
+          "mode": "semantic",
+          "disabled": true,
+          "label": "🔎\nSemantic · unavailable",
+          "explanation": "Not enabled on this site. Use Quick Search for titles, authors, and keywords."
+        },
+        {
+          "mode": "deep",
+          "disabled": true,
+          "label": "◎\nDeep · unavailable",
+          "explanation": "Not enabled on this site. Signing in does not enable Deep Search."
+        }
+      ],
+      "firstSuggestion": "/abs/1706.03762",
+      "firstResult": "/abs/1706.03762",
+      "layout": {
+        "viewport": 1280,
+        "document": 1280,
+        "overflow": []
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-home-1280.png",
+      "passed": true
+    },
+    {
+      "name": "api",
+      "path": "/api/v1/",
+      "width": 1280,
+      "errors": [],
+      "blockedMutations": 0,
+      "blockedAnalytics": 0,
+      "failures": [],
+      "status": 200,
+      "build": "Build 2026-09-19 17:24 UTC · 1ddd5b12339c",
+      "skipLink": true,
+      "contrast": {
+        "normal": {
+          "foreground": "rgb(243, 244, 246)",
+          "background": "rgb(17, 24, 39)",
+          "ratio": 16.119468339438853
+        },
+        "selection": {
+          "foreground": "rgb(17, 24, 39)",
+          "background": "rgb(191, 219, 254)",
+          "ratio": 12.484563858836584
+        }
+      },
+      "keyboardTabs": true,
+      "layout": {
+        "viewport": 1280,
+        "document": 1280,
+        "overflow": []
+      },
+      "screenshot": "/tmp/arxiv-release-1ddd5b1-api-1280.png",
+      "passed": true
+    }
+  ],
+  "finishedAt": "2026-09-19T17:26:58.642Z",
+  "passed": true
+}

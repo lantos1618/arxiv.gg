@@ -71,3 +71,12 @@ Copy this structure into a new dated entry; retain prior entries.
 - Status: AXG-001 remains verified locally; AXG-002–007 proposed -> implemented with scoped local evidence; AXG-008 proposed -> in_progress for related improvements with real sign-in/trail persistence unverified.
 - Details and changed files: [IMPLEMENTATION-2026-09-19.md](IMPLEMENTATION-2026-09-19.md). Final full checks, real commit, any SQL application, deployment and endpoint acceptance must be recorded with their actual outcomes.
 - Companion files: findings.json, llm.md and START-HERE.md current pointers updated; the September 17 implementation record is explicitly historical. Original observations, prior revision entries, generated route briefs/maps and hosted report are preserved.
+
+## 2.3 — 2026-09-19 — Application release and public acceptance
+
+- Deployed application commit `1ddd5b12339c225f69eb06c7407035d9de380fa7` from a clean tested tree; current report is RELEASE-2026-09-19.md.
+- Completed schema/full backups and readable-archive check; preserved exact old image; applied only guarded date migration (UPDATE 3); replaced only app, preserving PostgreSQL.
+- Public/local health, exact-title ranking at limits1/8, all3 reviewed date pairs, explicit Semantic fallback, read-only admin/worker authentication and Google sign-in entry pass.
+- Seven live browser route/viewport cases pass: API16.12:1/selected12.48:1 contrast, keyboard tabs/skiplinks, category names/groups/fetch scopes, 39 full-title map links and keyboard selection, no page overflow or uncaught errors.
+- Status: AXG-001 retains verified status, now with public acceptance; AXG-002–007 implemented with scoped live evidence; AXG-008 remains in progress. No blanket WCAG, corpus-wide date, worker readiness or signed-in persistence claim.
+- Updated current disposition pointers and structured evidence; original observations and separate hosted report preserved.

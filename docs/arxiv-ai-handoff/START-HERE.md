@@ -1,6 +1,6 @@
 # Current disposition — 2026-09-19
 
-Read [IMPLEMENTATION-2026-09-19.md](IMPLEMENTATION-2026-09-19.md) for the completed application batch, local checks, guarded date-repair scope and outstanding release verification. No production deployment is claimed. [IMPLEMENTATION.md](IMPLEMENTATION.md) retains the September 17 AXG-001 assessment and evidence. Current issue status is in [findings.json](findings.json) and [llm.md](llm.md).
+The priority 1–7 batch and targeted accessibility fixes are live on application commit `1ddd5b12339c225f69eb06c7407035d9de380fa7`. Read [RELEASE-2026-09-19.md](RELEASE-2026-09-19.md) for actual release and public acceptance evidence, and [IMPLEMENTATION-2026-09-19.md](IMPLEMENTATION-2026-09-19.md) for changes and limits. [IMPLEMENTATION.md](IMPLEMENTATION.md) retains the September 17 assessment. Current issue status is in [findings.json](findings.json) and [llm.md](llm.md).
 
 The route map, generated route briefs and original handoff instructions below are historical revision-2.0 material. Do not restart their proposed tasks without reading the current disposition. The hosted report is unchanged.
 

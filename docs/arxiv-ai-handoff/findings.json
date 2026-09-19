@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "revision": "2.2",
+  "revision": "2.3",
   "review_date": "2026-09-17",
   "observed_build": "e7f0026adabf",
   "report_url": "https://arxiv-fieldnotes-rubin-draper.lantos.chatgpt.site",
-  "scope": "Original signed-out desktop audit retained. September 19 application batch implements requested priorities 1\u20137 with scoped local checks, including the retained AXG-001 fix. No production deployment or production date repair is claimed. AXG-008 has related copy/return-path improvements but no live sign-in persistence validation. See IMPLEMENTATION-2026-09-19.md for current scope, evidence and release state.",
+  "scope": "Original September 17 observations retained. Requested priorities 1\u20137 and targeted accessibility fixes deployed and publicly checked September 19. See RELEASE-2026-09-19.md for exact commit, scoped evidence and remaining limits. AXG-008 remains in progress pending real sign-in/trail persistence validation.",
   "findings": [
     {
       "id": "AXG-001",
@@ -60,9 +60,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "home",
         "search"
@@ -114,9 +122,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "home",
         "search",
@@ -172,9 +188,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "paper"
       ]
@@ -221,9 +245,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "paper"
       ]
@@ -271,9 +303,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "home"
       ]
@@ -323,9 +363,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "home",
         "category"
@@ -375,9 +423,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "categories",
         "category"
@@ -430,9 +486,17 @@
           "source": "IMPLEMENTATION-2026-09-19.md",
           "deployment": "not deployed",
           "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Live https://arxiv.gg, exact application build 1ddd5b12339c225f69eb06c7407035d9de380fa7",
+          "outcome": "Deployed batch; issue-specific public checks and remaining limits recorded in RELEASE-2026-09-19.md. No blanket WCAG, corpus-wide date or signed-in persistence claim.",
+          "source": "RELEASE-2026-09-19.md",
+          "deployment": "deployed",
+          "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7"
         }
       ],
-      "commit": null,
+      "commit": "1ddd5b12339c225f69eb06c7407035d9de380fa7",
       "route_ids": [
         "paper",
         "login"

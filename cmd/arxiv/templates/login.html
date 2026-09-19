@@ -1,10 +1,10 @@
 {{define "login"}}
 {{template "head" .}}
-<main class="auth-shell">
+<div class="auth-shell">
 	<section class="auth-copy" aria-labelledby="auth-title">
 		<p class="auth-eyebrow">Free arXiv.gg account</p>
 		<h1 id="auth-title">Pick up where your research left off.</h1>
-		<p class="auth-lede">Keep a private trail of papers you opened, search beyond abstracts, and return to useful work without rebuilding the path.</p>
+		<p class="auth-lede">Keep a private trail of papers you opened and return to useful work without rebuilding the path.</p>
 	</section>
 
 	<section class="auth-card" aria-label="Sign in">
@@ -39,15 +39,15 @@
 			</div>
 			<div class="auth-unlock">
 				<span class="auth-unlock-mark" aria-hidden="true">02</span>
-				<div><strong>Search full text</strong><span>Use Deep Search across available paper text, not only titles and abstracts.</span></div>
+				<div><strong>Search full text</strong><span>{{if .SemanticAvailable}}Deep Search can match prepared full-paper text after sign-in. Requests may queue, and coverage varies by paper.{{else}}Deep Search is not enabled on this site. Signing in does not enable it; Quick Search remains available without an account.{{end}}</span></div>
 			</div>
 			<div class="auth-unlock">
 				<span class="auth-unlock-mark" aria-hidden="true">03</span>
-				<div><strong>Discover the next paper</strong><span>Use reading overlap to find relevant work beyond the current citation path.</span></div>
+				<div><strong>Discover the next paper</strong><span>When enough shared reading history is available, find papers other readers opened. Otherwise, see recent community reading.</span></div>
 			</div>
 		</div>
 	</section>
-</main>
+</div>
 
 {{template "foot" .}}
 {{end}}

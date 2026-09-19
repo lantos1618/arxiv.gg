@@ -3,9 +3,92 @@
 	{{if and .Paper (not .LocalMode)}}<span class="site-footer-source">Source files are served from <a href="https://arxiv.org/src/{{.Paper.ID}}" target="_blank" rel="noopener noreferrer">arXiv.org</a> for compliance.</span>{{end}}
 	<span>Build {{.BuildDate}}</span>{{if .BuildCommit}}<span class="site-footer-separator">·</span><span>{{.BuildCommit}}</span>{{end}}
 </footer>
+{{template "accessibility_script" .}}
 {{end}}
 {{define "foot"}}
+</main>
 {{template "build_footer" .}}
 </body>
 </html>
+{{end}}
+
+{{define "accessibility_script"}}
+<script>
+(function() {
+	const tooltip = document.createElement('div');
+	tooltip.id = 'site-help-tooltip';
+	tooltip.className = 'help-tooltip';
+	tooltip.setAttribute('role', 'tooltip');
+	tooltip.hidden = true;
+	document.body.appendChild(tooltip);
+	let active = null;
+	let hideTimer = null;
+
+	function position() {
+		if (!active || tooltip.hidden) return;
+		const rect = active.getBoundingClientRect();
+		const width = tooltip.offsetWidth;
+		const height = tooltip.offsetHeight;
+		const left = Math.max(8, Math.min(rect.left + (rect.width - width) / 2, window.innerWidth - width - 8));
+		const preferredTop = rect.top >= height + 8 ? rect.top - height - 8 : rect.bottom + 8;
+		const top = Math.max(8, Math.min(preferredTop, window.innerHeight - height - 8));
+		tooltip.style.left = left + 'px';
+		tooltip.style.top = top + 'px';
+	}
+
+	function hide() {
+		clearTimeout(hideTimer);
+		if (active) {
+			const descriptions = (active.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== tooltip.id);
+			if (descriptions.length) active.setAttribute('aria-describedby', descriptions.join(' '));
+			else active.removeAttribute('aria-describedby');
+		}
+		active = null;
+		tooltip.hidden = true;
+	}
+
+	function show(target) {
+		if (!target || !target.dataset.help) return;
+		clearTimeout(hideTimer);
+		if (active !== target) {
+			hide();
+			active = target;
+			const descriptions = (active.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+			if (!descriptions.includes(tooltip.id)) descriptions.push(tooltip.id);
+			active.setAttribute('aria-describedby', descriptions.join(' '));
+		}
+		tooltip.textContent = target.dataset.help;
+		tooltip.hidden = false;
+		position();
+	}
+
+	function scheduleHide() {
+		clearTimeout(hideTimer);
+		hideTimer = setTimeout(() => {
+			if (!active || active.contains(document.activeElement) || active.matches(':hover') || tooltip.matches(':hover')) return;
+			hide();
+		}, 150);
+	}
+
+	document.addEventListener('pointerover', event => {
+		if (tooltip.contains(event.target)) { clearTimeout(hideTimer); return; }
+		show(event.target.closest('[data-help]'));
+	});
+	document.addEventListener('pointerout', scheduleHide);
+	document.addEventListener('focusin', event => {
+		const target = event.target.closest('[data-help]');
+		if (target) show(target);
+		else hide();
+	});
+	document.addEventListener('focusout', scheduleHide);
+	document.addEventListener('keydown', event => {
+		if (event.key === 'Escape' && !tooltip.hidden) {
+			hide();
+			event.preventDefault();
+		}
+	});
+	window.addEventListener('resize', position);
+	window.addEventListener('scroll', position, true);
+})();
+</script>
 {{end}}

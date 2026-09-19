@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Search searches papers by title/abstract text using full-text search.
@@ -24,51 +25,40 @@ func (c *Cache) Search(ctx context.Context, query, category string, limit int) (
 }
 
 // QuickSearch does a fast multi-field search for dropdown/autocomplete.
-// Searches ID, title, authors, and categories with LIKE matching.
+// Exact IDs and titles precede broader matches, with stable ordering across limits.
 func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Paper, int, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 
-	query = strings.TrimSpace(query)
+	query = strings.Join(strings.Fields(query), " ")
 	if query == "" {
 		return nil, 0, nil
 	}
 
 	if c.dbType == DBTypePostgres {
+		// Bound all paths, including author lookup and the legacy ILIKE fallback.
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
 		return c.quickSearchPostgres(ctx, query, limit)
 	}
 
 	likePattern := "%" + query + "%"
 
-	// Use raw SQL for proper LIKE and ordering
-	var sql string
-	var countSQL string
-	var args []any
-
-	if c.dbType == DBTypePostgres {
-		countSQL = `SELECT COUNT(*) FROM papers WHERE id ILIKE $1 OR title ILIKE $1 OR authors ILIKE $1 OR categories ILIKE $1`
-		sql = `SELECT * FROM papers
-			WHERE id ILIKE ? OR title ILIKE ? OR authors ILIKE ? OR categories ILIKE ?
-			ORDER BY CASE WHEN id ILIKE ? THEN 0 WHEN title ILIKE ? THEN 1 ELSE 2 END, created DESC
-			LIMIT ?`
-		args = []any{likePattern, likePattern, likePattern, likePattern, likePattern, likePattern, limit}
-	} else {
-		countSQL = `SELECT COUNT(*) FROM papers WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?`
-		sql = `SELECT * FROM papers
-			WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?
-			ORDER BY CASE WHEN id LIKE ? THEN 0 WHEN title LIKE ? THEN 1 ELSE 2 END, created DESC
-			LIMIT ?`
-		args = []any{likePattern, likePattern, likePattern, likePattern, likePattern, likePattern, limit}
-	}
+	sql := `SELECT * FROM papers
+		WHERE id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?
+		ORDER BY CASE WHEN id = ? THEN 0 WHEN lower(trim(title)) = ? THEN 1
+			WHEN id LIKE ? THEN 2 WHEN title LIKE ? THEN 3 ELSE 4 END,
+			created DESC, id ASC
+		LIMIT ?`
+	args := []any{likePattern, likePattern, likePattern, likePattern, query, strings.ToLower(query), likePattern, likePattern, limit}
 
 	// Get count
 	var total int64
-	sqlDB, _ := c.db.DB()
-	if c.dbType == DBTypePostgres {
-		sqlDB.QueryRowContext(ctx, countSQL, likePattern).Scan(&total)
-	} else {
-		sqlDB.QueryRowContext(ctx, countSQL, likePattern, likePattern, likePattern, likePattern).Scan(&total)
+	if err := c.db.WithContext(ctx).Model(&Paper{}).
+		Where("id LIKE ? OR title LIKE ? OR authors LIKE ? OR categories LIKE ?", likePattern, likePattern, likePattern, likePattern).
+		Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
 
 	// Get results
@@ -82,7 +72,47 @@ func (c *Cache) quickSearchPostgres(ctx context.Context, query string, limit int
 	if papers, total, ok, err := c.quickSearchPostgresID(ctx, query, limit); ok || err != nil {
 		return papers, total, err
 	}
-	if looksLikeAuthorSearchQuery(query) {
+	// Rank before LIMIT: reranking a sampled or truncated candidate set can miss
+	// the exact title entirely. Count in the same snapshot as the returned rows.
+	var rows []quickSearchRow
+	var stopwordTitle bool
+	err := c.withPostgresQuickSearch(ctx, func(tx *gorm.DB) error {
+		if err := tx.Raw(`
+			SELECT id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded,
+			       count(*) OVER() AS total
+			FROM papers
+			WHERE search_vector @@ plainto_tsquery('english', ?)
+			ORDER BY CASE WHEN lower(trim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) = ? THEN 0 ELSE 1 END,
+			         ts_rank(search_vector, plainto_tsquery('english', ?)) DESC,
+			         created DESC NULLS LAST, id ASC
+			LIMIT ?
+		`, query, strings.ToLower(query), query, limit).Scan(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 && looksLikeAuthorSearchQuery(query) {
+			// Stopword-only titles have no full-text representation. Check their
+			// exact match in the fallback before interpreting title case as a name.
+			return tx.Raw("SELECT numnode(plainto_tsquery('english', ?)) = 0", query).Scan(&stopwordTitle).Error
+		}
+		return nil
+	})
+	if err != nil {
+		// A timeout or cancellation must not start a more expensive table scan.
+		return nil, 0, err
+	}
+	var fallbackPapers []Paper
+	var fallbackTotal int
+	if stopwordTitle {
+		fallbackPapers, fallbackTotal, err = c.quickSearchPostgresFallback(ctx, query, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(fallbackPapers) > 0 && strings.EqualFold(strings.Join(strings.Fields(fallbackPapers[0].Title), " "), query) {
+			return fallbackPapers, fallbackTotal, nil
+		}
+	}
+	exactTitle := len(rows) > 0 && strings.EqualFold(strings.Join(strings.Fields(rows[0].Title), " "), query)
+	if !exactTitle && looksLikeAuthorSearchQuery(query) {
 		total, err := c.CountPapersByAuthorResult(ctx, query)
 		if err != nil {
 			return nil, 0, fmt.Errorf("count author search results: %w", err)
@@ -93,34 +123,47 @@ func (c *Cache) quickSearchPostgres(ctx context.Context, query string, limit int
 		}
 	}
 
-	fetchLimit := limit + 1
-	var papers []Paper
-	err := c.withPostgresSearchLimit(ctx, query, func(tx *gorm.DB) error {
-		return tx.Raw(`
-			SELECT id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded,
-			       ts_rank(search_vector, plainto_tsquery('english', ?)) AS rank
-			FROM papers
-			WHERE search_vector @@ plainto_tsquery('english', ?)
-			ORDER BY rank DESC, created DESC NULLS LAST
-			LIMIT ?
-		`, query, query, fetchLimit).Scan(&papers).Error
+	if len(rows) == 0 {
+		if stopwordTitle {
+			return fallbackPapers, fallbackTotal, nil
+		}
+		return c.quickSearchPostgresFallback(ctx, query, limit)
+	}
+	papers, total := quickSearchPapersFromRows(rows)
+	return papers, total, nil
+}
+
+type quickSearchRow struct {
+	Paper `gorm:"embedded"`
+	Total int64
+}
+
+func quickSearchPapersFromRows(rows []quickSearchRow) ([]Paper, int) {
+	papers := make([]Paper, len(rows))
+	for i, row := range rows {
+		papers[i] = row.Paper
+	}
+	if len(rows) == 0 {
+		return papers, 0
+	}
+	return papers, int(rows[0].Total)
+}
+
+func (c *Cache) withPostgresQuickSearch(ctx context.Context, fn func(*gorm.DB) error) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A nonzero GIN fuzzy limit chooses a random subset before ranking, and
+		// can omit known titles or disagree between suggestions and submission.
+		if err := tx.Exec("SET LOCAL gin_fuzzy_search_limit = 0").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("SET LOCAL statement_timeout = '5s'").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("SET LOCAL jit = off").Error; err != nil {
+			return err
+		}
+		return fn(tx)
 	})
-	if len(papers) == 0 {
-		return c.quickSearchPostgresFallback(ctx, query, limit)
-	}
-	if err != nil {
-		return c.quickSearchPostgresFallback(ctx, query, limit)
-	}
-	var total int64
-	if err := c.withPostgresSearchLimit(ctx, query, func(tx *gorm.DB) error {
-		return tx.Raw(`SELECT count(*) FROM papers WHERE search_vector @@ plainto_tsquery('english', ?)`, query).Scan(&total).Error
-	}); err != nil {
-		return c.quickSearchPostgresFallback(ctx, query, limit)
-	}
-	if len(papers) > limit {
-		papers = papers[:limit]
-	}
-	return papers, int(total), nil
 }
 
 func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit int) ([]Paper, int, bool, error) {
@@ -143,7 +186,9 @@ func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit i
 	var papers []Paper
 	err := matching.
 		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded").
-		Order("id DESC").
+		Clauses(clause.OrderBy{Expression: clause.Expr{
+			SQL: "CASE WHEN id = ? THEN 0 ELSE 1 END, id DESC", Vars: []any{query},
+		}}).
 		Limit(limit).
 		Find(&papers).Error
 	return papers, int(total), true, err
@@ -151,19 +196,21 @@ func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit i
 
 func (c *Cache) quickSearchPostgresFallback(ctx context.Context, query string, limit int) ([]Paper, int, error) {
 	likePattern := "%" + query + "%"
-	matching := c.db.WithContext(ctx).Model(&Paper{}).
-		Where("id ILIKE ? OR title ILIKE ? OR authors ILIKE ? OR categories ILIKE ?", likePattern, likePattern, likePattern, likePattern)
-	var total int64
-	if err := matching.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	var papers []Paper
-	err := matching.
-		Select("id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded").
-		Order("created DESC NULLS LAST").
-		Limit(limit).
-		Find(&papers).Error
-	return papers, int(total), err
+	var rows []quickSearchRow
+	err := c.withPostgresQuickSearch(ctx, func(tx *gorm.DB) error {
+		return tx.Raw(`
+			SELECT id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded,
+			       count(*) OVER() AS total
+			FROM papers
+			WHERE id ILIKE ? OR regexp_replace(title, '[[:space:]]+', ' ', 'g') ILIKE ? OR authors ILIKE ? OR categories ILIKE ?
+			ORDER BY CASE WHEN id = ? THEN 0
+			         WHEN lower(trim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) = ? THEN 1 ELSE 2 END,
+			         created DESC NULLS LAST, id ASC
+			LIMIT ?
+		`, likePattern, likePattern, likePattern, likePattern, query, strings.ToLower(query), limit).Scan(&rows).Error
+	})
+	papers, total := quickSearchPapersFromRows(rows)
+	return papers, total, err
 }
 
 func looksLikePaperIDPrefix(query string) bool {
@@ -386,13 +433,13 @@ func (c *Cache) searchByAuthorUncached(ctx context.Context, author string, limit
 		if flipped != "" {
 			return query.
 				Where("authors "+likeOp+" ? OR authors "+likeOp+" ?", "%"+author+"%", "%"+flipped+"%").
-				Order("created DESC").
+				Order("created DESC, id ASC").
 				Limit(limit).
 				Find(&papers).Error
 		}
 		return query.
 			Where("authors "+likeOp+" ?", "%"+author+"%").
-			Order("created DESC").
+			Order("created DESC, id ASC").
 			Limit(limit).
 			Find(&papers).Error
 	})

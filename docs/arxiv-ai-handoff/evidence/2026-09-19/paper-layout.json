@@ -1,0 +1,41 @@
+{
+  "layout": {
+    "width": 320,
+    "scrollWidth": 320,
+    "overflow": []
+  },
+  "errors": [],
+  "skipLinkState": {
+    "focused": false,
+    "activeElement": "<button type=\"button\" class=\"graph-btn\" aria-label=\"Select paper: Understanding how attention changes the way models process sequences: a deliberately long title for narrow-screen reading\" aria-pressed=\"true\">Select paper</button>",
+    "top": -89.5625,
+    "bottom": -40.78125,
+    "transform": "matrix(1, 0, 0, 1, 0, -97.5625)",
+    "scrollY": 1585
+  },
+  "noD3": true,
+  "relatedPaperCount": 2,
+  "keyboardSelection": true,
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/abs/1706.03762"
+    },
+    {
+      "method": "GET",
+      "path": "/npm/d3@7.9.0/dist/d3.min.js"
+    },
+    {
+      "method": "GET",
+      "path": "/paper/1706.03762/graph"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/papers/1706.03762/similar"
+    },
+    {
+      "method": "GET",
+      "path": "/npm/mathjax@3.2.2/es5/tex-chtml.js"
+    }
+  ]
+}

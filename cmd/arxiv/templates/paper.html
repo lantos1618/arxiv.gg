@@ -117,7 +117,7 @@
 			.nav-button:hover { text-decoration: underline; }
 			.site-footer { margin: 2.5rem 0 0; padding-top: 1rem; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 0.78rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
 			.site-footer-source { flex-basis: 100%; }
-			.site-footer-separator { color: #94a3b8; }
+			.site-footer-separator { color: #475569; }
 		.meta { font-size: 0.875rem; color: #64748b; margin-bottom: 0.5rem; min-height: 1.5rem; }
 		.meta code { font-family: monospace; background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 3px; }
 			.authors { margin-bottom: 0.5rem; }
@@ -223,6 +223,13 @@
 			.semantic-map-label { fill: #1e293b; font-size: 0.68rem; font-weight: 600; paint-order: stroke; stroke: rgba(255,255,255,0.85); stroke-width: 3px; pointer-events: none; }
 			.semantic-category-label { fill: #475569; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; pointer-events: none; }
 
+		.map-explanation { color: #475569; font-size: 0.875rem; }
+		.semantic-paper-list li { display: grid; gap: .35rem; cursor: default; }
+		.semantic-paper-list li[aria-current="true"] { background: #eff6ff; border: 2px solid #1d4ed8; }
+		.semantic-paper-list button { justify-self: start; min-height: 32px; }
+		.semantic-map-node.selected { stroke: #111827; stroke-width: 4px; }
+		.semantic-list-panel { overflow-wrap: anywhere; }
+		.graph-container svg { max-width: 100%; }
 		/* References list - contain layout to prevent CLS on dynamic updates */
 		.refs { list-style: none; padding: 0; contain: layout style; min-height: 100px; }
 		.refs li { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; font-size: 0.875rem; border-radius: 4px; margin-bottom: 2px; cursor: pointer; transition: background 0.15s, transform 0.1s; min-height: 2.5rem; contain: layout style; }
@@ -230,10 +237,10 @@
 		.refs li.transitioning { view-transition-name: paper-hero; }
 		.ref-id { font-family: monospace; color: #64748b; }
 		.ref-title { color: #1e293b; font-weight: 500; }
-		.ref-meta { font-size: 0.75rem; color: #94a3b8; }
-		.ref-cached { color: #059669; }
-		.ref-uncached { color: #94a3b8; font-style: italic; }
-		.ref-date { color: #94a3b8; font-size: 0.8rem; }
+		.ref-meta { font-size: 0.75rem; color: #475569; }
+		.ref-cached { color: #047857; }
+		.ref-uncached { color: #475569; font-style: italic; }
+		.ref-date { color: #475569; font-size: 0.8rem; }
 		.badge { display: inline-block; font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 2px; margin-left: 0.25rem; }
 		.badge-src { background: #dcfce7; color: #166534; }
 		.badge-ref { background: #dbeafe; color: #1e40af; }
@@ -298,9 +305,9 @@
 			overflow-y: auto;
 		}
 		.terminal-line { margin: 0.25rem 0; }
-		.terminal-line.prompt::before { content: "$ "; color: #059669; }
+		.terminal-line.prompt::before { content: "$ "; color: #047857; }
 		.terminal-line.output { color: #6b7280; }
-		.terminal-line.success { color: #059669; }
+		.terminal-line.success { color: #047857; }
 		.terminal-line.error { color: #dc2626; }
 		.terminal-line.info { color: #2563eb; }
 		.terminal-cursor {
@@ -327,13 +334,18 @@
 			.reader-cta .btn { width: 100%; justify-content: center; }
 		}
 	</style>
+{{template "accessibility_styles" .}}
 </head>
 <body>
 {{template "nav" .}}
+<main id="main-content" tabindex="-1">
 
 <h1 data-mathjax>{{.Paper.Title}}</h1>
 <div class="meta">
-	<code class="helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.Paper.ID}}</code> · <span class="helpable" tabindex="0" data-help="Original arXiv submission date.">{{.Paper.Created.Format "2006-01-02"}}</span> · <span class="helpable" tabindex="0" data-help="Number of cached papers that cite this one.">Cited by {{.CitedByCount}}</span><span id="embedding-status">{{if .HasEmbedding}} · <span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠 ready</span>{{end}}</span>
+	<code>{{.Paper.ID}}</code>
+	{{if .Paper.DatesNeedReview}}<span class="paper-date-note"> · Submission dates need verification. <a href="{{.Paper.AbstractURL}}">View arXiv history</a>.</span>
+	{{else}}<span> · First submitted <time datetime="{{.Paper.Created.Format "2006-01-02"}}">{{.Paper.Created.Format "2006-01-02"}}</time></span>{{if not .Paper.Updated.IsZero}}<span> · Latest revision <time datetime="{{.Paper.Updated.Format "2006-01-02"}}">{{.Paper.Updated.Format "2006-01-02"}}</time></span>{{end}}{{end}}
+	<span> · {{.CitedByCount}} citations in our index</span><span id="embedding-status">{{if .HasEmbedding}} · <span class="badge badge-embed helpable" tabindex="0" data-help="A semantic profile is stored for this paper. Loading related work still depends on available data and services.">🧠 prepared</span>{{end}}</span>
 </div>
 <div class="authors">{{range $i, $a := parseAuthors .Paper.Authors}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}</div>
 <div class="categories">{{range $i, $c := parseCategories .Paper.Categories}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
@@ -352,7 +364,7 @@
 <aside class="reader-cta" aria-labelledby="reader-cta-title">
 	<div>
 		<h2 id="reader-cta-title">Keep this paper in your research trail</h2>
-		<p>Create a free account to return to papers you opened, use Deep Search, and discover related work from your reading path.</p>
+		<p>Create a free account to return to papers you opened and continue your research trail. Deep Search requires sign-in and is available when the service is enabled.</p>
 	</div>
 	<a class="btn" href="/login?next={{urlquery (paperPath .Paper.ID)}}">Continue free</a>
 </aside>
@@ -374,6 +386,7 @@
 </div>
 
 <h2>Citation Graph</h2>
+<p class="map-explanation">References are papers this paper cites. Citing papers cite this paper. {{if .PaperList}}Browse the <a href="#references-heading">reference and citing lists</a> below for full titles.{{else}}No reference or citing-paper list is cached yet.{{end}}</p>
 <div class="graph-container" id="graph-container">
 	<div class="graph-controls">
 		<button class="graph-btn" id="reset-btn" data-help="Reset zoom and graph position." disabled>Reset</button>
@@ -389,7 +402,8 @@
 </div>
 <div class="graph-tooltip" id="tooltip"></div>
 
-<h2 class="helpable" tabindex="0" data-help="Maps this paper against nearby papers using abstract-level semantic similarity.">Related Work Map</h2>
+<h2 id="related-work-heading">Related Work Map</h2>
+<p class="map-explanation">These papers discuss similar ideas based on their titles and abstracts. Similarity does not establish a citation relationship. <a href="#related-papers-list">Browse full titles below</a>.</p>
 <div class="semantic-map-toolbar">
 	<button class="graph-btn" id="semantic-map-load-btn" type="button" data-help="{{if .HasEmbedding}}Reload papers that discuss closely related ideas.{{else}}Show papers that discuss closely related ideas.{{end}}" {{if not .HasEmbedding}}disabled{{end}}>Find Similar</button>
 	<span class="semantic-map-status helpable" id="semantic-map-status" tabindex="0" data-help="{{if .HasEmbedding}}arXiv.gg is loading the related-work map automatically.{{else}}Related-work maps need the paper prepared first.{{end}}" aria-live="polite">{{if .HasEmbedding}}Loading map...{{else}}Prepare paper first{{end}}</span>
@@ -397,9 +411,15 @@
 <div class="graph-container semantic-map-container" id="semantic-map-container">
 	<p class="semantic-map-status">{{if .HasEmbedding}}Loading related work map...{{else}}Prepare this paper, then map nearby papers.{{end}}</p>
 </div>
+<div class="semantic-list-panel" aria-labelledby="related-list-heading">
+	<h3 id="related-list-heading">Related papers</h3>
+	<p id="semantic-selected" role="status">Select a paper to highlight it on the map, or follow its title to read it.</p>
+	<ul class="refs semantic-paper-list" id="related-papers-list" tabindex="-1"></ul>
+</div>
 
 {{if .AlsoViewed}}
 <h2>Readers Also Viewed</h2>
+<p class="map-explanation">Reading overlap can be based on very few readers; it is not a measure of scientific relevance.</p>
 <ul class="refs">
 {{range .AlsoViewed}}
 	<li>
@@ -418,7 +438,7 @@
 {{range .PaperList}}{{if .IsRef}}
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
-	{{if .Cached}}<a class="ref-title" href="{{paperPath .ID}}" data-mathjax>{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
+	{{if .Cached}}<a class="ref-title" href="{{paperPath .ID}}" data-mathjax>{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} citations in our index</span>{{end}}
 		{{else}}<span class="ref-uncached">Metadata not cached</span> <span class="ref-date">({{arxivIDToDate .ID}})</span> <a href="{{paperPath .ID}}">[open]</a>{{end}}
 </li>
 {{end}}{{end}}
@@ -429,7 +449,7 @@
 {{range .PaperList}}{{if .IsCiting}}
 <li data-id="{{.ID}}">
 	<span class="ref-id">{{.ID}}</span>
-	<a class="ref-title" href="{{paperPath .ID}}" data-mathjax>{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} cites</span>{{end}}
+	<a class="ref-title" href="{{paperPath .ID}}" data-mathjax>{{.Title}}</a> <span class="ref-date">({{arxivIDToDate .ID}})</span>{{if .Citations}} <span class="ref-meta">{{.Citations}} citations in our index</span>{{end}}
 </li>
 {{end}}{{end}}
 </ul>
@@ -456,6 +476,15 @@
 	let semanticSimulation, semanticSvg, semanticMapResults = [], semanticMapData = null, semanticMapModel = '';
 	let semanticMapLoaded = false;
 	let semanticMapLoading = false;
+	const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	function settleGraph(sim) {
+		sim.alphaDecay(0.08);
+		if (reducedMotion) {
+			sim.stop().tick(120);
+			const render = sim.on('tick');
+			if (render) render();
+		}
+	}
 
 	// Optional auto-fetch for PDF when user opts in
 	if (!pdfDownloaded) {
@@ -603,6 +632,10 @@
 					if (graphStatus) graphStatus.textContent = 'No cached citation relationships are available for this paper.';
 					return;
 				}
+				if (typeof d3 === 'undefined') {
+					if (graphStatus) graphStatus.textContent = 'The interactive graph is unavailable. Use the reference and citing-paper lists below.';
+					return;
+				}
 				if (graphStatus) graphStatus.remove();
 				document.getElementById('reset-btn').disabled = false;
 				document.getElementById('fullscreen-btn').disabled = false;
@@ -733,7 +766,7 @@
 
 				nodes.on('mouseover', (e, d) => {
 					tooltip.style.display = 'block';
-					tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' + escapeHtml(d.title) + '<br>' + escapeHtml(d.year) + ' · ' + escapeHtml(d.citations) + ' citations';
+					tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' + escapeHtml(d.title) + '<br>' + escapeHtml(d.year) + ' · ' + escapeHtml(d.citations) + ' citations in our index';
 					highlightNode(d.id, true);
 					document.querySelectorAll('.refs li[data-id="' + d.id + '"]').forEach(el => el.style.background = '#eff6ff');
 				});
@@ -754,6 +787,7 @@
 							 .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
 						nodes.attr('cx', d => d.x).attr('cy', d => d.y);
 					});
+					settleGraph(simulation);
 				})
 			.catch(err => {
 				const graphStatus = document.getElementById('citation-graph-status');
@@ -796,7 +830,7 @@
 					const datePart = dateStr ? ' <span class="ref-date">(' + dateStr + ')</span>' : '';
 					const paperURL = encodeURI('/abs/' + r.id);
 					if (r.hasTitle) {
-						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <a class="ref-title" href="' + paperURL + '" data-mathjax>' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + escapeHtml(r.citedBy) + ' cites</span>' : '');
+						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <a class="ref-title" href="' + paperURL + '" data-mathjax>' + escapeHtml(r.title) + '</a>' + datePart + (r.citedBy ? ' <span class="ref-meta">' + escapeHtml(r.citedBy) + ' citations in our index</span>' : '');
 					} else {
 						li.innerHTML = '<span class="ref-id">' + escapeHtml(r.id) + '</span> <span class="ref-uncached">Metadata not cached</span>' + datePart + ' <a href="' + paperURL + '">[open]</a>';
 					}
@@ -878,7 +912,7 @@
 			if (semanticSimulation) semanticSimulation.stop();
 			semanticMapContainer.innerHTML = '';
 
-			const width = Math.max(semanticMapContainer.clientWidth, 320);
+			const width = Math.max(semanticMapContainer.clientWidth, 240);
 			const height = Math.max(semanticMapContainer.clientHeight, 320);
 			const rawPoints = Array.isArray(mapData.points) ? mapData.points : [];
 			const rawLinks = Array.isArray(mapData.links) ? mapData.links : [];
@@ -940,7 +974,8 @@
 				.append('svg')
 				.attr('width', width)
 				.attr('height', height)
-				.attr('viewBox', `0 0 ${width} ${height}`);
+				.attr('viewBox', `0 0 ${width} ${height}`)
+				.attr('aria-hidden', 'true');
 
 			const mapLayer = semanticSvg.append('g');
 			semanticSvg.call(d3.zoom()
@@ -977,7 +1012,7 @@
 
 			const labelSelection = mapLayer.append('g')
 				.selectAll('text')
-				.data(mapNodes.filter(d => d.anchor || d.rank <= 14), d => d.id)
+				.data(mapNodes.filter(d => d.anchor), d => d.id)
 				.join('text')
 					.attr('class', 'semantic-map-label')
 					.attr('text-anchor', 'middle')
@@ -1001,10 +1036,11 @@
 				}));
 
 			nodeSelection.on('click', (event, d) => {
-				navigateWithTransition(event.target, encodeURI('/abs/' + d.id));
+				selectRelatedPaper(d.id, true);
 			});
 
 			nodeSelection.on('mouseover', (event, d) => {
+				selectRelatedPaper(d.id, false);
 				tooltip.style.display = 'block';
 				const score = d.anchor ? 'anchor paper' : Math.round(d.similarity * 1000) / 10 + '% similar';
 				tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' +
@@ -1042,12 +1078,75 @@
 							.attr('y', d => d.y);
 				});
 
+			settleGraph(semanticSimulation);
+			if (relatedListPapers.has(selectedRelatedID)) selectRelatedPaper(selectedRelatedID, false);
 			const relatedCount = Math.max(0, mapNodes.length - 1);
-			setSemanticMapStatus(`${relatedCount} papers · ${visibleClusters.length} clusters · embedding map`, 'Semantic neighbors grouped by topic; click a point to open that paper.');
+			setSemanticMapStatus(`${relatedCount} papers · ${visibleClusters.length} clusters · embedding map`, 'Semantic neighbors grouped by topic; select a point to find its full title in the list below.');
 			semanticMapLoaded = true;
 		}
 
-		function renderSemanticMap(results, modelName, mapData) {
+
+		let relatedListPapers = new Map();
+		let selectedRelatedID = '';
+		function selectRelatedPaper(id, focusList) {
+			const paper = relatedListPapers.get(id);
+			if (!paper) return;
+			selectedRelatedID = id;
+			const list = document.getElementById('related-papers-list');
+			Array.from(list.children).forEach(row => {
+				const selected = row.dataset.paperId === id;
+				row.setAttribute('aria-current', String(selected));
+				const button = row.querySelector('button');
+				if (button) button.setAttribute('aria-pressed', String(selected));
+				if (selected && focusList && button) button.focus({preventScroll: false});
+			});
+			document.getElementById('semantic-selected').textContent = paper.title + ' — related by title and abstract similarity.';
+			if (semanticSvg) semanticSvg.selectAll('.semantic-map-node').classed('selected', d => d.id === id);
+		}
+
+		function renderRelatedPaperList(results, mapData) {
+			const entries = [...(mapData?.points || []), ...(results || [])];
+			relatedListPapers = new Map();
+			entries.forEach(entry => {
+				const paper = entry.paper || entry.Paper || {};
+				const id = entry.paperId || entry.PaperID || paperField(paper, 'ID', 'id');
+				if (!id || id === paperID || relatedListPapers.has(id)) return;
+				relatedListPapers.set(id, {id, title: entry.title || entry.Title || paperField(paper, 'Title', 'title', id)});
+			});
+			const list = document.getElementById('related-papers-list');
+			list.replaceChildren();
+			relatedListPapers.forEach(paper => {
+				const row = document.createElement('li');
+				row.dataset.paperId = paper.id;
+				const link = document.createElement('a');
+				link.className = 'ref-title';
+				link.href = encodeURI('/abs/' + paper.id);
+				link.textContent = paper.title;
+				const relation = document.createElement('span');
+				relation.className = 'ref-meta';
+				relation.textContent = paper.id + ' · Similar topic';
+				const button = document.createElement('button');
+				button.type = 'button';
+				button.className = 'graph-btn';
+				button.textContent = 'Select paper';
+				button.setAttribute('aria-label', 'Select paper: ' + paper.title);
+				button.setAttribute('aria-pressed', 'false');
+				button.addEventListener('click', () => selectRelatedPaper(paper.id, false));
+				row.append(link, relation, button);
+				list.appendChild(row);
+			});
+			if (!relatedListPapers.size) document.getElementById('semantic-selected').textContent = 'No related papers available yet.';
+			else if (relatedListPapers.has(selectedRelatedID)) selectRelatedPaper(selectedRelatedID, false);
+			else document.getElementById('semantic-selected').textContent = relatedListPapers.size + ' related papers. Select a title to read the paper.';
+		}
+
+		function renderSemanticMap(results, modelName, mapData, preserveList = false) {
+			if (!preserveList) renderRelatedPaperList(results, mapData);
+			if (typeof d3 === 'undefined') {
+				semanticMapContainer.innerHTML = '<p class="semantic-map-status">The interactive map is unavailable. All related papers are listed below.</p>';
+				setSemanticMapStatus('Related papers loaded');
+				return;
+			}
 			if (mapData && Array.isArray(mapData.points) && mapData.points.length) {
 				renderProjectedSemanticMap(mapData, modelName);
 				return;
@@ -1057,7 +1156,7 @@
 			if (semanticSimulation) semanticSimulation.stop();
 			semanticMapContainer.innerHTML = '';
 
-			const width = Math.max(semanticMapContainer.clientWidth, 320);
+			const width = Math.max(semanticMapContainer.clientWidth, 240);
 			const height = Math.max(semanticMapContainer.clientHeight, 320);
 			const currentTitle = document.querySelector('h1')?.textContent || paperID;
 			const currentCategory = primaryCategory("{{.Paper.Categories}}");
@@ -1117,7 +1216,8 @@
 				.append('svg')
 				.attr('width', width)
 				.attr('height', height)
-				.attr('viewBox', `0 0 ${width} ${height}`);
+				.attr('viewBox', `0 0 ${width} ${height}`)
+				.attr('aria-hidden', 'true');
 
 			const mapLayer = semanticSvg.append('g');
 			semanticSvg.call(d3.zoom()
@@ -1153,7 +1253,7 @@
 
 			const labelSelection = mapLayer.append('g')
 				.selectAll('text')
-				.data(mapNodes.filter(d => d.anchor || d.rank <= 10), d => d.id)
+				.data(mapNodes.filter(d => d.anchor), d => d.id)
 				.join('text')
 					.attr('class', 'semantic-map-label')
 					.attr('text-anchor', 'middle')
@@ -1177,11 +1277,11 @@
 				}));
 
 			nodeSelection.on('click', (event, d) => {
-				const url = encodeURI('/abs/' + d.id);
-				navigateWithTransition(event.target, url);
+				selectRelatedPaper(d.id, true);
 			});
 
 			nodeSelection.on('mouseover', (event, d) => {
+				selectRelatedPaper(d.id, false);
 				tooltip.style.display = 'block';
 				const score = d.anchor ? 'anchor' : Math.round(d.similarity * 1000) / 10 + '% similar';
 				tooltip.innerHTML = '<strong>' + escapeHtml(d.id) + '</strong><br>' + escapeHtml(shortTitle(d.title, 120)) + '<br>' + escapeHtml(d.category) + ' · ' + escapeHtml(score);
@@ -1216,7 +1316,9 @@
 							.attr('y', d => d.y);
 				});
 
-			setSemanticMapStatus(`${resultNodes.length} related papers`, 'Semantic neighbors for this paper; click a point to open that paper.');
+			settleGraph(semanticSimulation);
+			if (relatedListPapers.has(selectedRelatedID)) selectRelatedPaper(selectedRelatedID, false);
+			setSemanticMapStatus(`${resultNodes.length} related papers`, 'Semantic neighbors for this paper; select a point to find its full title in the list below.');
 			semanticMapLoaded = true;
 		}
 
@@ -1228,6 +1330,8 @@
 			}
 
 			semanticMapLoading = true;
+			if (semanticSimulation) semanticSimulation.stop();
+			semanticMapLoaded = false;
 			setSimilarButtonsDisabled(true);
 			semanticMapContainer.innerHTML = '<p class="semantic-map-status">Mapping related papers...</p>';
 			setSemanticMapStatus('Loading...', 'Looking for nearby papers with prepared semantic profiles.');
@@ -1241,14 +1345,16 @@
 				semanticMapResults = data.data?.results || [];
 				semanticMapData = data.data?.map || null;
 				semanticMapModel = data.data?.model || '';
-				if (!semanticMapResults.length) {
+				if (!semanticMapResults.length && !semanticMapData?.points?.length) {
+					renderRelatedPaperList([], null);
 					semanticMapContainer.innerHTML = '<p class="semantic-map-status">No related prepared papers found yet.</p>';
 					setSemanticMapStatus('No matches', 'No prepared neighboring papers were returned for this paper yet.');
 					return;
 				}
 				renderSemanticMap(semanticMapResults, semanticMapModel, semanticMapData);
 			} catch (err) {
-				semanticMapContainer.innerHTML = '<p class="semantic-map-status">Could not load related papers.</p>';
+				semanticMapContainer.innerHTML = '<p class="semantic-map-status">Could not load related papers. Use Find Similar to retry.</p>';
+				document.getElementById('semantic-selected').textContent = 'Related papers could not be refreshed. Previously loaded papers, if any, remain below.';
 				setSemanticMapStatus(err.message, 'The map did not load. Use Find Similar to try again.');
 			} finally {
 				semanticMapLoading = false;
@@ -1312,8 +1418,8 @@
 	function markPaperPrepared() {
 		hasExistingEmbedding = true;
 		const status = document.getElementById('embedding-status');
-		if (status && !status.textContent.includes('ready')) {
-			status.innerHTML = ' · <span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠 ready</span>';
+		if (status && !status.textContent.includes('prepared')) {
+			status.innerHTML = ' · <span class="badge badge-embed helpable" tabindex="0" data-help="A semantic profile is stored for this paper. Loading related work still depends on available data and services.">🧠 prepared</span>';
 		}
 		embeddingBtn.innerHTML = '<i class="btn-icon" aria-hidden="true">🧠</i> Refresh Paper';
 		embeddingBtn.setAttribute('aria-label', 'Refresh this paper for related-work search');
@@ -1380,7 +1486,7 @@
 
 		if (findSimilarBtn) {
 			findSimilarBtn.addEventListener('click', () => {
-				semanticMapContainer?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+				semanticMapContainer?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
 				loadSemanticMap();
 			});
 		}
@@ -1403,8 +1509,8 @@
 		}
 
 		window.addEventListener('resize', () => {
-			if (semanticMapLoaded && semanticMapResults.length) {
-				renderSemanticMap(semanticMapResults, semanticMapModel, semanticMapData);
+			if (semanticMapLoaded && (semanticMapResults.length || semanticMapData?.points?.length)) {
+				renderSemanticMap(semanticMapResults, semanticMapModel, semanticMapData, true);
 			}
 		});
 
@@ -1512,6 +1618,7 @@
 	{{end}}
 })();
 </script>
+</main>
 {{template "build_footer" .}}
 </body>
 </html>

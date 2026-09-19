@@ -1,0 +1,37 @@
+{
+  "date": "2026-09-19",
+  "scope": "Local pre-release checks; no production acceptance implied",
+  "checks": [
+    {
+      "command": "go test ./...",
+      "result": "pass"
+    },
+    {
+      "command": "go test -race ./...",
+      "result": "pass"
+    },
+    {
+      "command": "go vet ./...",
+      "result": "pass"
+    },
+    {
+      "command": "go build -o /tmp/arxiv-20260919 ./cmd/arxiv",
+      "result": "pass"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass"
+    },
+    {
+      "command": "ARXIV_TEST_POSTGRES_DSN=<isolated disposable PostgreSQL> go test . -run TestQuickSearchPostgres|TestReviewedPaperDate -count=1 -v",
+      "result": "pass",
+      "tests": 10
+    },
+    {
+      "command": "ARXIV_TEST_POSTGRES_DSN=<isolated disposable PostgreSQL> go test -race . -run TestQuickSearchPostgres|TestReviewedPaperDate -count=1",
+      "result": "pass",
+      "tests": 10
+    }
+  ],
+  "review": "Independent date/migration/map review clear after repairing map-selection and keyboard-focus preservation on resize"
+}

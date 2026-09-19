@@ -1701,10 +1701,10 @@ func paperStructuredData(paper *arxiv.Paper) template.JS {
 	if paper.License != "" {
 		data["license"] = paper.License
 	}
-	if !paper.Created.IsZero() {
+	if !paper.DatesNeedReview() && !paper.Created.IsZero() {
 		data["datePublished"] = paper.Created.UTC().Format("2006-01-02")
 	}
-	if !paper.Updated.IsZero() {
+	if !paper.DatesNeedReview() && !paper.Updated.IsZero() {
 		data["dateModified"] = paper.Updated.UTC().Format("2006-01-02")
 	}
 	return jsonScript(data)
@@ -1750,96 +1750,6 @@ func authorStructuredData(author string, papers []arxiv.Paper) template.JS {
 		},
 	}
 	return jsonScript(data)
-}
-
-var categoryDisplayNames = map[string]string{
-	"astro-ph":           "astrophysics",
-	"astro-ph.CO":        "cosmology and nongalactic astrophysics",
-	"astro-ph.EP":        "earth and planetary astrophysics",
-	"astro-ph.GA":        "galaxies",
-	"astro-ph.HE":        "high energy astrophysical phenomena",
-	"astro-ph.IM":        "instrumentation and methods for astrophysics",
-	"astro-ph.SR":        "solar and stellar astrophysics",
-	"cond-mat":           "condensed matter",
-	"cond-mat.dis-nn":    "disordered systems and neural networks",
-	"cond-mat.mes-hall":  "mesoscale and nanoscale physics",
-	"cond-mat.mtrl-sci":  "materials science",
-	"cond-mat.other":     "other condensed matter",
-	"cond-mat.quant-gas": "quantum gases",
-	"cond-mat.soft":      "soft condensed matter",
-	"cond-mat.stat-mech": "statistical mechanics",
-	"cond-mat.str-el":    "strongly correlated electrons",
-	"cond-mat.supr-con":  "superconductivity",
-	"cs.AI":              "artificial intelligence",
-	"cs.AR":              "hardware architecture",
-	"cs.CC":              "computational complexity",
-	"cs.CE":              "computational engineering, finance, and science",
-	"cs.CG":              "computational geometry",
-	"cs.CL":              "computation and language",
-	"cs.CR":              "cryptography and security",
-	"cs.CV":              "computer vision",
-	"cs.CY":              "computers and society",
-	"cs.DB":              "databases",
-	"cs.DC":              "distributed, parallel, and cluster computing",
-	"cs.DL":              "digital libraries",
-	"cs.DM":              "discrete mathematics",
-	"cs.DS":              "data structures and algorithms",
-	"cs.ET":              "emerging technologies",
-	"cs.FL":              "formal languages and automata theory",
-	"cs.GL":              "general literature",
-	"cs.GR":              "graphics",
-	"cs.GT":              "computer science and game theory",
-	"cs.HC":              "human-computer interaction",
-	"cs.IR":              "information retrieval",
-	"cs.IT":              "information theory",
-	"cs.LG":              "machine learning",
-	"cs.LO":              "logic in computer science",
-	"cs.MA":              "multiagent systems",
-	"cs.MM":              "multimedia",
-	"cs.MS":              "mathematical software",
-	"cs.NA":              "numerical analysis",
-	"cs.NE":              "neural and evolutionary computing",
-	"cs.NI":              "networking and internet architecture",
-	"cs.OH":              "other computer science",
-	"cs.OS":              "operating systems",
-	"cs.PF":              "performance",
-	"cs.PL":              "programming languages",
-	"cs.RO":              "robotics",
-	"cs.SC":              "symbolic computation",
-	"cs.SD":              "sound",
-	"cs.SE":              "software engineering",
-	"cs.SI":              "social and information networks",
-	"cs.SY":              "systems and control",
-	"econ":               "economics",
-	"eess":               "electrical engineering and systems science",
-	"gr-qc":              "general relativity and quantum cosmology",
-	"hep-ex":             "high energy physics experiment",
-	"hep-lat":            "high energy physics lattice",
-	"hep-ph":             "high energy physics phenomenology",
-	"hep-th":             "high energy physics theory",
-	"math":               "mathematics",
-	"math-ph":            "mathematical physics",
-	"nlin":               "nonlinear sciences",
-	"nucl-ex":            "nuclear experiment",
-	"nucl-th":            "nuclear theory",
-	"physics":            "physics",
-	"q-bio":              "quantitative biology",
-	"q-fin":              "quantitative finance",
-	"quant-ph":           "quantum physics",
-	"stat":               "statistics",
-	"stat.ML":            "machine learning statistics",
-}
-
-func categoryDisplayName(category string) string {
-	if name, ok := categoryDisplayNames[category]; ok {
-		return name
-	}
-	if idx := strings.LastIndex(category, "."); idx > 0 {
-		if name, ok := categoryDisplayNames[category[:idx]]; ok {
-			return name
-		}
-	}
-	return category
 }
 
 func categoryTitle(category string) string {
@@ -2075,7 +1985,8 @@ func (s *server) handleCategory(w http.ResponseWriter, r *http.Request) {
 		"CanonicalURL":   canonicalURL(categoryPath(category)),
 		"StructuredData": categoryStructuredData(category, papers),
 		"Category":       category,
-		"DisplayName":    categoryDisplayName(category),
+		"DisplayName":    categoryDefinitionFor(category).Name,
+		"LegacyCategory": categoryDefinitionFor(category).Legacy,
 		"Papers":         papers,
 	}
 	s.renderTemplate(w, r, "category", data)
@@ -2090,10 +2001,11 @@ func (s *server) handleCategories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":        "arXiv categories",
-		"Description":  fmt.Sprintf("Browse %d arXiv categories on arXiv.gg, including machine learning, quantum physics, condensed matter, astrophysics, math, and more.", len(categories)),
-		"CanonicalURL": canonicalURL("/categories"),
-		"Categories":   categories,
+		"Title":          "arXiv categories",
+		"Description":    fmt.Sprintf("Browse %d arXiv categories on arXiv.gg, including machine learning, quantum physics, condensed matter, astrophysics, math, and more.", len(categories)),
+		"CanonicalURL":   canonicalURL("/categories"),
+		"Categories":     categories,
+		"CategoryGroups": groupCategories(categories),
 	}
 	s.renderTemplate(w, r, "categories", data)
 }

@@ -440,9 +440,6 @@ func parseArxivHTMLMetadata(requestedID, body string) (*Paper, error) {
 	if dateValue := firstMetadataValue(metadata, "citation_online_date"); dateValue != "" {
 		if updated, err := time.Parse("2006/01/02", dateValue); err == nil {
 			paper.Updated = updated
-			if paper.Created.IsZero() {
-				paper.Created = updated
-			}
 		}
 	}
 

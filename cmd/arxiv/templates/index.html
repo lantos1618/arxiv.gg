@@ -1,42 +1,60 @@
 {{define "index"}}
 {{template "head" .}}
-<h1>arXiv.gg</h1>
 <section class="home-intro" aria-labelledby="home-intro-title">
-	<h2 id="home-intro-title">Search cached arXiv papers and explore related work</h2>
-	<p>Quick Search matches cached IDs, authors, and keywords. Semantic Search compares research ideas across prepared abstracts. Deep Search covers available full-paper text for signed-in users.</p>
+	<h1 id="home-intro-title">Find a paper. Follow its connections.</h1>
+	<p>Start with a title, author, or keyword. Open a paper to explore its authors, references, and related work where available.</p>
 </section>
+<label class="search-label" for="search-input">Find a paper by title, author, keyword, or arXiv ID</label>
 <div class="search-container">
 	<form class="search-bar" action="/search" method="get" id="search-form" role="search">
-		<input type="text" name="q" id="search-input" class="search-input" placeholder="Search or paste arXiv ID/URL..." value="{{.Query}}" autocomplete="off" aria-label="Search papers" maxlength="500" required>
+		<input type="text" name="q" id="search-input" class="search-input" placeholder="Title, author, keyword, or arXiv ID" value="{{.Query}}" autocomplete="off" aria-describedby="quick-help suggestion-help" role="combobox" aria-autocomplete="list" aria-haspopup="dialog" aria-controls="search-dropdown" aria-expanded="false" maxlength="500" required>
 		<input type="hidden" name="mode" value="quick">
 		<div class="search-buttons">
-			<button type="button" class="search-btn search-btn-keyword" id="btn-quick" data-help="IDs, authors, keywords." aria-label="Quick search: IDs, authors, keywords">
-				<span class="btn-icon">⚡</span><span>Quick</span>
-			</button>
-			<button type="button" class="search-btn search-btn-semantic" id="btn-semantic" aria-label="Search ideas across abstracts" {{if .SemanticAvailable}}data-help="Ideas across abstracts."{{else}}disabled aria-disabled="true" data-help="Semantic search is temporarily unavailable." title="Semantic search is temporarily unavailable."{{end}}>
-				<span class="btn-icon">🔎</span><span>Semantic</span>
-			</button>
-			<button type="button" class="search-btn search-btn-deep" id="btn-deep" aria-label="Deep search: full-paper text where available" {{if .SemanticAvailable}}data-help="Full-paper text where available."{{else}}disabled aria-disabled="true" data-help="Semantic search is temporarily unavailable." title="Semantic search is temporarily unavailable."{{end}}>
-				<span class="btn-icon">◎</span><span>Deep</span>
+			<button type="button" class="search-btn search-btn-keyword" id="btn-quick" aria-describedby="quick-help">
+				<span class="btn-icon" aria-hidden="true">⚡</span><span>Quick Search</span>
 			</button>
 		</div>
 	</form>
-	<div class="search-dropdown" id="search-dropdown" data-mathjax></div>
+	<div class="search-dropdown" id="search-dropdown" role="dialog" aria-modal="false" aria-label="Search suggestions" data-mathjax></div>
 </div>
+<p class="search-mode-help" id="quick-help">Search cached paper metadata. No sign-in required.</p>
+<p class="sr-only" id="suggestion-help">Suggestions appear as you type. Press Down Arrow to focus a suggestion, or Enter to run Quick Search.</p>
+<p class="sr-only" id="suggestion-status" role="status" aria-live="polite" aria-atomic="true"></p>
+<div class="search-options" aria-label="Other search modes">
+	<div class="search-mode-option">
+		<button type="button" class="search-btn search-btn-semantic" id="btn-semantic" aria-describedby="semantic-help" {{if not .SemanticAvailable}}disabled aria-disabled="true"{{end}}>
+			<span class="btn-icon" aria-hidden="true">🔎</span><span>Semantic{{if not .SemanticAvailable}} · unavailable{{end}}</span>
+		</button>
+		<p class="search-mode-help" id="semantic-help">{{if .SemanticAvailable}}Search prepared abstracts by idea. Requests may queue; Quick results appear while you wait.{{else}}Not enabled on this site. Use Quick Search for titles, authors, and keywords.{{end}}</p>
+	</div>
+	<div class="search-mode-option">
+		<button type="button" class="search-btn search-btn-deep" id="btn-deep" aria-describedby="deep-help" {{if not .SemanticAvailable}}disabled aria-disabled="true"{{end}}>
+			<span class="btn-icon" aria-hidden="true">◎</span><span>Deep{{if not .SemanticAvailable}} · unavailable{{else if not .CurrentUser}} · sign in{{end}}</span>
+		</button>
+		<p class="search-mode-help" id="deep-help">{{if .SemanticAvailable}}{{if .CurrentUser}}Search prepared full-paper text.{{else}}Sign in required to search prepared full-paper text.{{end}} Requests may queue; coverage varies by paper.{{else}}Not enabled on this site. Signing in does not enable Deep Search.{{end}}</p>
+	</div>
+</div>
+<p class="search-example">Try a paper: <a href="/abs/1706.03762">Attention Is All You Need</a></p>
 <div id="search-results" class="search-results" data-mathjax></div>
-<p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Paper records cached by this arXiv.gg instance. Counts refresh periodically; reload for the latest snapshot.">{{formatInt .Stats.TotalPapers}}</span> papers cached and searchable · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts{{if and (gt .Stats.TotalPapers 0) (ge .Stats.QwenEmbeddingsCount 0) (le .Stats.QwenEmbeddingsCount .Stats.TotalPapers)}} · <span id="stat-prepared-percent" class="helpable" tabindex="0" data-help="Prepared abstracts divided by papers cached on arXiv.gg.">{{percent .Stats.QwenEmbeddingsCount .Stats.TotalPapers}}</span> prepared for semantic search{{end}}</p>
 
 <div id="recent-papers">
-<h2>Recent Papers</h2>
+<h2>Recently fetched papers</h2>
+<p class="category-note">Up to 50 cached papers, ordered on load by most recent fetch into the index, then arXiv ID (missing fetch dates last). Live updates appear at the top as received.</p>
 <div id="recent-papers-list" data-mathjax>
 	<p class="loading-status">Loading recent papers...</p>
 </div>
 </div>
+<details class="indexing-stats">
+<summary>Index coverage</summary>
+<p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Paper records cached by this arXiv.gg instance. Counts refresh periodically; reload for the latest snapshot.">{{formatInt .Stats.TotalPapers}}</span> cached paper records · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts{{if and (gt .Stats.TotalPapers 0) (ge .Stats.QwenEmbeddingsCount 0) (le .Stats.QwenEmbeddingsCount .Stats.TotalPapers)}} · <span id="stat-prepared-percent" class="helpable" tabindex="0" data-help="Prepared abstracts divided by papers cached on arXiv.gg.">{{percent .Stats.QwenEmbeddingsCount .Stats.TotalPapers}}</span> prepared for semantic search{{end}}</p>
+<p>Counts describe this site’s cached collection, not all of arXiv. Prepared abstracts can be matched by research idea; search and related-work coverage may vary.</p>
+</details>
 <script>
 (function() {
 	const input = document.getElementById('search-input');
 	const searchBar = document.querySelector('.search-bar');
 	const dropdown = document.getElementById('search-dropdown');
+	const suggestionStatus = document.getElementById('suggestion-status');
 	const results = document.getElementById('search-results');
 	const recent = document.getElementById('recent-papers');
 	const recentList = document.getElementById('recent-papers-list');
@@ -70,7 +88,7 @@
 		const cats = categories.split(' ').filter(c => c).map(c =>
 			'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '" data-help="Open this arXiv subject area.">' + escapeHtml(c) + '</a>'
 		).join(' ');
-		const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠</span>' : '';
+		const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper has a prepared abstract for idea matching. Search and map availability may vary.">🧠</span>' : '';
 		return '<div class="paper"><div class="paper-heading">' +
 			'<div class="paper-title" data-mathjax><a href="' + encodeURI('/abs/' + id) + '">' + escapeHtml(title) + '</a></div>' + badges + '</div>' +
 			'<div class="paper-authors">' + renderAuthors(authors) + '</div>' +
@@ -177,9 +195,7 @@
 		}
 
 		function semanticStatusText(message) {
-			const text = String(message || '');
-			if (/gpu/i.test(text)) return 'Semantic search preparation is queued.';
-			return /embedding|vector/i.test(text) ? 'Understanding the idea...' : text;
+			return String(message || 'Preparing search...');
 		}
 
 	function extractArxivID(input) {
@@ -195,11 +211,23 @@
 	}
 
 	function showDropdown() {
+		input.ariaExpanded = 'true';
 		dropdown.classList.add('open');
 		searchBar.classList.add('dropdown-open');
 	}
 
 	function hideDropdown() {
+		input.ariaExpanded = 'false';
+		suggestionStatus.textContent = '';
+		clearTimeout(timeout);
+		timeout = null;
+		// Invalidate callbacks as well as aborting: a response may already be queued.
+		searchRequestId++;
+		if (searchController) {
+			searchController.abort();
+			searchController = null;
+		}
+		dropdownItems = [];
 		dropdown.classList.remove('open');
 		searchBar.classList.remove('dropdown-open');
 		selectedIndex = -1;
@@ -213,16 +241,8 @@
 
 	// Live dropdown search with abort + request tracking
 	function doDropdownSearch(query) {
-		// Cancel any pending request
-		if (searchController) {
-			searchController.abort();
-			searchController = null;
-		}
-
-		if (!query.trim()) {
-			hideDropdown();
-			return;
-		}
+		hideDropdown();
+		if (!query.trim()) return;
 
 		const arxivID = extractArxivID(query);
 		if (arxivID) {
@@ -231,23 +251,26 @@
 				'<div class="dropdown-item-title">Go to paper →</div></a>';
 			showDropdown();
 			dropdownItems = Array.from(dropdown.querySelectorAll('.dropdown-item'));
+			suggestionStatus.textContent = 'Paper link available. Press Down Arrow to focus it.';
 			return;
 		}
 
 		dropdown.innerHTML = '<div class="dropdown-status">Searching...</div>';
+		suggestionStatus.textContent = 'Finding suggestions...';
 		showDropdown();
 
 		// Track this request
-		const thisRequestId = ++searchRequestId;
+		const thisRequestId = searchRequestId;
 		searchController = new AbortController();
 
 		fetch('/api/v1/search/quick?q=' + encodeURIComponent(query) + '&limit=10', {
 			signal: searchController.signal
 		})
-			.then(r => r.json())
+			.then(r => { if (r.ok === false) throw new Error('Suggestions unavailable'); return r.json(); })
 			.then(resp => {
 				// Ignore if a newer request was made
 				if (thisRequestId !== searchRequestId) return;
+				if (resp.success === false) throw new Error('Suggestions unavailable');
 
 					// API returns {success, data: {count, papers, authors}}
 					const papers = resp.data?.papers || [];
@@ -255,7 +278,8 @@
 					const total = resp.data?.total || resp.data?.count || papers.length;
 
 					if (authors.length === 0 && papers.length === 0) {
-						dropdown.innerHTML = '<div class="dropdown-status">No results found</div>';
+						dropdown.innerHTML = '<div class="dropdown-status">No suggestions found. Try another title, author, or keyword.</div>';
+						suggestionStatus.textContent = 'No suggestions found.';
 						dropdownItems = [];
 						return;
 					}
@@ -284,6 +308,7 @@
 					}
 				dropdown.innerHTML = html;
 				dropdownItems = Array.from(dropdown.querySelectorAll('.dropdown-item'));
+				suggestionStatus.textContent = dropdownItems.length + ' suggestions. Press Down Arrow to focus a link.';
 				if (window.typesetMath) window.typesetMath(dropdown);
 				selectedIndex = -1;
 			})
@@ -292,7 +317,8 @@
 				if (err.name === 'AbortError') return;
 				// Only show error if this is still the current request
 				if (thisRequestId === searchRequestId) {
-					dropdown.innerHTML = '<div class="dropdown-status">Search failed</div>';
+					dropdown.innerHTML = '<div class="dropdown-status">Suggestions are unavailable. Try Quick Search.</div>';
+					suggestionStatus.textContent = 'Suggestions are unavailable. Try Quick Search.';
 					dropdownItems = [];
 				}
 			});
@@ -335,7 +361,7 @@
 		if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
 
 		if (isDeep && !isSignedIn) {
-			window.location.href = '/login?next=' + encodeURIComponent('/search?q=' + query + '&mode=deep');
+			window.location.href = '/login?next=' + encodeURIComponent('/search?q=' + encodeURIComponent(query) + '&mode=deep');
 			return;
 		}
 
@@ -344,10 +370,10 @@
 				'<div class="terminal-header"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span>' +
 				'<span class="terminal-dot green"></span><span class="terminal-title">' + (isDeep ? 'deep search' : 'semantic search') + '</span></div>' +
 					'<div class="terminal-body"><div class="terminal-line prompt">' + (isDeep ? 'deep search ' : 'semantic search ') + '"' + escapeHtml(query) + '"</div>' +
-				'<div class="terminal-line info" id="terminal-status">' + (isDeep ? 'Reading full papers...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span></div></div></div>' +
-			'<p class="search-status" id="search-status" style="display:none;"></p><div id="paper-results"></div>';
+				'<div class="terminal-line info" id="terminal-status" role="status" aria-live="polite" aria-atomic="true">' + (isDeep ? 'Searching prepared full-paper text...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span></div></div></div>' +
+			'<p class="search-status" id="search-status" role="status" aria-live="polite" aria-atomic="true" style="display:none;"></p><div id="paper-results"></div>';
 		} else if (!isRetry) {
-			results.innerHTML = '<p class="search-status" id="search-status">Searching...</p><div id="paper-results"></div>';
+			results.innerHTML = '<p class="search-status" id="search-status" role="status" aria-live="polite" aria-atomic="true">Searching...</p><div id="paper-results"></div>';
 		}
 		recent.style.display = 'none';
 
@@ -362,6 +388,8 @@
 		const terminal = document.getElementById('search-terminal');
 		let resultCount = 0;
 		let fallbackUsed = false;
+		let fallbackMessage = '';
+		let preparationQueued = false;
 		let retryRecommended = false;
 		let retryAfterSeconds = 30;
 		let firstSemanticResult = false;
@@ -370,11 +398,11 @@
 		function scheduleSemanticRetry() {
 			if (!isSemantic || !retryRecommended || generation !== searchGeneration) return;
 			if (retryAttempt >= maxSemanticRetries) {
-				statusEl.textContent = 'Showing Quick results. Semantic search is temporarily unavailable.';
+				statusEl.textContent = 'Showing Quick results. Semantic results are still pending; try Semantic Search again later.';
 				return;
 			}
 			const nextAttempt = retryAttempt + 1;
-			const delay = Math.min(Math.max(retryAfterSeconds, 1), 30);
+			const delay = Math.min(Math.max(retryAfterSeconds, 1), 300);
 			statusEl.textContent = 'Showing Quick results. Retrying Semantic search in ' + delay + ' seconds...';
 			semanticRetryTimer = setTimeout(() => {
 				semanticRetryTimer = null;
@@ -391,12 +419,14 @@
 					else statusEl.textContent = 'Searching...';
 					break;
 					case 'status':
+						preparationQueued = Boolean(data.queued);
+						if (data.queued) retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
 						if (data.queued && isSemantic) {
 							fallbackUsed = true;
 							retryRecommended = true;
 							retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
 						}
-						if (isAdvanced && terminalStatus) terminalStatus.innerHTML = semanticStatusText(data.message) + '<span class="terminal-cursor"></span>';
+						if (isAdvanced && terminalStatus) terminalStatus.textContent = data.queued ? (isDeep ? 'Deep' : 'Semantic') + ' Search preparation is queued. Try again shortly.' : semanticStatusText(data.message);
 					else statusEl.textContent = data.message;
 					break;
 				case 'fallback':
@@ -405,7 +435,8 @@
 					retryAfterSeconds = data.retry?.afterSeconds || retryAfterSeconds;
 					if (terminal) terminal.classList.remove('active');
 					statusEl.style.display = '';
-					statusEl.textContent = data.message || 'Semantic search is unavailable; showing Quick results.';
+					fallbackMessage = data.message || 'Semantic search is unavailable; showing Quick results.';
+					statusEl.textContent = fallbackMessage;
 					break;
 				case 'result':
 					resultCount++;
@@ -425,7 +456,7 @@
 						const similarity = data.similarity;
 							const cats = categories.split(' ').filter(c => c).map(c =>
 								'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '" data-help="Open this arXiv subject area.">' + escapeHtml(c) + '</a>').join(' ');
-						const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠</span>' : '';
+						const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper has a prepared abstract for idea matching. Search and map availability may vary.">🧠</span>' : '';
 							const simBadge = similarity ? '<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches your search.">' + Math.round(similarity * 100) + '%</span>' : '';
 						const snippet = data.snippet ? '<div class="paper-abstract">' + escapeHtml(data.snippet) + '</div>' : '';
 					paperContainer.insertAdjacentHTML('beforeend', '<div class="paper"><div class="paper-heading">' +
@@ -434,7 +465,7 @@
 						'<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">' + id + '</span>' +
 						'<div class="paper-categories">' + cats + '</div>' + simBadge + '</div>' + snippet + '</div>');
 					if (window.typesetMath) window.typesetMath(paperContainer.lastElementChild);
-					statusEl.textContent = resultCount + ' results...';
+					statusEl.textContent = fallbackUsed ? fallbackMessage + ' (' + resultCount + ' Quick results)' : resultCount + ' results...';
 					break;
 				case 'complete':
 					finished = true;
@@ -442,7 +473,8 @@
 					statusEl.style.display = '';
 					if (activeEventSource === eventSource) activeEventSource = null;
 					eventSource.close();
-					if (fallbackUsed) scheduleSemanticRetry();
+					if (data.queued || preparationQueued) statusEl.textContent = (isDeep ? 'Deep' : 'Semantic') + ' Search preparation is queued. Try again in ' + (data.retryAfterSeconds || retryAfterSeconds) + ' seconds, or use Quick Search.';
+					else if (fallbackUsed) { statusEl.textContent = fallbackMessage; scheduleSemanticRetry(); }
 					else if (isRetry && resultCount === 0) statusEl.textContent = 'No Semantic results found; keeping Quick results.';
 					else statusEl.textContent = data.count + ' ' + modeLabel(data.mode) + ' results for "' + query + '"';
 					break;
@@ -450,7 +482,7 @@
 					if (terminal) terminal.classList.remove('active');
 					statusEl.style.display = '';
 					statusEl.textContent = data.error;
-					statusEl.style.color = '#dc2626';
+					statusEl.classList.add('error');
 					eventSource.close();
 					if (activeEventSource === eventSource) activeEventSource = null;
 					break;
@@ -458,7 +490,10 @@
 		};
 		eventSource.onerror = function() {
 			if (finished || generation !== searchGeneration) return;
-			if (resultCount === 0) { statusEl.textContent = 'Search failed'; statusEl.style.color = '#dc2626'; }
+			if (terminal) terminal.classList.remove('active');
+			statusEl.style.display = '';
+			if (resultCount > 0) statusEl.textContent = resultCount + ' results received. Search was interrupted; try again to check for more.';
+			if (resultCount === 0) { statusEl.textContent = 'Search was interrupted. Try again or use Quick Search.'; statusEl.classList.add('error'); }
 			eventSource.close();
 			if (activeEventSource === eventSource) activeEventSource = null;
 			if (fallbackUsed) scheduleSemanticRetry();
@@ -475,10 +510,8 @@
 	let lastQuery = '';
 	input.addEventListener('input', function() {
 		cancelActiveSearch();
-		clearTimeout(timeout);
+		hideDropdown();
 		const query = input.value;
-		// Don't search if query hasn't changed
-		if (query === lastQuery) return;
 		timeout = setTimeout(() => {
 			if (query === input.value) { // Double-check query hasn't changed
 				lastQuery = query;
@@ -502,6 +535,7 @@
 			e.preventDefault();
 			selectedIndex = Math.min(selectedIndex + 1, dropdownItems.length - 1);
 			updateSelection();
+			if (dropdownItems[selectedIndex]) dropdownItems[selectedIndex].focus();
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
 			selectedIndex = Math.max(selectedIndex - 1, -1);
@@ -512,6 +546,28 @@
 		} else if (e.key === 'Escape') {
 			hideDropdown();
 		}
+	});
+
+
+	// Suggestions remain ordinary links: arrow keys move real keyboard focus,
+	// so Enter, open-in-new-tab, and the browser context menu keep working.
+	dropdown.addEventListener('keydown', function(e) {
+		const index = dropdownItems.indexOf(document.activeElement);
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			input.focus();
+			hideDropdown();
+		} else if (index >= 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+			e.preventDefault();
+			selectedIndex = e.key === 'ArrowDown' ? Math.min(index + 1, dropdownItems.length - 1) : index - 1;
+			updateSelection();
+			if (selectedIndex < 0) input.focus();
+			else dropdownItems[selectedIndex].focus();
+		}
+	});
+
+	document.addEventListener('focusin', function(e) {
+		if (!e.target.closest('.search-container')) hideDropdown();
 	});
 
 	document.addEventListener('click', function(e) {

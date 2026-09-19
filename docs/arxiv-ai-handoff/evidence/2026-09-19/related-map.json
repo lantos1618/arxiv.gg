@@ -1,0 +1,74 @@
+[
+  {
+    "mode": "projected",
+    "width": 1280,
+    "fullTitles": true,
+    "keyboardSelection": true,
+    "duplicateRemoval": true,
+    "noOverflow": true,
+    "reducedMotion": true,
+    "selectionAndFocusOnResize": true,
+    "failedRefreshRetainsList": true,
+    "errors": []
+  },
+  {
+    "mode": "projected",
+    "width": 320,
+    "fullTitles": true,
+    "keyboardSelection": true,
+    "duplicateRemoval": true,
+    "noOverflow": true,
+    "reducedMotion": true,
+    "selectionAndFocusOnResize": true,
+    "failedRefreshRetainsList": true,
+    "errors": []
+  },
+  {
+    "mode": "fallback",
+    "width": 1280,
+    "fullTitles": true,
+    "keyboardSelection": true,
+    "duplicateRemoval": true,
+    "noOverflow": true,
+    "reducedMotion": true,
+    "selectionAndFocusOnResize": true,
+    "failedRefreshRetainsList": true,
+    "errors": []
+  },
+  {
+    "mode": "fallback",
+    "width": 320,
+    "fullTitles": true,
+    "keyboardSelection": true,
+    "duplicateRemoval": true,
+    "noOverflow": true,
+    "reducedMotion": true,
+    "selectionAndFocusOnResize": true,
+    "failedRefreshRetainsList": true,
+    "errors": []
+  },
+  {
+    "mode": "no-d3",
+    "width": 1280,
+    "fullTitles": true,
+    "keyboardSelection": true,
+    "duplicateRemoval": true,
+    "noOverflow": true,
+    "reducedMotion": false,
+    "selectionAndFocusOnResize": false,
+    "failedRefreshRetainsList": true,
+    "errors": []
+  },
+  {
+    "mode": "no-d3",
+    "width": 320,
+    "fullTitles": true,
+    "keyboardSelection": true,
+    "duplicateRemoval": true,
+    "noOverflow": true,
+    "reducedMotion": false,
+    "selectionAndFocusOnResize": false,
+    "failedRefreshRetainsList": true,
+    "errors": []
+  }
+]

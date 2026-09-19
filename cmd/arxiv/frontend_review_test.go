@@ -188,3 +188,151 @@ listeners.pageshow();
 assert.equal(streams.length, beforeRestore + 1, 'back-forward cache restoration resumes');
 `)
 }
+
+func TestHomepageSearchDismissesPendingSuggestions(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	(&server{}).renderTemplate(recorder, httptest.NewRequest(http.MethodGet, "/", nil), "index", map[string]any{
+		"Stats": &arxiv.CacheStats{},
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("render homepage: %s", recorder.Body.String())
+	}
+	var searchScript string
+	for _, match := range regexp.MustCompile(`(?s)<script>(.*?)</script>`).FindAllStringSubmatch(recorder.Body.String(), -1) {
+		if strings.Contains(match[1], "function doDropdownSearch(") {
+			searchScript = match[1]
+		}
+	}
+	if searchScript == "" {
+		t.Fatal("homepage search script not found")
+	}
+	encoded, _ := json.Marshal(searchScript)
+	runFrontendReviewJavaScript(t, `
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const source = `+string(encoded)+`;
+function createPage() {
+  const elements = new Map();
+  const timers = new Map();
+  const requests = [];
+  const streams = [];
+  let timerID = 0;
+  function element(id) {
+    if (!elements.has(id)) {
+      const classes = new Set();
+      elements.set(id, {
+        value: '', innerHTML: '', textContent: '', style: {}, listeners: {},
+        classList: {
+          add: name => classes.add(name), remove: name => classes.delete(name),
+          contains: name => classes.has(name),
+        },
+        addEventListener(event, fn) { this.listeners[event] = fn; },
+        querySelectorAll: () => [],
+        insertAdjacentHTML(_, html) { this.innerHTML += html; },
+      });
+    }
+    return elements.get(id);
+  }
+  const context = {
+    document: {
+      hidden: true,
+      getElementById: element,
+      querySelector: element,
+      addEventListener() {},
+      createElement: () => ({ set textContent(value) { this.innerHTML = value; } }),
+    },
+    navigator: { onLine: true },
+    window: { addEventListener() {}, location: {} },
+    AbortController, URLSearchParams,
+    setTimeout: fn => { timers.set(++timerID, fn); return timerID; },
+    clearTimeout: id => timers.delete(id),
+    fetch: (url, options) => new Promise((resolve, reject) => requests.push({ url, options, resolve, reject })),
+    EventSource: class {
+      constructor(url) { this.url = url; streams.push(this); }
+      close() {}
+    },
+  };
+  vm.runInNewContext(source, context);
+  return {
+    element, timers, requests, streams, context,
+    type(query) { element('search-input').value = query; element('search-input').listeners.input(); },
+    debounce() {
+      assert.equal(timers.size, 1);
+      const [id, fn] = timers.entries().next().value;
+      timers.delete(id);
+      fn();
+    },
+    submit(button) {
+      if (button) element(button).listeners.click();
+      else element('search-form').listeners.submit({ preventDefault() {} });
+    },
+  };
+}
+const reply = (request, id, title) => request.resolve({ json: () => Promise.resolve({
+  data: { papers: [{ id, title, authors: 'A. Researcher' }] },
+}) });
+const flush = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+  for (const button of [null, 'btn-quick']) {
+    const page = createPage();
+    page.type('attention is all you need');
+    page.submit(button);
+    assert.equal(page.timers.size, 0, 'submitting cancels the queued autocomplete debounce');
+    assert.equal(page.requests.length, 0, 'a submitted query does not start a pending autocomplete request');
+    assert.equal(page.streams.length, 1, 'submitted results still load');
+    assert.equal(page.element('search-dropdown').classList.contains('open'), false);
+  }
+
+  for (const outcome of ['success', 'error']) {
+    const page = createPage();
+    page.type('attention is all you need');
+    page.debounce();
+    assert.equal(page.element('search-dropdown').classList.contains('open'), true);
+    const request = page.requests[0];
+    page.submit();
+    assert.equal(request.options.signal.aborted, true, 'submission aborts the in-flight autocomplete');
+    const hiddenHTML = page.element('search-dropdown').innerHTML;
+    // A callback already queued before abort must still be ignored.
+    if (outcome === 'success') reply(request, '9999.00001', 'Stale suggestion');
+    else request.reject(new Error('late failure'));
+    await flush();
+    assert.equal(page.element('search-dropdown').innerHTML, hiddenHTML, 'late responses cannot replace dismissed suggestions');
+    assert.equal(page.element('search-dropdown').classList.contains('open'), false);
+    page.streams[0].onmessage({ data: JSON.stringify({ type: 'result', paper: {
+      id: '1706.03762', title: 'Attention Is All You Need', authors: 'A. Researcher',
+    } }) });
+    assert.match(page.element('paper-results').innerHTML, /Attention Is All You Need/);
+  }
+
+  const page = createPage();
+  page.type('old query');
+  page.debounce();
+  page.type('1706.03762');
+  page.debounce();
+  const directLink = page.element('search-dropdown').innerHTML;
+  assert.match(directLink, /href="\/abs\/1706\.03762"/);
+  reply(page.requests[0], '9999.00001', 'Stale suggestion');
+  await flush();
+  assert.equal(page.element('search-dropdown').innerHTML, directLink, 'late keyword responses cannot replace an ID suggestion');
+  page.submit();
+  assert.equal(page.context.window.location.href, '/abs/1706.03762', 'ID submission still opens the paper');
+
+  page.type('fresh query');
+  page.debounce();
+  reply(page.requests[1], '2501.00001', 'Fresh suggestion');
+  await flush();
+  assert.equal(page.element('search-dropdown').classList.contains('open'), true, 'editing resumes autocomplete after dismissal');
+  assert.match(page.element('search-dropdown').innerHTML, /Fresh suggestion/);
+
+  page.type('fresh query edited');
+  page.type('fresh query');
+  assert.equal(page.timers.size, 1, 'editing then reverting within the debounce window still refreshes suggestions');
+  page.debounce();
+  assert.equal(page.requests.length, 3, 'only the final reverted query is requested');
+  reply(page.requests[2], '2501.00001', 'Fresh suggestion');
+  await flush();
+  assert.equal(page.element('search-dropdown').classList.contains('open'), true, 'reverted query suggestions reopen');
+  assert.match(page.element('search-dropdown').innerHTML, /Fresh suggestion/);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+`)
+}

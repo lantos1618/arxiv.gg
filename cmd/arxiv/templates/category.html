@@ -1,22 +1,26 @@
 {{define "category"}}
 {{template "head" .}}
-<h1>{{.Category}} papers</h1>
-{{if ne .DisplayName .Category}}<p>{{.DisplayName}}</p>{{end}}
-<p>{{len .Papers}} papers</p>
+<p><a href="/categories">Browse all subjects</a></p>
+<h1>{{.DisplayName}}</h1>
+<p><code>{{.Category}}</code>{{if .LegacyCategory}} · Legacy arXiv category{{end}}</p>
+<h2>Recently fetched papers</h2>
+<p>Showing {{len .Papers}} papers with downloaded source (up to 200).</p>
+<p class="category-note">Ordered by most recent fetch into the index, then arXiv ID. Papers without a fetch date follow in arXiv ID order. Directory totals include all indexed paper records, including papers without downloaded source.</p>
 {{range .Papers}}
-	<div class="paper">
-		<div class="paper-heading">
-			<div class="paper-title" data-mathjax><a href="{{paperPath .ID}}">{{.Title}}</a></div>
-		</div>
-		{{$authors := limitAuthors .Authors 12}}
-		<div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
-		<div class="paper-meta">
-			<span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.ID}}</span>
-			<div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
-		</div>
-	</div>
+    <div class="paper">
+        <div class="paper-heading">
+            <div class="paper-title" data-mathjax><a href="{{paperPath .ID}}">{{.Title}}</a></div>
+        </div>
+        {{$authors := limitAuthors .Authors 12}}
+        <div class="paper-authors">{{range $i, $a := $authors.Names}}{{if $i}}, {{end}}<a href="{{authorPath $a}}">{{$a}}</a>{{end}}{{if $authors.Extra}} <span class="more-authors">+{{$authors.Extra}} more</span>{{end}}</div>
+        <div class="paper-meta">
+            <span class="paper-id helpable" tabindex="0" data-help="arXiv identifier. Paste this into search to jump straight here.">{{.ID}}</span>
+            <span>{{if and .FetchedAt (not .FetchedAt.IsZero)}}Fetched into index <time datetime="{{.FetchedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}">{{timeOrDash .FetchedAt}} UTC</time>{{else}}Fetch date unavailable{{end}}</span>
+            <div class="paper-categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}" data-help="Open this arXiv subject area.">{{$c}}</a>{{end}}</div>
+        </div>
+    </div>
 {{else}}
-<p>No cached papers are available in this category.</p>
+<p>No papers with downloaded source are available in this category.</p>
 {{end}}
 {{template "foot" .}}
 {{end}}

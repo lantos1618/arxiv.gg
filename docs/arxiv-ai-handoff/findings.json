@@ -1,0 +1,448 @@
+{
+  "schema_version": 1,
+  "revision": "2.2",
+  "review_date": "2026-09-17",
+  "observed_build": "e7f0026adabf",
+  "report_url": "https://arxiv-fieldnotes-rubin-draper.lantos.chatgpt.site",
+  "scope": "Original signed-out desktop audit retained. September 19 application batch implements requested priorities 1\u20137 with scoped local checks, including the retained AXG-001 fix. No production deployment or production date repair is claimed. AXG-008 has related copy/return-path improvements but no live sign-in persistence validation. See IMPLEMENTATION-2026-09-19.md for current scope, evidence and release state.",
+  "findings": [
+    {
+      "id": "AXG-001",
+      "report_key": "search",
+      "title": "Find the known paper",
+      "priority": "P0",
+      "status": "verified",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": "2026-09-19",
+      "observed": "Quick Search for \u201cattention is all you need\u201d put other titles first. Autocomplete began with \u201cWhy Any-Order Autoregressive Models\u2026\u201d while the submitted list began with \u201cAttention Needs to Focus\u2026\u201d. Direct lookup of 1706.03762 opened the intended paper.",
+      "source_urls": [
+        "https://arxiv.gg/"
+      ],
+      "reproduction": [
+        "Open the homepage signed out.",
+        "Enter attention is all you need; inspect suggestions, then submit Quick Search.",
+        "Record the first results and whether suggestions cover submitted results.",
+        "Repeat using 1706.03762; compare the destination."
+      ],
+      "proposal": "Prioritize normalized exact-title matches and IDs before broad keyword matches. Use consistent ranking in autocomplete and submitted results. Close suggestions when a search is submitted.",
+      "acceptance_criteria": [
+        "The case-insensitive exact title ranks first when cached.",
+        "The same query produces compatible top results in suggestions and the full list.",
+        "Submitting a query removes the overlay and exposes results."
+      ],
+      "validation_plan": "Ask a researcher to find this paper by title, then by ID. Record success and time; this single observed query is not a relevance benchmark.",
+      "estimated_effort": "Medium effort",
+      "editorial_weight": 24,
+      "lenses": {
+        "rubin": "Make the simplest intention work without negotiation: I know the title; take me to the paper.",
+        "draper": "A famous exact-title query is a credibility test. The first result must earn the promise of discovery."
+      },
+      "code_locations": [
+        "search.go",
+        "cmd/arxiv/templates/index.html",
+        "search_quick_test.go",
+        "search_quick_postgres_test.go",
+        "cmd/arxiv/frontend_review_test.go"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-17",
+          "environment": "Application checkout at e7f0026 plus working-tree changes; disposable PostgreSQL 16; Chromium desktop/narrow fixtures; read-only production SQL",
+          "outcome": "Acceptance criteria pass locally: nine isolated PostgreSQL regressions, legacy SQLite regression, actual-JavaScript lifecycle tests and Chromium desktop/narrow fixtures; full normal/race suites, vet, build and diff hygiene pass. Read-only current-data SQL ranks 1706.03762 first. See IMPLEMENTATION.md for scope, timing and remaining limits. No deployment.",
+          "source": "IMPLEMENTATION.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        },
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Existing exact-title/ID ranking and cancellation fixes preserved. Nine PostgreSQL search regressions pass in normal and race runs; actual-JavaScript and Chromium fixture checks still pass. No deployment or general relevance/load guarantee.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "home",
+        "search"
+      ]
+    },
+    {
+      "id": "AXG-002",
+      "report_key": "availability",
+      "title": "Make availability unambiguous",
+      "priority": "P0",
+      "status": "implemented",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "Semantic and Deep controls were disabled in the accessibility tree, but still appeared as prominent blue and dark buttons. Their unavailable explanation lived in help text. The paper-level related-work map loaded separately.",
+      "source_urls": [
+        "https://arxiv.gg/"
+      ],
+      "reproduction": [
+        "Open the homepage signed out.",
+        "Compare the visual treatment, accessible disabled state, and visible explanation of Quick, Semantic, and Deep.",
+        "Open /abs/1706.03762 and wait for the related-work map to finish loading.",
+        "Check each service independently; do not infer a shared backend failure."
+      ],
+      "proposal": "Show a visible status next to unavailable modes. Keep Quick Search as the clear available action. Distinguish signed-out, temporarily unavailable, and paper-ready states instead of conflating them.",
+      "acceptance_criteria": [
+        "Unavailable controls have visible text, accessible explanation, and distinct styling.",
+        "Status accurately describes each capability independently.",
+        "A working fallback is offered without erasing the query."
+      ],
+      "validation_plan": "Show the page for five seconds and ask which search mode can be used now. Separately verify signed-in and outage states.",
+      "estimated_effort": "Small\u2013medium effort",
+      "editorial_weight": 18,
+      "lenses": {
+        "rubin": "One available action should feel unmistakable. Remove the need to decode the system.",
+        "draper": "Do not invite someone into a promise the current session cannot fulfill. Trust is part of the positioning."
+      },
+      "code_locations": [
+        "cmd/arxiv/templates/index.html",
+        "cmd/arxiv/templates/search.html",
+        "cmd/arxiv/templates/login.html",
+        "cmd/arxiv/templates/head.html",
+        "cmd/arxiv/search_availability_test.go"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Visible accessible mode explanations distinguish configuration, sign-in requirement and runtime queues/errors. Conditional render and JavaScript tests pass; Chromium fixtures cover configured/unconfigured and signed-in/out interfaces. Deep queue state remains queued, Semantic fallback explanations persist, server retry delay is honored, query survives login. Configuration is not worker-health evidence.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "home",
+        "search",
+        "login"
+      ]
+    },
+    {
+      "id": "AXG-003",
+      "report_key": "metadata",
+      "title": "Make the facts trustworthy",
+      "priority": "P0",
+      "status": "implemented",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "The paper page displayed 2023-08-02 with help text calling it the original submission date. arXiv lists first submission on 12 June 2017 and revision on 2 August 2023. \u201cCited by 3461\u201d explained its cached scope only in help text.",
+      "source_urls": [
+        "https://arxiv.org/abs/1706.03762",
+        "https://arxiv.gg/abs/1706.03762"
+      ],
+      "reproduction": [
+        "Open /abs/1706.03762 and inspect the visible date, its help text, and citation count.",
+        "Compare against https://arxiv.org/abs/1706.03762 submission history.",
+        "Inspect the ingestion fields and renderer before deciding whether the defect is data mapping or labeling."
+      ],
+      "proposal": "Separate \u201cFirst submitted\u201d from \u201cLatest revision.\u201d Make citation coverage visible: \u201c3,461 citations in our index\u201d at the observed snapshot, rather than implying a universal total.",
+      "acceptance_criteria": [
+        "First submission and revision date match the source fields.",
+        "Visible date labels remain correct without hovering.",
+        "Cached citation totals explicitly state their scope."
+      ],
+      "validation_plan": "Compare several multi-version records with arXiv submission histories. The verified defect here concerns one paper.",
+      "estimated_effort": "Small\u2013medium effort",
+      "editorial_weight": 15,
+      "lenses": {
+        "rubin": "Metadata should quietly orient the reader. A date needs a precise meaning, not more explanation on hover.",
+        "draper": "Specific, honest limits are stronger proof than a large unexplained number."
+      },
+      "code_locations": [
+        "paper_dates.go",
+        "data_fetch.go",
+        "paper_dates_test.go",
+        "paper_dates_postgres_test.go",
+        "cmd/arxiv/templates/paper.html",
+        "cmd/arxiv/paper_accessibility_test.go",
+        "deploy/sql/2026-09-19-reviewed-paper-dates.sql",
+        "deploy/sql/manifest.txt"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Implemented explicit first-submitted/latest-revision and index-scoped citation labels, conservative DatesNeedReview warnings, missing-source parser correction, and SQL guarded by old date values for only 1706.03762, 1312.6114 and 1810.04805. Official histories checked for those IDs. Guarded repair passes disposable PostgreSQL tests in normal/race runs. SQL not claimed applied to production; broader dates remain uncertified.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "paper"
+      ]
+    },
+    {
+      "id": "AXG-004",
+      "report_key": "map",
+      "title": "Turn the map into a reading decision",
+      "priority": "P1",
+      "status": "implemented",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "The related-work map loaded 39 papers across 3 clusters. In the desktop view, points occupied a small part of the canvas and multiple shortened labels overlapped. The citation graph loaded, with most nodes unlabeled in the default view.",
+      "source_urls": [
+        "https://arxiv.gg/abs/1706.03762"
+      ],
+      "reproduction": [
+        "Open /abs/1706.03762 on desktop and allow both graphs to load.",
+        "Inspect initial fit, overlapping labels, selection behavior, and access to full titles.",
+        "Check keyboard and narrow-screen behavior during implementation; these were not established in the initial audit."
+      ],
+      "proposal": "Fit the map to its content, label the selected and hovered paper clearly, and provide a synchronized list with full titles and connection type. Preserve the distinction between citations and semantic similarity.",
+      "acceptance_criteria": [
+        "Default view uses the available canvas without overlapping essential labels.",
+        "Every paper can be reached in a keyboard-accessible companion list.",
+        "Selection exposes the full title and explains citation versus similarity."
+      ],
+      "validation_plan": "Ask users to find one related paper and explain why it is connected. Test keyboard access and a narrow viewport during implementation.",
+      "estimated_effort": "Medium effort",
+      "editorial_weight": 13,
+      "lenses": {
+        "rubin": "The visualization should reveal a relationship, not ask the reader to untangle a picture.",
+        "draper": "This is the proof of the product. Make the moment of finding a useful neighbor visible and comprehensible."
+      },
+      "code_locations": [
+        "cmd/arxiv/templates/paper.html",
+        "cmd/arxiv/paper_accessibility_test.go"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Implemented keyboard-accessible companion links with full titles, synchronized map selection, simpler labels and explicit semantic-versus-citation meaning; existing projected-coordinate scaling retained. Related-map and no-renderer narrow-layout fixture evidence is archived. No researcher usability study or general graph-layout guarantee.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "paper"
+      ]
+    },
+    {
+      "id": "AXG-005",
+      "report_key": "promise",
+      "title": "Lead with the research outcome",
+      "priority": "P1",
+      "status": "implemented",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "The homepage leads with \u201cSearch cached arXiv papers\u2026\u201d and prominent counts for cached papers, prepared abstracts, and semantic preparation percentage. The paper page contains the more distinctive exploration experience.",
+      "source_urls": [
+        "https://arxiv.gg/"
+      ],
+      "reproduction": [
+        "Read the homepage before interacting.",
+        "Identify the primary action and compare emphasis on user outcomes versus indexing status.",
+        "Follow a real paper into its related-work experience and identify what the homepage could truthfully demonstrate."
+      ],
+      "proposal": "Lead with finding a paper and following its connections. Keep coverage information available below the main task. Offer a real example paper as an entry into the map, with honest availability status.",
+      "acceptance_criteria": [
+        "The first screen communicates the user outcome and a clear search action.",
+        "Internal indexing detail is secondary but still accessible.",
+        "Any showcased map or feature works in the current session."
+      ],
+      "validation_plan": "Compare current copy with each proposed profile direction. Ask new visitors what the product helps them do before measuring clicks.",
+      "estimated_effort": "Small effort",
+      "editorial_weight": 10,
+      "lenses": {
+        "rubin": "Let the work speak. Keep the search field, a clear action, and one meaningful place to begin.",
+        "draper": "Own the idea of the next useful paper. Show a concrete discovery before asking the reader to care about the machinery."
+      },
+      "code_locations": [
+        "cmd/arxiv/templates/index.html",
+        "cmd/arxiv/templates/head.html",
+        "cmd/arxiv/search_availability_test.go"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Implemented outcome-focused heading, primary Quick Search, factual Attention Is All You Need paper link and native expandable index coverage. Narrow/desktop fixtures pass. No promise that example maps are always ready and no measured conversion improvement.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "home"
+      ]
+    },
+    {
+      "id": "AXG-006",
+      "report_key": "freshness",
+      "title": "Say what \u201crecent\u201d really means",
+      "priority": "P1",
+      "status": "implemented",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "\u201cRecent Papers\u201d on the homepage began with identifiers from 2016 and 2015. The categories page promised latest cached papers; the machine-learning list began with Playing Atari\u2026 (1312.5602) and showed \u201c200 papers\u201d despite a much larger index count on the category directory.",
+      "source_urls": [
+        "https://arxiv.gg/category/cs.LG"
+      ],
+      "reproduction": [
+        "Compare the homepage Recent Papers list with /categories and /category/cs.LG.",
+        "Record the visible sort, dates, list limits, and total counts.",
+        "Trace the actual ordering query before renaming or changing the sort."
+      ],
+      "proposal": "Name the actual ordering. Use \u201cRecently added to our index\u201d only if that is the real sort, or sort by submission date for \u201cLatest papers.\u201d Clarify \u201cShowing 200 of\u2026\u201d and expose the active sort.",
+      "acceptance_criteria": [
+        "List heading and visible sort describe the actual ordering field.",
+        "Publication or revision dates are visible where relevant.",
+        "Result caps and total coverage are distinguished."
+      ],
+      "validation_plan": "Check the ordering field and query behind each list; the observed interface alone does not establish the backend sort.",
+      "estimated_effort": "Small\u2013medium effort",
+      "editorial_weight": 8,
+      "lenses": {
+        "rubin": "A familiar word should not conceal an unfamiliar definition.",
+        "draper": "Freshness is a promise. Make it exact enough to believe."
+      },
+      "code_locations": [
+        "search.go",
+        "cmd/arxiv/templates/index.html",
+        "cmd/arxiv/templates/categories.html",
+        "cmd/arxiv/templates/category.html",
+        "cmd/arxiv/category_taxonomy_test.go"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Homepage identifies initial fetched-at/ID ordering, missing-date placement, 50-record cap and live insertion order. Category detail shows fetch dates, 200-record cap and downloaded-source restriction; directory totals explicitly count broader metadata. Focused render and lifecycle checks pass. No submission-date sort introduced.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "home",
+        "category"
+      ]
+    },
+    {
+      "id": "AXG-007",
+      "report_key": "categories",
+      "title": "Translate the subject codes",
+      "priority": "P2",
+      "status": "implemented",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "The directory showed 176 categories as codes and counts, such as cs.LG and hep-ph. The category detail revealed \u201cmachine learning,\u201d but the directory made users interpret the code first.",
+      "source_urls": [
+        "https://arxiv.gg/categories"
+      ],
+      "reproduction": [
+        "Open /categories and inspect how names, codes, disciplines, and counts are presented.",
+        "Open cs.LG and compare the human-readable name and displayed count."
+      ],
+      "proposal": "Pair each code with its full subject name. Group by broad discipline, and make the distinction between a directory count and the displayed result count clear.",
+      "acceptance_criteria": [
+        "Every category shows its plain-language name and code.",
+        "Discipline grouping is clear and keyboard-navigable.",
+        "Counts use consistent scope labels."
+      ],
+      "validation_plan": "Ask someone outside computer science to find machine learning and someone outside physics to find the relevant physics subject.",
+      "estimated_effort": "Small effort",
+      "editorial_weight": 7,
+      "lenses": {
+        "rubin": "Use language the curious reader already understands. Keep the code as helpful metadata.",
+        "draper": "Welcome the adjacent-field researcher, not only someone who already knows the catalog."
+      },
+      "code_locations": [
+        "cmd/arxiv/category_taxonomy.go",
+        "cmd/arxiv/category_taxonomy_test.go",
+        "cmd/arxiv/serve.go",
+        "cmd/arxiv/templates/categories.html",
+        "cmd/arxiv/templates/category.html"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Implemented full names for all 176 observed category codes, eight discipline groups and keyboard jump links. Legacy codes retain distinct routes/counts and visible legacy labels; unknown future codes retain a fallback. Sources are official arXiv taxonomy/definitions. Focused tests and controlled browser navigation pass.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "categories",
+        "category"
+      ]
+    },
+    {
+      "id": "AXG-008",
+      "report_key": "return",
+      "title": "Invite the return at the right moment",
+      "priority": "P2",
+      "status": "in_progress",
+      "evidence_date": "2026-09-17",
+      "last_verified_at": null,
+      "observed": "The paper page offers a free account to retain a research trail. The sign-in page has clear private-trail messaging, but also promotes full-text search while the homepage reported Deep Search unavailable. \u201cReaders Also Viewed\u201d included several entries based on one reader and one view.",
+      "source_urls": [
+        "https://arxiv.gg/login"
+      ],
+      "reproduction": [
+        "Inspect the paper-page account invitation and /login without creating an account.",
+        "Compare promised search capabilities with current availability.",
+        "Inspect Readers Also Viewed evidence strength.",
+        "Use an authorized test account for return-path and trail persistence checks; the initial audit did not test them."
+      ],
+      "proposal": "Connect sign-in to keeping the paper or trail just explored. Make availability claims consistent. Avoid presenting sparse reading overlap as strong relevance evidence; label it clearly or use a more reliable fallback.",
+      "acceptance_criteria": [
+        "The invitation refers to the paper or trail in context.",
+        "Return destination is preserved through sign-in.",
+        "Feature claims and sparse recommendation signals are visibly qualified."
+      ],
+      "validation_plan": "Verify return navigation and trail persistence in a signed-in test session; neither was tested in this public review.",
+      "estimated_effort": "Medium effort",
+      "editorial_weight": 5,
+      "lenses": {
+        "rubin": "Do not interrupt discovery before it has value. Let keeping the trail be the natural next action.",
+        "draper": "The emotional benefit is continuity: your useful discovery will still be here when you return."
+      },
+      "code_locations": [
+        "cmd/arxiv/templates/login.html",
+        "cmd/arxiv/templates/paper.html",
+        "cmd/arxiv/templates/index.html",
+        "cmd/arxiv/templates/search.html",
+        "cmd/arxiv/auth_handlers.go",
+        "cmd/arxiv/search_availability_test.go"
+      ],
+      "verification_evidence": [
+        {
+          "date": "2026-09-19",
+          "environment": "Local application working tree based on e7f0026; disposable PostgreSQL; controlled Chromium desktop/narrow fixtures; no production deployment",
+          "outcome": "Related batch qualifies Deep availability and sparse reading overlap, preserves contextual paper invitation, and regression-tests punctuated Deep queries through login return URLs. Existing sanitized OAuth next paths retained. Real Google sign-in and reading-trail persistence were not exercised; full acceptance remains in progress.",
+          "source": "IMPLEMENTATION-2026-09-19.md",
+          "deployment": "not deployed",
+          "base_commit": "e7f0026adabfd01af027b608eae96b08db5538ac"
+        }
+      ],
+      "commit": null,
+      "route_ids": [
+        "paper",
+        "login"
+      ]
+    }
+  ],
+  "integration_context": {
+    "documentation_url": "https://arxiv.gg/api/v1/",
+    "documentation_inspected_on": "2026-09-17",
+    "endpoints_tested": false,
+    "route_map": "route-map.json"
+  }
+}

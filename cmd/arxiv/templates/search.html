@@ -7,25 +7,35 @@
 	@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 </style>
 <h1>Search Results</h1>
+<label class="search-label" for="search-input">Find a paper by title, author, keyword, or arXiv ID</label>
 <div class="search-container">
 	<form class="search-bar" action="/search" method="get" id="search-form" role="search">
-		<input type="text" name="q" id="search-input" class="search-input" placeholder="Search or paste arXiv ID/URL..." value="{{.Query}}" autocomplete="off" aria-label="Search papers" maxlength="500" required>
+		<input type="text" name="q" id="search-input" class="search-input" placeholder="Title, author, keyword, or arXiv ID" value="{{.Query}}" autocomplete="off" aria-describedby="quick-help" maxlength="500" required>
 		<input type="hidden" name="mode" value="quick">
 		<div class="search-buttons">
-			<button type="button" class="search-btn search-btn-keyword" id="btn-quick" data-help="IDs, authors, keywords." aria-label="Quick search: IDs, authors, keywords">
-				<span class="btn-icon">⚡</span><span>Quick</span>
-			</button>
-			<button type="button" class="search-btn search-btn-semantic" id="btn-semantic" aria-label="Search ideas across abstracts" {{if .SemanticAvailable}}data-help="Ideas across abstracts."{{else}}disabled aria-disabled="true" data-help="Semantic search is temporarily unavailable." title="Semantic search is temporarily unavailable."{{end}}>
-				<span class="btn-icon">🔎</span><span>Semantic</span>
-			</button>
-			<button type="button" class="search-btn search-btn-deep" id="btn-deep" aria-label="Deep search: full-paper text where available" {{if .SemanticAvailable}}data-help="Full-paper text where available."{{else}}disabled aria-disabled="true" data-help="Semantic search is temporarily unavailable." title="Semantic search is temporarily unavailable."{{end}}>
-				<span class="btn-icon">◎</span><span>Deep</span>
+			<button type="button" class="search-btn search-btn-keyword" id="btn-quick" aria-describedby="quick-help">
+				<span class="btn-icon" aria-hidden="true">⚡</span><span>Quick Search</span>
 			</button>
 		</div>
 	</form>
 </div>
+<p class="search-mode-help" id="quick-help">Search cached paper metadata. No sign-in required.</p>
+<div class="search-options" aria-label="Other search modes">
+	<div class="search-mode-option">
+		<button type="button" class="search-btn search-btn-semantic" id="btn-semantic" aria-describedby="semantic-help" {{if not .SemanticAvailable}}disabled aria-disabled="true"{{end}}>
+			<span class="btn-icon" aria-hidden="true">🔎</span><span>Semantic{{if not .SemanticAvailable}} · unavailable{{end}}</span>
+		</button>
+		<p class="search-mode-help" id="semantic-help">{{if .SemanticAvailable}}Search prepared abstracts by idea. Requests may queue; Quick results appear while you wait.{{else}}Not enabled on this site. Use Quick Search for titles, authors, and keywords.{{end}}</p>
+	</div>
+	<div class="search-mode-option">
+		<button type="button" class="search-btn search-btn-deep" id="btn-deep" aria-describedby="deep-help" {{if not .SemanticAvailable}}disabled aria-disabled="true"{{end}}>
+			<span class="btn-icon" aria-hidden="true">◎</span><span>Deep{{if not .SemanticAvailable}} · unavailable{{else if not .CurrentUser}} · sign in{{end}}</span>
+		</button>
+		<p class="search-mode-help" id="deep-help">{{if .SemanticAvailable}}{{if .CurrentUser}}Search prepared full-paper text.{{else}}Sign in required to search prepared full-paper text.{{end}} Requests may queue; coverage varies by paper.{{else}}Not enabled on this site. Signing in does not enable Deep Search.{{end}}</p>
+	</div>
+</div>
 
-<p id="search-status">{{.SearchNotice}}</p>
+<p id="search-status" role="status" aria-live="polite" aria-atomic="true">{{.SearchNotice}}</p>
 <div id="paper-results">
 {{if .IsDeep}}
 {{range .DeepResults}}
@@ -106,7 +116,7 @@
 	const authorDisplayLimit = 12;
 	const isSignedIn = {{if .CurrentUser}}true{{else}}false{{end}};
 
-	if (initialQuery && initialCount > 0) {
+	if (initialQuery && initialCount > 0 && !statusEl.textContent.trim()) {
 		statusEl.textContent = initialCount + ' ' + initialMode + ' results for "' + initialQuery + '"';
 	}
 
@@ -117,9 +127,7 @@
 		}
 
 		function semanticStatusText(message) {
-			const text = String(message || '');
-			if (/gpu/i.test(text)) return 'Semantic search preparation is queued.';
-			return /embedding|vector/i.test(text) ? 'Understanding the idea...' : text;
+			return String(message || 'Preparing search...');
 		}
 
 		function renderAuthors(authors) {
@@ -140,7 +148,7 @@
 			const hasEmbed = p.HasEmbedding || p.hasEmbedding;
 				const cats = categories.split(' ').filter(c => c).map(c =>
 					'<a class="cat-link" href="/category/' + encodeURIComponent(c) + '" data-help="Open this arXiv subject area.">' + escapeHtml(c) + '</a>').join(' ');
-			const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper is ready for idea search and related-work maps.">🧠</span>' : '';
+			const badges = hasEmbed ? '<span class="badge badge-embed helpable" tabindex="0" data-help="This paper has a prepared abstract for idea matching. Search and map availability may vary.">🧠</span>' : '';
 				const simBadge = similarity ? '<span class="badge badge-similarity helpable" tabindex="0" data-help="How closely this paper matches your search.">' + Math.round(similarity * 100) + '%</span>' : '';
 			const snippetHtml = snippet ? '<div class="paper-abstract">' + escapeHtml(snippet) + '</div>' : '';
 		return '<div class="paper"><div class="paper-heading">' +
@@ -159,7 +167,7 @@
 	function doStreamSearch(query, mode, retry) {
 		if (!query.trim()) {
 			statusEl.style.display = '';
-			statusEl.style.color = '#dc2626';
+			statusEl.classList.add('error');
 			statusEl.textContent = 'Enter a paper ID, author, keyword, or research idea.';
 			input.focus();
 			return;
@@ -173,10 +181,10 @@
 		const retryAttempt = isRetry ? retry.attempt : 0;
 		if (generation !== searchGeneration) return;
 		if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
-		statusEl.style.color = '';
+		statusEl.classList.remove('error');
 
 		if (isDeep && !isSignedIn) {
-			window.location.href = '/login?next=' + encodeURIComponent('/search?q=' + query + '&mode=deep');
+			window.location.href = '/login?next=' + encodeURIComponent('/search?q=' + encodeURIComponent(query) + '&mode=deep');
 			return;
 		}
 
@@ -187,11 +195,11 @@
 					'<div class="terminal-header"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span>' +
 						'<span class="terminal-dot green"></span><span class="terminal-title">' + (isDeep ? 'deep search' : 'semantic search') + '</span></div>' +
 							'<div class="terminal-body"><div class="terminal-line prompt">' + (isDeep ? 'deep search ' : 'semantic search ') + '"' + escapeHtml(query) + '"</div>' +
-						'<div class="terminal-line info" id="terminal-status">' + (isDeep ? 'Reading full papers...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span></div></div></div>');
+						'<div class="terminal-line info" id="terminal-status" role="status" aria-live="polite" aria-atomic="true">' + (isDeep ? 'Searching prepared full-paper text...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span></div></div></div>');
 				terminalEl = document.getElementById('search-terminal');
 			} else {
 				terminalEl.classList.add('active');
-					document.getElementById('terminal-status').innerHTML = (isDeep ? 'Reading full papers...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span>';
+					document.getElementById('terminal-status').innerHTML = (isDeep ? 'Searching prepared full-paper text...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span>';
 			}
 			statusEl.style.display = 'none';
 		} else if (!isRetry) {
@@ -208,6 +216,8 @@
 		activeEventSource = eventSource;
 		let resultCount = 0;
 		let fallbackUsed = false;
+		let fallbackMessage = '';
+		let preparationQueued = false;
 		let retryRecommended = false;
 		let retryAfterSeconds = 30;
 		let firstSemanticResult = false;
@@ -217,11 +227,11 @@
 		function scheduleSemanticRetry() {
 			if (!isSemantic || !retryRecommended || generation !== searchGeneration) return;
 			if (retryAttempt >= maxSemanticRetries) {
-				statusEl.textContent = 'Showing Quick results. Semantic search is temporarily unavailable.';
+				statusEl.textContent = 'Showing Quick results. Semantic results are still pending; try Semantic Search again later.';
 				return;
 			}
 			const nextAttempt = retryAttempt + 1;
-			const delay = Math.min(Math.max(retryAfterSeconds, 1), 30);
+			const delay = Math.min(Math.max(retryAfterSeconds, 1), 300);
 			statusEl.textContent = 'Showing Quick results. Retrying Semantic search in ' + delay + ' seconds...';
 			semanticRetryTimer = setTimeout(() => {
 				semanticRetryTimer = null;
@@ -238,12 +248,14 @@
 					else statusEl.textContent = 'Searching...';
 					break;
 					case 'status':
+						preparationQueued = Boolean(data.queued);
+						if (data.queued) retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
 						if (data.queued && isSemantic) {
 							fallbackUsed = true;
 							retryRecommended = true;
 							retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
 						}
-						if (isAdvanced && terminalStatus) terminalStatus.innerHTML = semanticStatusText(data.message) + '<span class="terminal-cursor"></span>';
+						if (isAdvanced && terminalStatus) terminalStatus.textContent = data.queued ? (isDeep ? 'Deep' : 'Semantic') + ' Search preparation is queued. Try again shortly.' : semanticStatusText(data.message);
 					else statusEl.textContent = data.message;
 					break;
 				case 'fallback':
@@ -252,7 +264,8 @@
 					retryAfterSeconds = data.retry?.afterSeconds || retryAfterSeconds;
 					if (terminalEl) terminalEl.classList.remove('active');
 					statusEl.style.display = '';
-					statusEl.textContent = data.message || 'Semantic search is unavailable; showing Quick results.';
+					fallbackMessage = data.message || 'Semantic search is unavailable; showing Quick results.';
+					statusEl.textContent = fallbackMessage;
 					break;
 				case 'result':
 					resultCount++;
@@ -265,7 +278,7 @@
 					statusEl.style.display = '';
 					paperContainer.insertAdjacentHTML('beforeend', renderPaper(data.paper, data.similarity, data.snippet));
 					if (window.typesetMath) window.typesetMath(paperContainer.lastElementChild);
-					statusEl.textContent = resultCount + ' results...';
+					statusEl.textContent = fallbackUsed ? fallbackMessage + ' (' + resultCount + ' Quick results)' : resultCount + ' results...';
 					break;
 				case 'complete':
 					finished = true;
@@ -273,7 +286,8 @@
 					statusEl.style.display = '';
 					if (activeEventSource === eventSource) activeEventSource = null;
 					eventSource.close();
-					if (fallbackUsed) scheduleSemanticRetry();
+					if (data.queued || preparationQueued) statusEl.textContent = (isDeep ? 'Deep' : 'Semantic') + ' Search preparation is queued. Try again in ' + (data.retryAfterSeconds || retryAfterSeconds) + ' seconds, or use Quick Search.';
+					else if (fallbackUsed) { statusEl.textContent = fallbackMessage; scheduleSemanticRetry(); }
 					else if (isRetry && resultCount === 0) statusEl.textContent = 'No Semantic results found; keeping Quick results.';
 					else statusEl.textContent = data.count + ' ' + modeLabel(data.mode) + ' results for "' + query + '"';
 					break;
@@ -281,7 +295,7 @@
 					if (terminalEl) terminalEl.classList.remove('active');
 					statusEl.style.display = '';
 					statusEl.textContent = data.error;
-					statusEl.style.color = '#dc2626';
+					statusEl.classList.add('error');
 					eventSource.close();
 					if (activeEventSource === eventSource) activeEventSource = null;
 					break;
@@ -289,7 +303,10 @@
 		};
 		eventSource.onerror = function() {
 			if (finished || generation !== searchGeneration) return;
-			if (resultCount === 0) { statusEl.textContent = 'Search failed'; statusEl.style.color = '#dc2626'; }
+			if (terminalEl) terminalEl.classList.remove('active');
+			statusEl.style.display = '';
+			if (resultCount > 0) statusEl.textContent = resultCount + ' results received. Search was interrupted; try again to check for more.';
+			if (resultCount === 0) { statusEl.textContent = 'Search was interrupted. Try again or use Quick Search.'; statusEl.classList.add('error'); }
 			eventSource.close();
 			if (activeEventSource === eventSource) activeEventSource = null;
 			if (fallbackUsed) scheduleSemanticRetry();

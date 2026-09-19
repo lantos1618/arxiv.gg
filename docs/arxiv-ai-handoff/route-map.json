@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "revision": "2.0",
+  "review_date": "2026-09-17",
+  "scope": "Known routes and documented interfaces from this review, not an exhaustive application route crawl. API-to-page associations are implementation candidates, not verified network dependencies.",
+  "source_urls": [
+    "https://arxiv.gg/api/v1/",
+    "https://arxiv.gg/",
+    "https://arxiv.gg/abs/1706.03762",
+    "https://arxiv.gg/categories",
+    "https://arxiv.gg/category/cs.LG",
+    "https://arxiv.gg/login"
+  ],
+  "route_order": [
+    "home",
+    "search",
+    "categories",
+    "category",
+    "paper",
+    "author",
+    "login",
+    "account",
+    "feedback",
+    "api",
+    "mcp"
+  ],
+  "routes": [
+    {
+      "id": "home",
+      "group": "Discover",
+      "title": "Homepage",
+      "path": "/",
+      "url": "https://arxiv.gg/",
+      "evidence": "Inspected",
+      "goal": "Find a paper or start exploring.",
+      "issues": [
+        "AXG-001",
+        "AXG-002",
+        "AXG-005",
+        "AXG-006"
+      ],
+      "apis": [
+        "quick",
+        "search",
+        "semantic",
+        "stream",
+        "stats"
+      ],
+      "next_routes": [
+        "search",
+        "categories",
+        "api"
+      ],
+      "changes": [
+        "Keep one obvious available search action.",
+        "Move coverage detail beneath the primary task.",
+        "Show accurate availability and freshness labels."
+      ],
+      "investigate": "Inspect the homepage search controller, shared search components, availability state, and recent-paper query.",
+      "implementation_status": "proposed"
+    },
+    {
+      "id": "search",
+      "group": "Discover",
+      "title": "Search results",
+      "path": "/search + inline homepage results",
+      "url": "https://arxiv.gg/search",
+      "evidence": "Partially inspected",
+      "goal": "Turn a query into a relevant paper.",
+      "issues": [
+        "AXG-001",
+        "AXG-002"
+      ],
+      "apis": [
+        "quick",
+        "search",
+        "semantic",
+        "stream",
+        "pdf"
+      ],
+      "next_routes": [
+        "paper"
+      ],
+      "changes": [
+        "Rank cached exact-title matches ahead of broad matches.",
+        "Align suggestions and submitted results.",
+        "Preserve the query and disclose fallback results."
+      ],
+      "investigate": "Trace suggestions, submitted results, result ranking, SSE events, and fallback presentation. The /search URL was linked; its separate page was not inspected.",
+      "implementation_status": "proposed"
+    },
+    {
+      "id": "categories",
+      "group": "Discover",
+      "title": "Subject directory",
+      "path": "/categories",
+      "url": "https://arxiv.gg/categories",
+      "evidence": "Inspected",
+      "goal": "Choose a field using understandable labels.",
+      "issues": [
+        "AXG-007"
+      ],
+      "apis": [
+        "categories"
+      ],
+      "next_routes": [
+        "category"
+      ],
+      "changes": [
+        "Show subject name beside its code.",
+        "Explain what the count measures."
+      ],
+      "investigate": "Inspect taxonomy/name mapping and category directory rendering.",
+      "implementation_status": "proposed"
+    },
+    {
+      "id": "category",
+      "group": "Discover",
+      "title": "Subject papers",
+      "path": "/category/{code}",
+      "url": "https://arxiv.gg/category/cs.LG",
+      "evidence": "Inspected example",
+      "goal": "Browse papers in a field.",
+      "issues": [
+        "AXG-006",
+        "AXG-007"
+      ],
+      "apis": [
+        "categories",
+        "search"
+      ],
+      "next_routes": [
+        "paper"
+      ],
+      "changes": [
+        "State the real sort order and visible result cap.",
+        "Keep category names consistent across views."
+      ],
+      "investigate": "Inspect the category query and pagination/limit contract. Mapping category pages to these API endpoints is a reuse candidate, not confirmed internal wiring.",
+      "implementation_status": "proposed"
+    },
+    {
+      "id": "paper",
+      "group": "Read & explore",
+      "title": "Paper + maps",
+      "path": "/abs/{id}",
+      "url": "https://arxiv.gg/abs/1706.03762",
+      "evidence": "Inspected example",
+      "goal": "Read, inspect provenance, and follow related work.",
+      "issues": [
+        "AXG-003",
+        "AXG-004",
+        "AXG-008"
+      ],
+      "apis": [
+        "paper",
+        "citations",
+        "cited-by",
+        "graph",
+        "similar",
+        "export",
+        "embedding",
+        "fetch"
+      ],
+      "next_routes": [
+        "paper",
+        "author",
+        "login"
+      ],
+      "changes": [
+        "Correct date meaning and citation-count scope.",
+        "Make map labels, fit, and keyboard alternatives usable.",
+        "Offer a contextual way to keep this paper."
+      ],
+      "investigate": "Inspect metadata ingestion/rendering, graph layout, similarity readiness, source links, and research-trail invitation.",
+      "implementation_status": "proposed"
+    },
+    {
+      "id": "author",
+      "group": "Read & explore",
+      "title": "Author papers",
+      "path": "/author/{name}",
+      "url": "https://arxiv.gg/author/Ashish%20Vaswani",
+      "evidence": "Link observed only",
+      "goal": "Continue from a paper to its author.",
+      "issues": [],
+      "apis": [
+        "quick",
+        "search"
+      ],
+      "next_routes": [
+        "paper"
+      ],
+      "changes": [
+        "Verify author identity handling, encoded names, and result relevance before filing a new issue."
+      ],
+      "investigate": "Author links were observed on the paper page. Page behavior and exact matching semantics remain untested; there is no established defect here.",
+      "implementation_status": "investigate_only"
+    },
+    {
+      "id": "login",
+      "group": "Return",
+      "title": "Sign-in / account entry",
+      "path": "/login",
+      "url": "https://arxiv.gg/login",
+      "evidence": "Copy inspected; auth untested",
+      "goal": "Keep a private research trail and access account features.",
+      "issues": [
+        "AXG-002",
+        "AXG-008"
+      ],
+      "apis": [
+        "pdf",
+        "stream"
+      ],
+      "next_routes": [
+        "paper",
+        "account"
+      ],
+      "changes": [
+        "Align feature claims with real availability.",
+        "Preserve the intended return destination."
+      ],
+      "investigate": "Inspect login return-path handling and capability checks using an authorized test account. Never embed API keys in handoff documents.",
+      "implementation_status": "proposed"
+    },
+    {
+      "id": "account",
+      "group": "Return",
+      "title": "Account / research trail",
+      "path": "Account destination: URL not verified",
+      "url": null,
+      "evidence": "Documented flow only",
+      "goal": "Return to useful papers and obtain an account API key.",
+      "issues": [],
+      "apis": [],
+      "next_routes": [
+        "paper",
+        "mcp"
+      ],
+      "changes": [
+        "Discover the actual account route and persistence behavior in the application repository."
+      ],
+      "investigate": "Do not invent an account URL. API docs mention the Account UI and API keys; no account session was inspected.",
+      "implementation_status": "investigate_only"
+    },
+    {
+      "id": "feedback",
+      "group": "Return",
+      "title": "Feedback",
+      "path": "/feedback",
+      "url": "https://arxiv.gg/feedback",
+      "evidence": "Link observed only",
+      "goal": "Send product feedback.",
+      "issues": [],
+      "apis": [],
+      "next_routes": [],
+      "changes": [
+        "Inspect the form and submission behavior before suggesting fixes."
+      ],
+      "investigate": "A navigation link was observed. No feedback was submitted and no defect was established.",
+      "implementation_status": "investigate_only"
+    },
+    {
+      "id": "api",
+      "group": "Agent access",
+      "title": "API documentation",
+      "path": "/api/v1/",
+      "url": "https://arxiv.gg/api/v1/",
+      "evidence": "Documentation inspected",
+      "goal": "Give developers and agents the existing integration contract.",
+      "issues": [],
+      "apis": [
+        "paper",
+        "citations",
+        "cited-by",
+        "graph",
+        "similar",
+        "fetch",
+        "export",
+        "search",
+        "quick",
+        "stream",
+        "semantic",
+        "pdf",
+        "embedding",
+        "legacy",
+        "categories",
+        "stats"
+      ],
+      "next_routes": [
+        "mcp",
+        "paper"
+      ],
+      "changes": [
+        "Reuse documented interfaces before inventing replacements.",
+        "Check fallback flags, readiness states, auth boundaries, and error responses in current code."
+      ],
+      "investigate": "Inspect docs/API.md and route definitions in the application checkout. The API page links to https://github.com/lantos1618/arxiv.gg/blob/main/docs/API.md; repository contents were not inspected in this review.",
+      "implementation_status": "investigate_only"
+    },
+    {
+      "id": "mcp",
+      "group": "Agent access",
+      "title": "MCP integration",
+      "path": "/mcp",
+      "url": "https://arxiv.gg/mcp",
+      "evidence": "Documented; not connected",
+      "goal": "Expose paper research tools to an external agent.",
+      "issues": [],
+      "apis": [],
+      "next_routes": [
+        "api",
+        "paper",
+        "account"
+      ],
+      "changes": [
+        "Verify the tool schemas and connection in the receiving agent environment.",
+        "Use public tools first; only use account credentials in the appropriate authenticated context."
+      ],
+      "investigate": "Documented tools: arxiv_api_overview, arxiv_account, arxiv_search, arxiv_get_paper, arxiv_related_papers. Public tools need no login; account and Deep Search need a session cookie or API key according to the setup text.",
+      "implementation_status": "investigate_only"
+    }
+  ],
+  "apis": [
+    {
+      "id": "paper",
+      "method": "GET",
+      "path": "/api/v1/papers/{id}",
+      "purpose": "Metadata, citation count, references.",
+      "notes": "id is an arXiv identifier.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "citations",
+      "method": "GET",
+      "path": "/api/v1/papers/{id}/citations",
+      "purpose": "References cited by this paper.",
+      "notes": "Direction: outgoing references.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "cited-by",
+      "method": "GET",
+      "path": "/api/v1/papers/{id}/cited-by",
+      "purpose": "Papers that cite this paper.",
+      "notes": "limit defaults to 50.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "graph",
+      "method": "GET",
+      "path": "/api/v1/papers/{id}/graph",
+      "purpose": "Citation graph nodes and edges.",
+      "notes": "Response schema and rendering contract need verification.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "similar",
+      "method": "GET",
+      "path": "/api/v1/papers/{id}/similar",
+      "purpose": "Related papers and semantic map data.",
+      "notes": "limit default 80, maximum 160; requires paper readiness.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "fetch",
+      "method": "POST",
+      "path": "/api/v1/papers/{id}/fetch",
+      "purpose": "Fetch and cache an arXiv paper.",
+      "notes": "pdf=true, source=true (default), embedding=true are documented options.",
+      "kind": "mutation",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "export",
+      "method": "GET",
+      "path": "/api/v1/papers/{id}/export/{format}",
+      "purpose": "Export metadata.",
+      "notes": "Formats: bibtex, ris, json.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "search",
+      "method": "GET",
+      "path": "/api/v1/search",
+      "purpose": "FTS5 title and abstract search.",
+      "notes": "q required; category; limit default 20. Do not confuse with whole-PDF search.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "quick",
+      "method": "GET",
+      "path": "/api/v1/search/quick",
+      "purpose": "IDs, titles, authors, keywords, categories.",
+      "notes": "q required; limit default 10.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "stream",
+      "method": "GET",
+      "path": "/api/v1/search/stream",
+      "purpose": "Stream Quick, Search, or Deep results using SSE.",
+      "notes": "q required; mode=quick|search|deep (default search); category; limit default 100; Accept: text/event-stream.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "semantic",
+      "method": "GET",
+      "path": "/api/v1/search/semantic",
+      "purpose": "Abstract vector similarity search.",
+      "notes": "q required; limit default 20. Documentation says Quick fallback returns fallback=true when abstract Search is unavailable.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "pdf",
+      "method": "GET",
+      "path": "/api/v1/search/pdf",
+      "purpose": "Search downloaded PDF content.",
+      "notes": "q required; limit default 50; fuzzy=true. Account/Deep Search flows require authentication per MCP setup text. Verify endpoint-level requirements.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "embedding",
+      "method": "POST",
+      "path": "/api/v1/papers/{id}/embeddings",
+      "purpose": "Generate a paper profile.",
+      "notes": "Response includes hasEmbedding, mapReady, generator; may queue work.",
+      "kind": "mutation",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "legacy",
+      "method": "POST",
+      "path": "/api/v1/embeddings/generate",
+      "purpose": "Legacy bulk-generation endpoint.",
+      "notes": "Documentation marks bulk generation retired. Do not build new workflows on this route.",
+      "kind": "retired",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "categories",
+      "method": "GET",
+      "path": "/api/v1/categories",
+      "purpose": "Category list and paper counts.",
+      "notes": "Validate count scope against displayed list limits.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    },
+    {
+      "id": "stats",
+      "method": "GET",
+      "path": "/api/v1/stats",
+      "purpose": "Cache statistics.",
+      "notes": "Total papers, downloads, queue status; not a service-availability contract unless verified.",
+      "kind": "read",
+      "verification": "Documented; endpoint not tested"
+    }
+  ],
+  "mcp_tools": [
+    "arxiv_api_overview",
+    "arxiv_account",
+    "arxiv_search",
+    "arxiv_get_paper",
+    "arxiv_related_papers"
+  ]
+}

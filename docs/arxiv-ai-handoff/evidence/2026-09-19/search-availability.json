@@ -1,0 +1,44 @@
+[
+  {
+    "width": 1280,
+    "state": "off",
+    "quick": true,
+    "keyboard": true,
+    "overflow": false
+  },
+  {
+    "width": 1280,
+    "state": "on",
+    "quick": true,
+    "keyboard": true,
+    "overflow": false
+  },
+  {
+    "width": 1280,
+    "state": "signed",
+    "quick": true,
+    "keyboard": true,
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "off",
+    "quick": true,
+    "keyboard": true,
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "on",
+    "quick": true,
+    "keyboard": true,
+    "overflow": false
+  },
+  {
+    "width": 390,
+    "state": "signed",
+    "quick": true,
+    "keyboard": true,
+    "overflow": false
+  }
+]

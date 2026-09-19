@@ -1,0 +1,271 @@
+[
+  {
+    "name": "api",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": [],
+    "keyboardTabs": true,
+    "copyFeedback": true,
+    "contrast": {
+      ".agent-prompt": {
+        "foreground": "rgb(243, 244, 246)",
+        "background": "rgb(17, 24, 39)",
+        "ratio": 16.119468339438853
+      },
+      ".agent-terminal-bar": {
+        "foreground": "rgb(203, 213, 225)",
+        "background": "rgb(17, 24, 39)",
+        "ratio": 11.948333368856327
+      },
+      ".params code": {
+        "foreground": "rgb(75, 85, 99)",
+        "background": "rgb(243, 244, 246)",
+        "ratio": 6.86712857158153
+      },
+      ".badge-new": {
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(4, 120, 87)",
+        "ratio": 5.483924052498799
+      },
+      ".method": {
+        "foreground": "rgb(4, 120, 87)",
+        "background": "rgb(248, 250, 252)",
+        "ratio": 5.241375199962334
+      },
+      ".agent-copy-status": {
+        "foreground": "rgb(185, 28, 28)",
+        "background": "rgb(255, 255, 255)",
+        "ratio": 6.4700447145121895
+      },
+      "selection": {
+        "foreground": "rgb(17, 24, 39)",
+        "background": "rgb(191, 219, 254)",
+        "ratio": 12.484563858836584
+      }
+    }
+  },
+  {
+    "name": "index",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": [],
+    "tooltips": {
+      "keyboard": true,
+      "escape": true,
+      "hoverable": true,
+      "bounds": {
+        "x": 968,
+        "y": 762,
+        "width": 304,
+        "height": 101.15625
+      }
+    }
+  },
+  {
+    "name": "search",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "login",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "feedback",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "categories",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": [],
+    "categoryKeyboard": true
+  },
+  {
+    "name": "category",
+    "width": 1280,
+    "layout": {
+      "width": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "api",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": [
+        {
+          "tag": "CODE",
+          "id": "",
+          "class": "",
+          "right": 439
+        },
+        {
+          "tag": "CODE",
+          "id": "",
+          "class": "",
+          "right": 665.96875
+        }
+      ]
+    },
+    "skipLink": true,
+    "errors": [],
+    "keyboardTabs": true,
+    "copyFeedback": true,
+    "contrast": {
+      ".agent-prompt": {
+        "foreground": "rgb(243, 244, 246)",
+        "background": "rgb(17, 24, 39)",
+        "ratio": 16.119468339438853
+      },
+      ".agent-terminal-bar": {
+        "foreground": "rgb(203, 213, 225)",
+        "background": "rgb(17, 24, 39)",
+        "ratio": 11.948333368856327
+      },
+      ".params code": {
+        "foreground": "rgb(75, 85, 99)",
+        "background": "rgb(243, 244, 246)",
+        "ratio": 6.86712857158153
+      },
+      ".badge-new": {
+        "foreground": "rgb(255, 255, 255)",
+        "background": "rgb(4, 120, 87)",
+        "ratio": 5.483924052498799
+      },
+      ".method": {
+        "foreground": "rgb(4, 120, 87)",
+        "background": "rgb(248, 250, 252)",
+        "ratio": 5.241375199962334
+      },
+      ".agent-copy-status": {
+        "foreground": "rgb(185, 28, 28)",
+        "background": "rgb(255, 255, 255)",
+        "ratio": 6.4700447145121895
+      },
+      "selection": {
+        "foreground": "rgb(17, 24, 39)",
+        "background": "rgb(191, 219, 254)",
+        "ratio": 12.484563858836584
+      }
+    }
+  },
+  {
+    "name": "index",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": [],
+    "tooltips": {
+      "keyboard": true,
+      "escape": true,
+      "hoverable": true,
+      "bounds": {
+        "x": 8,
+        "y": 762,
+        "width": 304,
+        "height": 101.15625
+      }
+    }
+  },
+  {
+    "name": "search",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "login",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "feedback",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  },
+  {
+    "name": "categories",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": [],
+    "categoryKeyboard": true
+  },
+  {
+    "name": "category",
+    "width": 320,
+    "layout": {
+      "width": 320,
+      "scrollWidth": 320,
+      "overflow": []
+    },
+    "skipLink": true,
+    "errors": []
+  }
+]

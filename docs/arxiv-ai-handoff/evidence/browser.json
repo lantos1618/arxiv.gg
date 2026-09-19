@@ -1,0 +1,34 @@
+[
+  {
+    "viewport": {
+      "width": 1280,
+      "height": 900
+    },
+    "fastEnter": true,
+    "quickButton": true,
+    "submittedResultsVisible": true,
+    "layout": {
+      "viewport": 1280,
+      "scrollWidth": 1280,
+      "overflow": []
+    },
+    "keyboardIDSelection": true,
+    "pageErrors": []
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "fastEnter": true,
+    "quickButton": true,
+    "submittedResultsVisible": true,
+    "layout": {
+      "viewport": 390,
+      "scrollWidth": 480,
+      "overflow": []
+    },
+    "keyboardIDSelection": true,
+    "pageErrors": []
+  }
+]

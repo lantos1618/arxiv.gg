@@ -1,0 +1,12 @@
+[
+  {
+    "version": "baseline-",
+    "before": 480,
+    "withoutTooltips": 390
+  },
+  {
+    "version": "patched",
+    "before": 480,
+    "withoutTooltips": 390
+  }
+]

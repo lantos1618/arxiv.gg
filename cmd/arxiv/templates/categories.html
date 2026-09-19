@@ -1,14 +1,28 @@
 {{define "categories"}}
 {{template "head" .}}
-<h1>Categories</h1>
-<p>{{len .Categories}} categories</p>
-<div class="categories-list">
+<h1>Browse by subject</h1>
+<p>{{len .Categories}} categories with indexed papers. Counts include all paper records in our index; a paper may appear in more than one subject.</p>
+<p class="category-note">Subject lists show up to 200 papers with downloaded source, ordered by when they were fetched into the index.</p>
+<nav aria-label="Subject disciplines">
+<ul class="category-jump-links">
+{{range .CategoryGroups}}<li><a href="#{{.ID}}">{{.Name}}</a></li>{{end}}
+</ul>
+</nav>
+{{range .CategoryGroups}}
+<section class="category-group" aria-labelledby="{{.ID}}">
+<h2 id="{{.ID}}" tabindex="-1">{{.Name}}</h2>
+<ul class="category-directory">
 {{range .Categories}}
-<div class="cat-item">
-		<a href="{{categoryPath .Name}}" data-help="Open the latest cached papers in this arXiv subject area.">{{.Name}}</a>
-		<span class="cat-count helpable" tabindex="0" data-help="Cached papers currently indexed in this category.">({{.Count}})</span>
-</div>
+<li>
+    <a class="category-subject" href="{{categoryPath .Code}}"><span>{{.Name}}</span> <code>{{.Code}}</code></a>
+    <span class="cat-count">{{formatInt .Count}} indexed papers{{if .Legacy}} · legacy category{{end}}</span>
+</li>
 {{end}}
-</div>
+</ul>
+</section>
+{{else}}
+<p>No indexed categories are available.</p>
+{{end}}
+<p class="category-note">Subject names follow the <a href="https://arxiv.org/category_taxonomy">arXiv taxonomy</a>. Legacy categories retain their original codes.</p>
 {{template "foot" .}}
 {{end}}

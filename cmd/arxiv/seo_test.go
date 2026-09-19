@@ -289,12 +289,12 @@ func TestApprovedUICopyIsTruthfulAndScoped(t *testing.T) {
 		},
 		{
 			name:      "search.html",
-			required:  []string{"value=\"quick\"", "<span>Semantic</span>", "retryRecommended", "No cached papers matched this Quick Search"},
+			required:  []string{"value=\"quick\"", "aria-describedby=\"semantic-help\"", "Not enabled on this site.", "retryRecommended", "No cached papers matched this Quick Search"},
 			forbidden: []string{"Prepare Catalog", "reindex --embeddings", "generate-embeddings-btn", "GPU is starting", "Starting the search GPU"},
 		},
 		{
 			name:      "index.html",
-			required:  []string{"value=\"quick\"", "<span>Semantic</span>", "retryRecommended", "doFullSearch(input.value, 'quick')"},
+			required:  []string{"value=\"quick\"", "aria-describedby=\"semantic-help\"", "Not enabled on this site.", "retryRecommended", "doFullSearch(input.value, 'quick')", "Recently fetched papers", "Live updates appear at the top as received."},
 			forbidden: []string{"GPU is starting", "Starting the search GPU"},
 		},
 	}

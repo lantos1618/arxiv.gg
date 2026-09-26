@@ -182,7 +182,9 @@ const source = `+source+`;
   assert.match(page.element('search-status').textContent, /Deep Search preparation is queued.*75 seconds/);
   assert.doesNotMatch(page.element('search-status').textContent, /0 .*results/);
   assert.equal(page.element('search-status').style.display, '');
-  assert.equal(page.timers.size, 0, 'Deep Search queues do not trigger unannounced background retries');
+  assert.equal(page.timers.size, 1, 'Deep Search automatically checks queued work');
+  page.debounce();
+  assert.equal(new URL(page.streams.at(-1).url, 'https://arxiv.gg').searchParams.get('mode'), 'deep');
 }
 for (const retry of [false, true]) {
   const page = createPage(source), stream = page.start('semantic');
@@ -267,4 +269,60 @@ const source = `+searchAvailabilityScript(t, "index", false)+`;
   assert.doesNotMatch(dropdown.innerHTML, /No results/);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 `)
+}
+
+func TestQueuedSearchSurvivesFallbackFailure(t *testing.T) {
+	for _, name := range []string{"index", "search"} {
+		t.Run(name, func(t *testing.T) {
+			runFrontendReviewJavaScript(t, searchAvailabilityDOM+`
+const source = `+searchAvailabilityScript(t, name, true)+`;
+for (const mode of ['semantic', 'deep']) {
+ for (const failure of ['server', 'transport']) {
+  const page = createPage(source), stream = page.start(mode, 'a new research idea');
+  if (mode === 'semantic') {
+   message(stream, {type:'fallback', message:'Preparing embedding', retry:{recommended:true, afterSeconds:75}});
+  } else {
+   message(stream, {type:'status', queued:true, retryAfterSeconds:75});
+  }
+  if (failure === 'server') message(stream, {type:'error', error:'Search is temporarily unavailable.'});
+  else stream.onerror();
+  assert.equal(page.timers.size, 1, 'pending work survives fallback/transport failure');
+  assert.match(page.element('search-status').textContent, /queued.*automatically/);
+  assert.equal(page.element('search-status').classList.contains('error'), false);
+  stream.onerror();
+  assert.equal(page.timers.size, 1, 'closed stream cannot duplicate retry');
+  page.debounce();
+  const resumed = page.streams.at(-1);
+  assert.equal(new URL(resumed.url, 'https://arxiv.gg').searchParams.get('mode'), mode);
+  message(resumed, {type:'result', paper:{ID:'1706.03762', Title:'Recovered paper', Authors:'A. Researcher'}});
+  message(resumed, {type:'complete', mode, count:1});
+  assert.match(page.element('paper-results').innerHTML, /Recovered paper/);
+  assert.match(page.element('search-status').textContent, /1 .*results/);
+  assert.equal(page.timers.size, 0, 'completed search stops polling');
+ }
+ const page = createPage(source), stream = page.start(mode);
+ message(stream, {type:'status', queued:true, retryAfterSeconds:75});
+ message(stream, {type:'complete', queued:true, retryAfterSeconds:75});
+ page.type('changed query');
+ assert.equal([...page.timers.values()].some(timer => timer.delay === 75000), false, 'editing cancels queued retry');
+}
+{
+ const page = createPage(source), stream = page.start('quick');
+ message(stream, {type:'error', error:'Search is temporarily unavailable.'});
+ assert.equal(page.timers.size, 0, 'ordinary errors must not create retry loops');
+}
+{
+ const page = createPage(source);
+ let stream = page.start('semantic');
+ for (let attempt=0; attempt<9; attempt++) {
+  message(stream, {type:'fallback', retry:{recommended:true, afterSeconds:75}});
+  message(stream, {type:'error', error:'Quick timeout'});
+  if (attempt < 8) { assert.equal(page.timers.size, 1); page.debounce(); stream=page.streams.at(-1); }
+ }
+ assert.equal(page.timers.size, 0, 'polling remains bounded');
+ assert.match(page.element('search-status').textContent, /still queued.*later/);
+}
+`)
+		})
+	}
 }

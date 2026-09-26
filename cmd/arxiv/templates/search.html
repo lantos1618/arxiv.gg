@@ -108,7 +108,7 @@
 	let activeEventSource = null;
 	let semanticRetryTimer = null;
 	let searchGeneration = 0;
-	const maxSemanticRetries = 3;
+	const maxSemanticRetries = 8;
 
 	const initialQuery = '{{.Query}}';
 	const initialMode = '{{if .IsDeep}}deep{{else if .IsSemantic}}Semantic{{else}}quick{{end}}';
@@ -225,22 +225,24 @@
 		const terminalStatus = document.getElementById('terminal-status');
 
 		function scheduleSemanticRetry() {
-			if (!isSemantic || !retryRecommended || generation !== searchGeneration) return;
+			if (!isAdvanced || !retryRecommended || generation !== searchGeneration || semanticRetryTimer) return;
+			statusEl.classList.remove('error');
+			const label = isDeep ? 'Deep' : 'Semantic';
 			if (retryAttempt >= maxSemanticRetries) {
-				statusEl.textContent = 'Showing Quick results. Semantic results are still pending; try Semantic Search again later.';
+				statusEl.textContent = label + ' Search is still queued. Try again later, or use Quick Search.';
 				return;
 			}
 			const nextAttempt = retryAttempt + 1;
 			const delay = Math.min(Math.max(retryAfterSeconds, 1), 300);
-			statusEl.textContent = 'Showing Quick results. Retrying Semantic search in ' + delay + ' seconds...';
+			statusEl.textContent = label + ' Search preparation is queued. Checking automatically in ' + delay + ' seconds...';
 			semanticRetryTimer = setTimeout(() => {
 				semanticRetryTimer = null;
-				doStreamSearch(query, 'semantic', { generation: generation, attempt: nextAttempt });
+				doStreamSearch(query, mode, { generation: generation, attempt: nextAttempt });
 			}, delay * 1000);
 		}
 
 		eventSource.onmessage = function(e) {
-			if (generation !== searchGeneration) return;
+			if (finished || generation !== searchGeneration) return;
 			const data = JSON.parse(e.data);
 			switch (data.type) {
 				case 'start':
@@ -250,7 +252,7 @@
 					case 'status':
 						preparationQueued = Boolean(data.queued);
 						if (data.queued) retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
-						if (data.queued && isSemantic) {
+						if (data.queued && isAdvanced) {
 							fallbackUsed = true;
 							retryRecommended = true;
 							retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
@@ -270,7 +272,7 @@
 				case 'result':
 					resultCount++;
 					if (isRetry && fallbackUsed) break;
-					if (isRetry && isSemantic && !firstSemanticResult) {
+					if (isRetry && isAdvanced && !firstSemanticResult) {
 						paperContainer.innerHTML = '';
 						firstSemanticResult = true;
 					}
@@ -286,30 +288,38 @@
 					statusEl.style.display = '';
 					if (activeEventSource === eventSource) activeEventSource = null;
 					eventSource.close();
-					if (data.queued || preparationQueued) statusEl.textContent = (isDeep ? 'Deep' : 'Semantic') + ' Search preparation is queued. Try again in ' + (data.retryAfterSeconds || retryAfterSeconds) + ' seconds, or use Quick Search.';
+					if (data.queued || preparationQueued) {
+						retryRecommended = true;
+						retryAfterSeconds = data.retryAfterSeconds || retryAfterSeconds;
+						scheduleSemanticRetry();
+					}
 					else if (fallbackUsed) { statusEl.textContent = fallbackMessage; scheduleSemanticRetry(); }
-					else if (isRetry && resultCount === 0) statusEl.textContent = 'No Semantic results found; keeping Quick results.';
+					else if (isRetry && resultCount === 0) statusEl.textContent = 'No ' + modeLabel(mode) + ' results found.' + (paperContainer.innerHTML ? ' Keeping Quick results.' : '');
 					else statusEl.textContent = data.count + ' ' + modeLabel(data.mode) + ' results for "' + query + '"';
 					break;
 				case 'error':
+					finished = true;
 					if (terminalEl) terminalEl.classList.remove('active');
 					statusEl.style.display = '';
 					statusEl.textContent = data.error;
 					statusEl.classList.add('error');
 					eventSource.close();
 					if (activeEventSource === eventSource) activeEventSource = null;
+					// A failed Quick fallback must not cancel the queued embedding.
+					scheduleSemanticRetry();
 					break;
 			}
 		};
 		eventSource.onerror = function() {
 			if (finished || generation !== searchGeneration) return;
+			finished = true;
 			if (terminalEl) terminalEl.classList.remove('active');
 			statusEl.style.display = '';
 			if (resultCount > 0) statusEl.textContent = resultCount + ' results received. Search was interrupted; try again to check for more.';
 			if (resultCount === 0) { statusEl.textContent = 'Search was interrupted. Try again or use Quick Search.'; statusEl.classList.add('error'); }
 			eventSource.close();
 			if (activeEventSource === eventSource) activeEventSource = null;
-			if (fallbackUsed) scheduleSemanticRetry();
+			scheduleSemanticRetry();
 		};
 	}
 

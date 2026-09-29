@@ -472,6 +472,7 @@
 					statusEl.textContent = fallbackUsed ? fallbackMessage + ' (' + resultCount + ' Quick results)' : resultCount + ' results...';
 					break;
 				case 'complete':
+					if (!finished && !data.queued && !preparationQueued && !fallbackUsed && window.arxivSearchComplete) window.arxivSearchComplete(generation, mode, data.count);
 					finished = true;
 					if (terminal) terminal.classList.remove('active');
 					statusEl.style.display = '';

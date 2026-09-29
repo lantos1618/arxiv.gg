@@ -13,5 +13,50 @@
 	script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(analyticsID);
 	document.head.appendChild(script);
 })();
+</script><script>
+(function () {
+  if (window.__arxivReaderLoaded) return;
+  window.__arxivReaderLoaded = true;
+  let interacted = false;
+  let visibleSeconds = 0;
+  let readerSent = false;
+  const sent = new Set();
+  function emit(name, values) {
+    if (document.hidden || typeof window.gtag !== 'function') return;
+    window.gtag('event', name, Object.assign({measurement_version: 'reader_v1'}, values));
+  }
+  // Trusted input is a useful signal, not a human-verification mechanism.
+  ['pointerdown', 'keydown', 'touchstart'].forEach(function (name) {
+    document.addEventListener(name, function (event) {
+      if (event.isTrusted && !document.hidden) interacted = true;
+    }, {passive: true});
+  });
+  window.setInterval(function () {
+    if (document.hidden || !document.hasFocus()) return;
+    visibleSeconds++;
+    if (!readerSent && interacted && visibleSeconds >= 30) {
+      readerSent = true;
+      emit('reader_activity', {visible_seconds: 30});
+    }
+  }, 1000);
+  document.addEventListener('click', function (event) {
+    if (!event.isTrusted || document.hidden) return;
+    const anchor = event.target.closest && event.target.closest('a[href]');
+    if (!anchor) return;
+    let url;
+    try { url = new URL(anchor.href, window.location.origin); } catch (_) { return; }
+    let name;
+    if (url.origin === window.location.origin && url.pathname.startsWith('/abs/')) name = 'paper_open';
+    if ((url.origin === window.location.origin || url.hostname === 'arxiv.org') && url.pathname.startsWith('/pdf/')) name = 'paper_pdf_open';
+    if (name) emit(name, {placement: anchor.closest('#paper-results, #search-results, #search-dropdown') ? 'search' : 'other'});
+  });
+  window.arxivSearchComplete = function (generation, mode, count) {
+    if (!interacted || document.hidden || !['quick', 'semantic', 'deep'].includes(mode)) return;
+    const key = String(generation) + ':' + mode;
+    if (sent.has(key)) return;
+    sent.add(key);
+    emit('search_completed', {search_mode: mode, result_count: Math.max(0, Math.min(1000, Number(count) || 0))});
+  };
+})();
 </script>{{end}}
 {{end}}

@@ -120,7 +120,7 @@ func TestAdSenseExcludesOtherPages(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatal(w.Body.String())
 		}
-		if strings.Contains(w.Body.String(), "adsbygoogle") || w.Header().Get("Content-Security-Policy") != "" {
+		if strings.Contains(w.Body.String(), "adsbygoogle") || strings.Contains(w.Body.String(), "googletagmanager.com") || w.Header().Get("Content-Security-Policy") != "" {
 			t.Fatalf("ads enabled on %s", path)
 		}
 	}

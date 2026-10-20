@@ -357,7 +357,11 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 	}
 	viewData["BuildDate"] = buildDateLabel()
 	viewData["BuildCommit"] = buildCommitLabel()
-	if thirdPartyScriptsAllowed(r.URL.Path) {
+	// Once consent-managed advertising is configured, never load Analytics on
+	// a page without the CMP. This also respects a refusal when navigating away
+	// from the home/paper/privacy pages that host Google's consent controls.
+	if thirdPartyScriptsAllowed(r.URL.Path) &&
+		(!s.adSenseServingConfigured() || adSensePageAllowed(r.URL.Path, name)) {
 		viewData["GoogleAnalyticsID"] = s.googleAnalyticsID
 	}
 	viewData["GoogleAdSenseClientID"] = s.googleAdSenseClientID

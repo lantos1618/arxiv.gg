@@ -9,7 +9,8 @@ before it can be activated.
 
 In the existing AdSense account:
 
-1. Confirm arxiv.gg is approved to show ads. Record the actual site status.
+1. Record Google's current site status. The integration can be deployed while
+   review is pending; only Google can approve the site to serve ads.
 2. Create a responsive Display ad unit and copy its `data-ad-slot` identifier.
    Keep Auto ads off: the app places one labeled unit on the home page and one
    on paper pages, away from search, PDF, and graph controls.
@@ -48,8 +49,9 @@ uses Google's TCF API to expose the European consent-reopening control and
 leaves the US opt-out link to Google. Reopening consent disables Analytics until
 a new choice is made and the page reloads. On these pages, Analytics starts only
 when Google's consent API reports Analytics storage granted or not applicable;
-unknown, denied, or unconfigured states do not start it. Existing Analytics on
-other pages is outside this change.
+unknown, denied, or unconfigured states do not start it. While this integration
+is configured, Analytics is suppressed on all other pages, which do not load
+the CMP; navigating there must not bypass a consent refusal.
 
 ## Security and caching
 

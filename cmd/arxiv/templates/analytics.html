@@ -1,19 +1,37 @@
 {{define "analytics"}}
-{{if .GoogleAnalyticsID}}<script>
+{{if .GoogleAnalyticsID}}<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function() {
+ function startAnalytics() {
 	if (window.__arxivAnalyticsLoaded) return;
 	window.__arxivAnalyticsLoaded = true;
 	const analyticsID = {{.GoogleAnalyticsID}};
 	window.dataLayer = window.dataLayer || [];
 	window.gtag = function(){ window.dataLayer.push(arguments); };
+	{{if .AdSensePage}}window.gtag('consent', 'default', {analytics_storage: 'granted', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});{{end}}
 	window.gtag('js', new Date());
 	window.gtag('config', analyticsID, { transport_type: 'beacon' });
 	const script = document.createElement('script');
 	script.async = true;
 	script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(analyticsID);
-	document.head.appendChild(script);
+ document.head.appendChild(script);
+ }
+ {{if .AdSensePage}}
+ window.googlefc = window.googlefc || {};
+ window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
+ window.googlefc.callbackQueue.push({CONSENT_MODE_DATA_READY: function () {
+  const consent = window.googlefc.getGoogleConsentModeValues();
+  const statuses = window.googlefc.ConsentModePurposeStatusEnum;
+  if (!consent || !statuses) return;
+  const status = consent.analyticsStoragePurposeConsentStatus;
+  if (typeof status === 'number' &&
+      (status === statuses.CONSENT_MODE_PURPOSE_STATUS_GRANTED ||
+       status === statuses.CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE)) startAnalytics();
+ }});
+ {{else}}
+ startAnalytics();
+ {{end}}
 })();
-</script><script>
+</script><script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function () {
   if (window.__arxivReaderLoaded) return;
   window.__arxivReaderLoaded = true;

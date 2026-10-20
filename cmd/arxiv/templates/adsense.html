@@ -1,0 +1,53 @@
+{{define "adsense_head"}}
+{{if .AdSensePage}}
+<script nonce="{{.CSPNonce}}" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{.GoogleAdSenseClientID}}" crossorigin="anonymous"></script>
+<style>
+.ad-placement { margin: 2rem 0; padding: 1rem 0; border-top: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; min-width: 0; }
+.ad-placement-label { margin: 0 0 0.5rem; color: #4b5563; font-size: 0.75rem; }
+.ad-placement .adsbygoogle { display: block; min-height: 250px; }
+.ad-placement .adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
+</style>
+{{end}}
+{{end}}
+
+{{define "adsense_placement"}}
+{{if .AdSenseAdSlot}}
+<aside class="ad-placement" aria-label="Advertisement">
+ <p class="ad-placement-label">Advertisement</p>
+ <ins class="adsbygoogle" style="display:block" data-ad-client="{{.GoogleAdSenseClientID}}" data-ad-slot="{{.AdSenseAdSlot}}" data-ad-format="auto" data-full-width-responsive="false"></ins>
+</aside>
+<script nonce="{{.CSPNonce}}">
+(window.adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+{{end}}
+{{end}}
+
+{{define "adsense_privacy_controls"}}
+{{if .AdSensePage}}
+<script nonce="{{.CSPNonce}}">
+(function () {
+ const button = document.getElementById('ad-privacy-settings');
+ if (!button) return;
+ let reopening = false;
+ window.googlefc = window.googlefc || {};
+ window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
+ window.googlefc.callbackQueue.push({CONSENT_API_READY: function () {
+  if (typeof window.__tcfapi !== 'function') return;
+  window.__tcfapi('addEventListener', 2, function (data, success) {
+   button.hidden = !(success && data && data.gdprApplies);
+   if (reopening && success && data && data.eventStatus === 'useractioncomplete') window.location.reload();
+  });
+ }});
+ button.addEventListener('click', function () {
+  reopening = true;
+  {{if .GoogleAnalyticsID}}window['ga-disable-' + {{.GoogleAnalyticsID}}] = true;{{end}}
+  if (typeof window.gtag === 'function') window.gtag('consent', 'update', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
+  window.googlefc.callbackQueue.push({CONSENT_API_READY: function () {
+   window.googlefc.showRevocationMessage();
+  }});
+ });
+ // AdSense supplies its own US "Do Not Sell or Share" link. Do not override it.
+})();
+</script>
+{{end}}
+{{end}}

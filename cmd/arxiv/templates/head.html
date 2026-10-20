@@ -37,9 +37,10 @@
 		{{if .BingSiteVerificationID}}<meta name="msvalidate.01" content="{{.BingSiteVerificationID}}">{{end}}
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Title}} - arXiv.gg</title>
-	{{if .StructuredData}}<script type="application/ld+json">{{.StructuredData}}</script>{{end}}
-		{{template "analytics" .}}
-	<script>
+	{{if .StructuredData}}<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}} type="application/ld+json">{{.StructuredData}}</script>{{end}}
+		{{template "adsense_head" .}}
+	{{template "analytics" .}}
+	<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 	(function() {
 		function hasMath(root) {
 			const text = root ? root.textContent || '' : '';

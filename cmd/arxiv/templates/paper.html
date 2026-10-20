@@ -3,6 +3,7 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
+	{{if .GoogleAdSenseClientID}}<meta name="google-adsense-account" content="{{.GoogleAdSenseClientID}}">{{end}}
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	{{$description := .Description}}{{if not $description}}{{$description = (truncate .Paper.Abstract 160)}}{{end}}
 	<meta name="description" content="{{$description}}">
@@ -20,9 +21,10 @@
 	<meta name="view-transition" content="same-origin">
 	<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 	<title>{{.Paper.Title}} - arXiv.gg</title>
-	{{if .StructuredData}}<script type="application/ld+json">{{.StructuredData}}</script>{{end}}
+	{{if .StructuredData}}<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}} type="application/ld+json">{{.StructuredData}}</script>{{end}}
+	{{template "adsense_head" .}}
 	{{template "analytics" .}}
-	<script>
+	<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 	(function() {
 		function hasMath(root) {
 			const text = root ? root.textContent || '' : '';
@@ -78,7 +80,7 @@
 		else scheduleMathJax();
 	})();
 	</script>
-	<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+	<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}} src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
 	<style>
 		/* View Transitions */
 		::view-transition-old(root) { animation: fade-out 0.2s ease-out; }
@@ -385,6 +387,8 @@
 	{{if .Paper.DOI}}<a href="https://doi.org/{{.Paper.DOI}}">DOI</a>{{end}}
 </div>
 
+{{template "adsense_placement" .}}
+
 <h2>Citation Graph</h2>
 <p class="map-explanation">References are papers this paper cites. Citing papers cite this paper. {{if .PaperList}}Browse the <a href="#references-heading">reference and citing lists</a> below for full titles.{{else}}No reference or citing-paper list is cached yet.{{end}}</p>
 <div class="graph-container" id="graph-container">
@@ -462,7 +466,7 @@
 </ul>
 {{end}}{{end}}
 
-<script>
+<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function() {
 	const paperID = "{{.Paper.ID}}";
 	const pdfDownloaded = {{if .Paper.PDFDownloaded}}true{{else}}false{{end}};

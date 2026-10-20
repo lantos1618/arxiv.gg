@@ -361,6 +361,22 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 		viewData["GoogleAnalyticsID"] = s.googleAnalyticsID
 	}
 	viewData["GoogleAdSenseClientID"] = s.googleAdSenseClientID
+	viewData["AdSenseConfigured"] = s.adSenseServingConfigured()
+	if s.adSenseServingConfigured() && adSensePageAllowed(r.URL.Path, name) {
+		nonce, err := randomCookieToken(32)
+		if err != nil {
+			http.Error(w, "page unavailable", http.StatusInternalServerError)
+			return
+		}
+		viewData["CSPNonce"] = nonce
+		viewData["AdSensePage"] = true
+		if name != "privacy" {
+			viewData["AdSenseAdSlot"] = s.googleAdSenseAdSlot
+		}
+		w.Header().Set("Content-Security-Policy", adSenseContentSecurityPolicy(nonce))
+		// Never reuse a document nonce through the response cache or an intermediary.
+		w.Header().Set("Cache-Control", "private, no-store")
+	}
 	viewData["BingSiteVerificationID"] = s.bingSiteVerificationID
 	viewData["SemanticAvailable"] = s.qwenExecutionConfigured()
 

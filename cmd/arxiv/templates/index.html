@@ -37,6 +37,8 @@
 <p class="search-example">Try a paper: <a href="/abs/1706.03762">Attention Is All You Need</a></p>
 <div id="search-results" class="search-results" data-mathjax></div>
 
+{{template "adsense_placement" .}}
+
 <div id="recent-papers">
 <h2>Recently fetched papers</h2>
 <p class="category-note">Up to 50 cached papers, ordered on load by most recent fetch into the index, then arXiv ID (missing fetch dates last). Live updates appear at the top as received.</p>
@@ -49,7 +51,7 @@
 <p id="stats-line"><span id="stat-total" class="helpable" tabindex="0" data-help="Paper records cached by this arXiv.gg instance. Counts refresh periodically; reload for the latest snapshot.">{{formatInt .Stats.TotalPapers}}</span> cached paper records · <span id="stat-embed" class="helpable" tabindex="0" data-help="Cached papers prepared for abstract idea search using Qwen embeddings.">{{formatInt .Stats.QwenEmbeddingsCount}}</span> prepared abstracts{{if and (gt .Stats.TotalPapers 0) (ge .Stats.QwenEmbeddingsCount 0) (le .Stats.QwenEmbeddingsCount .Stats.TotalPapers)}} · <span id="stat-prepared-percent" class="helpable" tabindex="0" data-help="Prepared abstracts divided by papers cached on arXiv.gg.">{{percent .Stats.QwenEmbeddingsCount .Stats.TotalPapers}}</span> prepared for semantic search{{end}}</p>
 <p>Counts describe this site’s cached collection, not all of arXiv. Prepared abstracts can be matched by research idea; search and related-work coverage may vary.</p>
 </details>
-<script>
+<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function() {
 	const input = document.getElementById('search-input');
 	const searchBar = document.querySelector('.search-bar');

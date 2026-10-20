@@ -166,6 +166,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		officialArxivAsOf:       officialArxivPapersAsOf,
 		googleAnalyticsID:       googleAnalyticsID,
 		googleAdSenseClientID:   googleAdSenseClientID,
+		googleAdSenseAdsEnabled: configuredAdSenseAdsEnabled(),
+		googleAdSenseAdSlot:     configuredAdSenseAdSlot(),
 		bingSiteVerificationID:  bingSiteVerificationID,
 		trustProxyHeaders:       trustProxyHeaders,
 		publicEmbeddingLimiter: newRateLimiter(
@@ -340,6 +342,8 @@ type server struct {
 	officialArxivAsOf       string
 	googleAnalyticsID       string
 	googleAdSenseClientID   string
+	googleAdSenseAdsEnabled bool
+	googleAdSenseAdSlot     string
 	bingSiteVerificationID  string
 	trustProxyHeaders       bool
 	publicEmbeddingLimiter  *rateLimiter

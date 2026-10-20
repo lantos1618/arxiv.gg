@@ -431,6 +431,11 @@ func appendVary(headers http.Header, value string) {
 
 func copyHeader(dst, src http.Header) {
 	for key, values := range src {
+		// Multiple CSP headers are enforced together. An explicitly selected page
+		// policy must replace the outer middleware default, not be appended to it.
+		if strings.EqualFold(key, "Content-Security-Policy") {
+			dst.Del(key)
+		}
 		for _, value := range values {
 			dst.Add(key, value)
 		}

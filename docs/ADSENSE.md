@@ -46,7 +46,11 @@ The privacy notice switches to the advertising disclosure when enabled.
 
 Google's published messages are delivered by the AdSense tag. The application
 uses Google's TCF API to expose the European consent-reopening control and
-leaves the US opt-out link to Google. Reopening consent disables Analytics until
+leaves the US opt-out link to Google. Ad requests start paused and resume only
+when Google reports advertising storage granted or not applicable; unavailable,
+denied, or unconfigured consent keeps requests paused. Google still applies
+its own regional and personalization restrictions. Reopening consent pauses
+ad requests and disables Analytics until
 a new choice is made and the page reloads. On these pages, Analytics starts only
 when Google's consent API reports Analytics storage granted or not applicable;
 unknown, denied, or unconfigured states do not start it. While this integration
@@ -61,10 +65,12 @@ protections. Google's supported policy allows dynamic ad resources, so the
 existing resource-domain restrictions are not applied to those pages. The
 original CSP remains on other pages and whenever advertising is disabled.
 
-Nonce-bearing HTML sends `Cache-Control: private, no-store` to prevent nonce
+Nonce-bearing HTML sends `Cache-Control: private, no-store, no-transform` to prevent nonce
 reuse through the response cache or intermediary caches. This reduces HTML
 cache hit rates after activation; monitor render latency and application load.
-Database/query caches are unchanged.
+`no-transform` prevents Cloudflare email obfuscation from injecting scripts
+without a nonce; intermediary body transformations, including compression,
+are disabled on these HTML responses. Database/query caches are unchanged.
 
 ## Validation and release
 

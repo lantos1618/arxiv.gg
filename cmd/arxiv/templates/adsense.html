@@ -1,5 +1,24 @@
 {{define "adsense_head"}}
 {{if .AdSensePage}}
+<script nonce="{{.CSPNonce}}">
+(function () {
+ // Pause before loading the library or queuing any placement. Missing or
+ // unconfigured consent must never silently turn into an ad request.
+ (window.adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 1;
+ window.googlefc = window.googlefc || {};
+ window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
+ window.googlefc.callbackQueue.push({CONSENT_MODE_DATA_READY: function () {
+  const consent = window.googlefc.getGoogleConsentModeValues();
+  const statuses = window.googlefc.ConsentModePurposeStatusEnum;
+  if (!consent || !statuses) return;
+  const status = consent.adStoragePurposeConsentStatus;
+  const permitted = typeof status === 'number' &&
+   (status === statuses.CONSENT_MODE_PURPOSE_STATUS_GRANTED ||
+    status === statuses.CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE);
+  window.adsbygoogle.pauseAdRequests = permitted ? 0 : 1;
+ }});
+})();
+</script>
 <script nonce="{{.CSPNonce}}" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{.GoogleAdSenseClientID}}" crossorigin="anonymous"></script>
 <style>
 .ad-placement { margin: 2rem 0; padding: 1rem 0; border-top: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; min-width: 0; }
@@ -40,6 +59,7 @@
  }});
  button.addEventListener('click', function () {
   reopening = true;
+  (window.adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 1;
   {{if .GoogleAnalyticsID}}window['ga-disable-' + {{.GoogleAnalyticsID}}] = true;{{end}}
   if (typeof window.gtag === 'function') window.gtag('consent', 'update', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
   window.googlefc.callbackQueue.push({CONSENT_API_READY: function () {

@@ -84,7 +84,7 @@ func TestAdSenseNonceMatchesEveryScriptAndBypassesCache(t *testing.T) {
 					t.Fatal("nonce missing entropy or reused")
 				}
 				previousNonce = nonce
-				if w.Header().Get("Cache-Control") != "private, no-store" || len(cm.cache) != 0 {
+				if w.Header().Get("Cache-Control") != "private, no-store, no-transform" || len(cm.cache) != 0 {
 					t.Fatal("nonce-bearing document was cacheable")
 				}
 				for _, required := range []string{"'strict-dynamic'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'"} {
@@ -129,8 +129,11 @@ func TestAdSenseExcludesOtherPages(t *testing.T) {
 func TestAdSenseConsentCallbacks(t *testing.T) {
 	w := httptest.NewRecorder()
 	adSenseTestServer().renderTemplate(w, httptest.NewRequest("GET", "/privacy", nil), "privacy", adSenseTestData())
-	var analytics, controls string
+	var analytics, controls, ads string
 	for _, match := range regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`).FindAllStringSubmatch(w.Body.String(), -1) {
+		if strings.Contains(match[1], "const permitted") {
+			ads = match[1]
+		}
 		if strings.Contains(match[1], "function startAnalytics") {
 			analytics = match[1]
 		}
@@ -138,9 +141,10 @@ func TestAdSenseConsentCallbacks(t *testing.T) {
 			controls = match[1]
 		}
 	}
-	if analytics == "" || controls == "" {
+	if analytics == "" || controls == "" || ads == "" {
 		t.Fatal("missing consent integration")
 	}
+	d, _ := json.Marshal(ads)
 	a, _ := json.Marshal(analytics)
 	c, _ := json.Marshal(controls)
 	runFrontendReviewJavaScript(t, `
@@ -154,12 +158,19 @@ const context = {window: {
  __tcfapi: (cmd, version, cb) => { assert.equal(cmd, 'addEventListener'); assert.equal(version, 2); tcf = cb; },
  googlefc: {
   callbackQueue: [],
-  getGoogleConsentModeValues: () => ({analyticsStoragePurposeConsentStatus: state}),
+  getGoogleConsentModeValues: () => ({analyticsStoragePurposeConsentStatus: state, adStoragePurposeConsentStatus: state}),
   ConsentModePurposeStatusEnum: {CONSENT_MODE_PURPOSE_STATUS_GRANTED: 1, CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE: 3},
   showRevocationMessage: () => revoked++,
  }
 }, document: {getElementById: () => button, createElement: () => ({}), head: {appendChild: s => appended.push(s)}}};
 vm.createContext(context);
+vm.runInContext(`+string(d)+`, context);
+assert.equal(context.window.adsbygoogle.pauseAdRequests, 1, 'requests paused before CMP');
+const adsReady = context.window.googlefc.callbackQueue.shift().CONSENT_MODE_DATA_READY;
+for (const denied of [undefined, 0, 2, 4, 99]) { state = denied; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 1); }
+for (const permitted of [1, 3]) { state = permitted; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 0); }
+state = 2; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 1, 'refusal pauses requests');
+state = 0;
 vm.runInContext(`+string(a)+`, context);
 assert.equal(appended.length, 0, 'no analytics before CMP');
 const ready = context.window.googlefc.callbackQueue.shift().CONSENT_MODE_DATA_READY;
@@ -173,7 +184,9 @@ context.window.googlefc.callbackQueue.shift().CONSENT_API_READY();
 tcf(null, false); assert.equal(button.hidden, true);
 tcf({gdprApplies: false}, true); assert.equal(button.hidden, true);
 tcf({gdprApplies: true, eventStatus: 'tcloaded'}, true); assert.equal(button.hidden, false);
+context.window.adsbygoogle.pauseAdRequests = 0;
 button.click();
+assert.equal(context.window.adsbygoogle.pauseAdRequests, 1, 'reopening pauses new requests');
 assert.equal(context.window['ga-disable-G-TEST123'], true);
 context.window.googlefc.callbackQueue.shift().CONSENT_API_READY();
 assert.equal(revoked, 1);

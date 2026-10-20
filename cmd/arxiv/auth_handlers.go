@@ -378,8 +378,8 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 			viewData["AdSenseAdSlot"] = s.googleAdSenseAdSlot
 		}
 		w.Header().Set("Content-Security-Policy", adSenseContentSecurityPolicy(nonce))
-		// Never reuse a document nonce through the response cache or an intermediary.
-		w.Header().Set("Cache-Control", "private, no-store")
+		// Prevent nonce reuse and intermediary script injection without a nonce.
+		w.Header().Set("Cache-Control", "private, no-store, no-transform")
 	}
 	viewData["BingSiteVerificationID"] = s.bingSiteVerificationID
 	viewData["SemanticAvailable"] = s.qwenExecutionConfigured()

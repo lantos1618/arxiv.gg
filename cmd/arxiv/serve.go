@@ -141,6 +141,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	officialArxivPapers := configuredOfficialArxivPapers()
 	officialArxivPapersAsOf := configuredOfficialArxivPapersAsOf()
 	googleAnalyticsID := configuredPublicID("GOOGLE_ANALYTICS_ID")
+	googleAdSenseClientID := configuredAdSenseClientID()
 	bingSiteVerificationID := configuredPublicID("BING_SITE_VERIFICATION_ID")
 
 	cache, err := arxiv.Open(cacheDir)
@@ -164,6 +165,7 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 		officialArxivPapers:     officialArxivPapers,
 		officialArxivAsOf:       officialArxivPapersAsOf,
 		googleAnalyticsID:       googleAnalyticsID,
+		googleAdSenseClientID:   googleAdSenseClientID,
 		bingSiteVerificationID:  bingSiteVerificationID,
 		trustProxyHeaders:       trustProxyHeaders,
 		publicEmbeddingLimiter: newRateLimiter(
@@ -236,6 +238,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/categories", srv.handleCategories)
 	mux.HandleFunc("/src/", srv.handleSource)
 	mux.HandleFunc("/pdf/", srv.handlePDF)
+	mux.HandleFunc("/ads.txt", srv.handleAdsTXT)
+	mux.HandleFunc("/privacy", srv.handlePrivacy)
 	mux.HandleFunc("/robots.txt", srv.handleRobots)
 	mux.HandleFunc("/security.txt", srv.handleSecurityTXT)
 	mux.HandleFunc("/.well-known/security.txt", srv.handleSecurityTXT)
@@ -335,6 +339,7 @@ type server struct {
 	officialArxivPapers     int64
 	officialArxivAsOf       string
 	googleAnalyticsID       string
+	googleAdSenseClientID   string
 	bingSiteVerificationID  string
 	trustProxyHeaders       bool
 	publicEmbeddingLimiter  *rateLimiter

@@ -20,6 +20,7 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
+	{{if .GoogleAdSenseClientID}}<meta name="google-adsense-account" content="{{.GoogleAdSenseClientID}}">{{end}}
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	{{$description := "Search and explore arXiv papers, authors, categories, citations, PDFs, and related work."}}{{if .Description}}{{$description = .Description}}{{end}}
 	<meta name="description" content="{{$description}}">

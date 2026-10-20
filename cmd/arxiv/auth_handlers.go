@@ -360,6 +360,7 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 	if thirdPartyScriptsAllowed(r.URL.Path) {
 		viewData["GoogleAnalyticsID"] = s.googleAnalyticsID
 	}
+	viewData["GoogleAdSenseClientID"] = s.googleAdSenseClientID
 	viewData["BingSiteVerificationID"] = s.bingSiteVerificationID
 	viewData["SemanticAvailable"] = s.qwenExecutionConfigured()
 

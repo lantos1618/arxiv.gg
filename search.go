@@ -39,10 +39,18 @@ func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Pap
 
 	query = normalizeQuickSearchID(query)
 
+	var papers []Paper
+	var total int
+	err := c.WithQuickSearch(ctx, func(ctx context.Context) error {
+		var err error
+		papers, total, err = c.quickSearch(ctx, query, limit)
+		return err
+	})
+	return papers, total, err
+}
+
+func (c *Cache) quickSearch(ctx context.Context, query string, limit int) ([]Paper, int, error) {
 	if c.dbType == DBTypePostgres {
-		// Bound all paths, including author lookup and the legacy ILIKE fallback.
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
 		return c.quickSearchPostgres(ctx, query, limit)
 	}
 
@@ -80,28 +88,33 @@ func (c *Cache) quickSearchPostgres(ctx context.Context, query string, limit int
 	var rows []quickSearchRow
 	var stopwordTitle bool
 	err := c.withPostgresQuickSearch(ctx, func(tx *gorm.DB) error {
-		// Score every match before counting, retaining only narrow scalar rows.
-		// A window over full rows retains large tsvectors and spills them to disk.
-		// Join the requested metadata only after ranking and LIMIT, in one snapshot.
+		// Ranking detoasts vectors and normalizes titles; the default operator
+		// estimate understates that work and favors serial scans even for broad
+		// matches. Scope the estimate to this full-text transaction so PostgreSQL
+		// can choose bounded parallel top-N sorting without lossy bitmaps.
+		if err := tx.Exec("SET LOCAL cpu_operator_cost = 0.01").Error; err != nil {
+			return err
+		}
+		// Rank all matches before LIMIT. Count separately in the same statement
+		// snapshot: a window over all candidates prevents per-worker top-N sorts
+		// and retains rows unnecessarily. Fetch metadata only for selected IDs.
 		if err := tx.Raw(`
-			WITH scored AS MATERIALIZED (
+			WITH selected AS MATERIALIZED (
 				SELECT id, created,
 				       CASE WHEN lower(trim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) = ? THEN 0 ELSE 1 END AS title_order,
 				       ts_rank(search_vector, plainto_tsquery('english', ?)) AS rank
 				FROM papers
 				WHERE search_vector @@ plainto_tsquery('english', ?)
-			), selected AS MATERIALIZED (
-				SELECT id, created, title_order, rank, count(*) OVER() AS total
-				FROM scored
 				ORDER BY title_order, rank DESC, created DESC NULLS LAST, id ASC
 				LIMIT ?
 			)
 			SELECT p.id, p.created, p.updated, p.title, p.authors, p.categories,
-			       p.pdf_downloaded, p.src_downloaded, selected.total
+			       p.pdf_downloaded, p.src_downloaded,
+			       (SELECT count(*) FROM papers WHERE search_vector @@ plainto_tsquery('english', ?)) AS total
 			FROM selected JOIN papers p ON p.id = selected.id
 			ORDER BY selected.title_order, selected.rank DESC,
 			         selected.created DESC NULLS LAST, selected.id ASC
-		`, strings.ToLower(query), query, query, limit).Scan(&rows).Error; err != nil {
+		`, strings.ToLower(query), query, query, limit, query).Scan(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 && looksLikeAuthorSearchQuery(query) {
@@ -171,14 +184,18 @@ func (c *Cache) withPostgresQuickSearch(ctx context.Context, fn func(*gorm.DB) e
 		if err := tx.Exec("SET LOCAL gin_fuzzy_search_limit = 0").Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("SET LOCAL statement_timeout = '5s'").Error; err != nil {
+		timeout, err := quickSearchStatementTimeout(ctx)
+		if err != nil {
+			return err
+		}
+		if err := tx.Exec("SELECT set_config('statement_timeout', ?, true)", timeout).Error; err != nil {
 			return err
 		}
 		if err := tx.Exec("SET LOCAL jit = off").Error; err != nil {
 			return err
 		}
-		// Full-text matches span many heap pages. Keep their bitmap and narrow
-		// scored rows in a bounded request-local budget to avoid lossy rechecks.
+		// Full-text matches span many heap pages. Keep their bitmap in a bounded
+		// request-local budget to avoid lossy rechecks of unrelated rows.
 		if err := tx.Exec("SET LOCAL work_mem = '16MB'").Error; err != nil {
 			return err
 		}
@@ -209,13 +226,10 @@ func normalizeQuickSearchID(query string) string {
 			}
 		}
 	}
-	if !ValidArxivID(id) {
-		return query
+	if canonical := CanonicalArxivID(id); canonical != "" {
+		return canonical
 	}
-	if version := strings.LastIndexAny(id, "vV"); version >= 0 && ValidArxivID(id[:version]) {
-		return id[:version]
-	}
-	return id
+	return query
 }
 
 func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit int) ([]Paper, int, bool, error) {

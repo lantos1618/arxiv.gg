@@ -643,17 +643,22 @@ func (s *server) handleAPISearchQuick(w http.ResponseWriter, r *http.Request) {
 		PaperCount int64  `json:"paperCount"`
 	}
 	authors := []authorSuggestion{}
-	if author, ok := authorQueryCandidate(query); ok {
-		if paperCount := s.cache.CountPapersByAuthor(ctx, author); paperCount > 0 {
-			authors = append(authors, authorSuggestion{
-				Name:       author,
-				Path:       authorPath(author),
-				PaperCount: paperCount,
-			})
+	var papers []arxiv.Paper
+	var total int
+	err = s.cache.WithQuickSearch(ctx, func(ctx context.Context) error {
+		if author, ok := authorQueryCandidate(query); ok {
+			if paperCount := s.cache.CountPapersByAuthor(ctx, author); paperCount > 0 {
+				authors = append(authors, authorSuggestion{
+					Name:       author,
+					Path:       authorPath(author),
+					PaperCount: paperCount,
+				})
+			}
 		}
-	}
-
-	papers, total, err := s.cache.QuickSearch(ctx, query, limit)
+		var searchErr error
+		papers, total, searchErr = s.cache.QuickSearch(ctx, query, limit)
+		return searchErr
+	})
 	if err != nil {
 		respondAPIInternalError(w, http.StatusInternalServerError, "quick search", "search is temporarily unavailable", err)
 		return
@@ -921,10 +926,18 @@ func streamKeywordSearchResults(ctx context.Context, w io.Writer, flusher http.F
 	if mode == searchModeKeyword {
 		papers, err = cache.Search(ctx, query, category, limit)
 	} else {
-		papers, _, err = quickSearchPapers(ctx, cache, query, category, limit)
+		papers, err = awaitQuickSearchWithProgress(ctx, func(ctx context.Context) ([]arxiv.Paper, error) {
+			papers, _, err := quickSearchPapers(ctx, cache, query, category, limit)
+			return papers, err
+		}, func() {
+			writeQuickSearchProgress(w, flusher)
+		})
 		mode = searchModeQuick
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		logAPIInternalError("stream keyword search", err)
 		fmt.Fprintf(w, "data: %s\n\n", toJSON(map[string]interface{}{
 			"type":  "error",
@@ -958,11 +971,19 @@ func streamKeywordSearchResults(ctx context.Context, w io.Writer, flusher http.F
 }
 
 func quickSearchPapers(ctx context.Context, cache *arxiv.Cache, query, category string, limit int) ([]arxiv.Paper, int, error) {
-	if strings.TrimSpace(category) != "" {
-		papers, err := cache.Search(ctx, query, category, limit)
-		return papers, len(papers), err
-	}
-	return cache.QuickSearch(ctx, query, limit)
+	var papers []arxiv.Paper
+	var total int
+	err := cache.WithQuickSearch(ctx, func(ctx context.Context) error {
+		var err error
+		if strings.TrimSpace(category) != "" {
+			papers, err = cache.Search(ctx, query, category, limit)
+			total = len(papers)
+		} else {
+			papers, total, err = cache.QuickSearch(ctx, query, limit)
+		}
+		return err
+	})
+	return papers, total, err
 }
 
 func (s *server) searchModeReady(ctx context.Context, mode searchMode) (bool, error) {

@@ -114,8 +114,11 @@ const cases = [
  ['https://arxiv.org/abs/1706.03762v7', '1706.03762'],
  ['https://arxiv.org/pdf/1706.03762v7.pdf?download=1#page=2', '1706.03762'],
  ['astro-ph/0510857v1', 'astro-ph/0510857'],
- ['math.GT/0309136', 'math.GT/0309136'], ['math.GT/0309136v2', 'math.GT/0309136'],
- ['https://export.arxiv.org/pdf/math.GT/0309136v2.pdf', 'math.GT/0309136'],
+ ['math.GT/0309136', 'math/0309136'], ['math.GT/0309136v2', 'math/0309136'],
+ ['https://export.arxiv.org/pdf/math.GT/0309136v2.pdf', 'math/0309136'],
+ ['MATH.GT/0309136V2', 'math/0309136'],
+ ['q-bio/0401004v1', 'q-bio/0401004'], ['Q-BIO.BM/0401004v2', 'q-bio/0401004'],
+ ['https://arxiv.org/abs/Q-BIO.BM/0401004v2?download=1#paper', 'q-bio/0401004'],
 ];
 for (const [query, id] of cases) {
  const page = createPage(source);

@@ -39,7 +39,7 @@ const streamBody = data => data.map(value=>'data: '+JSON.stringify(value)+'\n\n'
    return fulfill();
   }
   if (url.pathname === '/api/v1/search/quick') return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({success:true,data:{papers:[],authors:[],count:0}})});
-  if (url.pathname === '/abs/1706.03762' || url.pathname === '/abs/math.GT/0309136') return route.fulfill({status:200,contentType:'text/html',body:'<h1>Paper shortcut fixture</h1>'});
+  if (url.pathname === '/abs/1706.03762' || url.pathname === '/abs/math/0309136' || url.pathname === '/abs/q-bio/0401004') return route.fulfill({status:200,contentType:'text/html',body:'<h1>Paper shortcut fixture</h1>'});
   return route.continue();
  });
  const page = await context.newPage();
@@ -104,7 +104,7 @@ const streamBody = data => data.map(value=>'data: '+JSON.stringify(value)+'\n\n'
   }
   await screenshot(page,name+'-empty-validation.png');
  }
- for (const [value,id] of [['1706.03762v7','1706.03762'],['math.GT/0309136v2','math.GT/0309136'],['https://arxiv.org/pdf/math.GT/0309136v2.pdf?download=1','math.GT/0309136']]) {
+ for (const [value,id] of [['1706.03762v7','1706.03762'],['math.GT/0309136v2','math/0309136'],['https://arxiv.org/pdf/math.GT/0309136v2.pdf?download=1','math/0309136'],['Q-BIO.BM/0401004v1','q-bio/0401004']]) {
   await check('Autocomplete paper shortcut: '+value,async()=>{
    await page.goto(base+'/',{waitUntil:'domcontentloaded'});
    await page.locator('#search-input').fill(value);

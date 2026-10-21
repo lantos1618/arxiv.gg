@@ -58,6 +58,17 @@ node tools/test_graph_ui.cjs
 
 Both scripts require a loopback `ARXIV_TEST_URL`. The search suite defaults to port 18081; the graph suite defaults to 8080, so the shared setting above points both at the fixture. Search checks cover history restoration, cancellation, query validation, filters, and identifier shortcuts. Graph checks cover resizing/fullscreen behavior, stale responses, and visible error recovery. Each script prints its results and exits nonzero on failure. Set `ARXIV_TEST_OUTPUT_DIR` when running the search suite to save its JSON report and screenshots; no artifacts are written by default. Rebuild and restart the fixture after template changes because templates are embedded in the test binary.
 
+## Quick Search PostgreSQL Checks
+
+Run the focused database regressions against an explicitly disposable PostgreSQL instance. The harness uses temporary tables, installs `pg_trgm` if necessary, and avoids application startup migrations:
+
+```bash
+ARXIV_TEST_POSTGRES_DSN='postgres://arxivqa@127.0.0.1:55432/arxivqa?sslmode=disable' \
+  go test -race . -run '^TestQuickSearchPostgres' -count=1
+```
+
+Quick Search keeps exact ranking and counts. Each operation has a 30-second budget, including time waiting for one of two process-wide search slots. Parent deadlines and disconnected clients cancel work sooner. Cold searches on production disk can take substantially longer than warm repeats, so record first-query latency separately; do not claim cold-query performance from repeated warm measurements. SSE reports progress during longer searches.
+
 ## Required Integration Coverage
 
 Before deploying changes in these areas, add focused validation:

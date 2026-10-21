@@ -797,6 +797,22 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if normalizeSearchMode(r) == "quick" {
+		handled := false
+		err := s.cache.WithQuickSearch(r.Context(), func(ctx context.Context) error {
+			handled = true
+			s.handleSearchQuery(w, r.WithContext(ctx), query)
+			return nil
+		})
+		if err != nil && !handled {
+			writeServerError(w, http.StatusServiceUnavailable, "search unavailable", "wait for quick search capacity", err)
+		}
+		return
+	}
+	s.handleSearchQuery(w, r, query)
+}
+
+func (s *server) handleSearchQuery(w http.ResponseWriter, r *http.Request, query string) {
 	ctx := r.Context()
 	if author, ok := authorQueryCandidate(query); ok && s.cache.CountPapersByAuthor(ctx, author) > 0 {
 		http.Redirect(w, r, authorPath(author), http.StatusFound)
@@ -1954,11 +1970,7 @@ func extractArxivID(input string) string {
 			return ""
 		}
 	}
-	// Validation guarantees any terminal v/V begins a numeric version suffix.
-	if idx := strings.LastIndexAny(id, "vV"); idx >= 0 && idx > strings.LastIndex(id, "/") {
-		id = id[:idx]
-	}
-	return id
+	return arxiv.CanonicalArxivID(id)
 }
 
 func (s *server) handleCategory(w http.ResponseWriter, r *http.Request) {

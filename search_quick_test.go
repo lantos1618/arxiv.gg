@@ -51,6 +51,8 @@ func TestNormalizeQuickSearchID(t *testing.T) {
 		{"1706.03762v7", "1706.03762"},
 		{"1706.03762V7", "1706.03762"},
 		{"hep-th/9901001v2", "hep-th/9901001"},
+		{"math.GT/0309136V2", "math/0309136"},
+		{"MATH.GT/0309136", "math/0309136"},
 		{"https://arxiv.org/abs/1706.03762v7?context=cs#top", "1706.03762"},
 		{"http://www.arxiv.org/pdf/1706.03762v7.pdf", "1706.03762"},
 		{"export.arxiv.org/pdf/hep-th/9901001v2.PDF", "hep-th/9901001"},

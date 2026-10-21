@@ -296,11 +296,14 @@ func TestQuickSearchPostgresVersionedAndMissingIDs(t *testing.T) {
 	cache := quickSearchPostgresTestCache(t)
 	addQuickSearchPostgresPaper(t, cache, "1706.03762", "Attention Is All You Need", "", "")
 	addQuickSearchPostgresPaper(t, cache, "hep-th/9901001", "Legacy paper", "", "")
+	addQuickSearchPostgresPaper(t, cache, "math/0309136", "Canonical legacy paper", "", "")
 	for _, tc := range []struct{ query, id string }{
 		{"1706.03762v7", "1706.03762"},
 		{"1706.03762V7", "1706.03762"},
 		{"https://arxiv.org/pdf/1706.03762v7.pdf", "1706.03762"},
 		{"hep-th/9901001v2", "hep-th/9901001"},
+		{"math.GT/0309136V2", "math/0309136"},
+		{"https://arxiv.org/abs/MATH.GT/0309136v1", "math/0309136"},
 		{"export.arxiv.org/abs/hep-th/9901001v2", "hep-th/9901001"},
 	} {
 		papers, total, err := cache.QuickSearch(t.Context(), tc.query, 5)
@@ -381,6 +384,33 @@ func TestQuickSearchPostgresFallbackStillFindsNormalizedSubstring(t *testing.T) 
 		papers, total, err := cache.QuickSearch(t.Context(), tc.query, 5)
 		if err != nil || total != 1 || len(papers) != 1 || papers[0].ID != tc.id {
 			t.Fatalf("substring query %q: papers=%v total=%d err=%v", tc.query, quickSearchPaperIDs(papers), total, err)
+		}
+	}
+}
+
+func TestQuickSearchPostgresDoesNotLeakSessionSettings(t *testing.T) {
+	cache := quickSearchPostgresTestCache(t)
+	addQuickSearchPostgresPaper(t, cache, "2601.00001", "Attention", "", "")
+	settings := map[string]string{
+		"work_mem": "1MB", "cpu_operator_cost": "0.005",
+		"gin_fuzzy_search_limit": "17", "statement_timeout": "9s", "jit": "on",
+	}
+	for setting, value := range settings {
+		if err := cache.db.Exec("SET " + setting + " = '" + value + "'").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	papers, total, err := cache.QuickSearch(t.Context(), "attention", 5)
+	if err != nil || total != 1 || len(papers) != 1 {
+		t.Fatalf("search: rows=%d total=%d err=%v", len(papers), total, err)
+	}
+	for setting, want := range settings {
+		var got string
+		if err := cache.db.Raw("SHOW " + setting).Scan(&got).Error; err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("QuickSearch leaked %s: got %q, want %q", setting, got, want)
 		}
 	}
 }

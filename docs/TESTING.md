@@ -34,6 +34,30 @@ bash -n start.sh tools/*.sh deploy/systemd/*
 
 Most Go database tests explicitly clear `DATABASE_URL` and use temporary SQLite databases. That is useful for deterministic unit tests but does not establish production PostgreSQL correctness.
 
+## Browser UI Regressions
+
+The search and graph scripts execute the rendered templates in Chromium with controlled API responses. `TestUIBrowserFixtureServer` serves public fixture data on loopback and never opens a database. It is skipped in normal Go test runs. These checks cover browser interactions; they do not validate production search queries or live graph data.
+
+Install Playwright and its Chromium browser before running the scripts. If those dependencies are stored elsewhere, set `PLAYWRIGHT_MODULE` to the module path and `CHROMIUM_EXECUTABLE_PATH` to the browser executable. For offline graph checks, set `D3_SCRIPT_PATH` to a local D3 v7 script; otherwise the graph harness loads D3 from its configured CDN.
+
+Run from the repository root in a shell; the fixture process runs in the background:
+
+```bash
+ui_fixture_dir="$(mktemp -d)"
+go test -c -o "$ui_fixture_dir/arxiv-ui-fixture.test" ./cmd/arxiv
+ARXIV_UI_TEST_ADDR=127.0.0.1:18081 "$ui_fixture_dir/arxiv-ui-fixture.test" \
+  -test.run '^TestUIBrowserFixtureServer$' -test.v -test.timeout=10m \
+  >"$ui_fixture_dir/server.log" 2>&1 &
+ui_fixture_pid=$!
+trap 'kill "$ui_fixture_pid" 2>/dev/null; wait "$ui_fixture_pid" 2>/dev/null; rm -rf "$ui_fixture_dir"' EXIT
+export ARXIV_TEST_URL=http://127.0.0.1:18081
+curl --retry 30 --retry-connrefused --retry-delay 1 --fail --silent "$ARXIV_TEST_URL/" >/dev/null
+node tools/test_search_ui.cjs
+node tools/test_graph_ui.cjs
+```
+
+Both scripts require a loopback `ARXIV_TEST_URL`. The search suite defaults to port 18081; the graph suite defaults to 8080, so the shared setting above points both at the fixture. Search checks cover history restoration, cancellation, query validation, filters, and identifier shortcuts. Graph checks cover resizing/fullscreen behavior, stale responses, and visible error recovery. Each script prints its results and exits nonzero on failure. Set `ARXIV_TEST_OUTPUT_DIR` when running the search suite to save its JSON report and screenshots; no artifacts are written by default. Rebuild and restart the fixture after template changes because templates are embedded in the test binary.
+
 ## Required Integration Coverage
 
 Before deploying changes in these areas, add focused validation:

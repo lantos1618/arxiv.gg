@@ -28,7 +28,9 @@
 	<div class="graph-controls">
 			<label data-help="Includes collaborators of collaborators, which makes the network broader."><input type="checkbox" id="depth-toggle"> Show 2nd degree connections</label>
 	</div>
-	<div class="graph-container" id="graph-container">
+	<p class="graph-status" id="author-graph-status" role="status" aria-live="polite">Loading collaboration network...</p>
+	<button type="button" id="author-graph-retry" hidden>Retry collaboration network</button>
+	<div class="graph-container" id="graph-container" aria-busy="true" aria-describedby="author-graph-status">
 		<svg id="collab-graph"></svg>
 	</div>
 	<p class="graph-hint">Drag nodes to rearrange. Click a node to visit that author's page.</p>
@@ -98,6 +100,7 @@
 #collab-graph { width: 100%; height: 400px; }
 .graph-controls { margin-bottom: 0.5rem; font-size: 0.85rem; }
 .graph-controls label { cursor: pointer; color: #666; }
+.graph-status { font-size: 0.85rem; color: #666; margin: 0.5rem 0; }
 .graph-hint { font-size: 0.75rem; color: #999; margin-top: 0.5rem; }
 
 /* Collaborator/Similar cards */
@@ -225,20 +228,52 @@
 		})
 		.catch(err => console.error('Failed to load similar:', err));
 
-	// Load and render collaboration graph
+	// Keep the selected depth authoritative even if an older response arrives late.
+	let graphRequestID = 0;
+	let graphController;
+	let graphSimulation;
+	let renderedDepth;
+	const graphContainer = document.getElementById('graph-container');
+	const graphStatus = document.getElementById('author-graph-status');
+	const graphRetry = document.getElementById('author-graph-retry');
 	function loadGraph(depth) {
-		fetch('/api/v1/authors/graph?author=' + encodeURIComponent(authorName) + '&depth=' + depth)
-			.then(r => r.json())
-			.then(resp => {
-				if (!resp.success || !resp.data) return;
-				renderGraph(resp.data);
+		const requestID = ++graphRequestID;
+		if (graphController) graphController.abort();
+		graphController = new AbortController();
+		graphContainer.setAttribute('aria-busy', 'true');
+		graphStatus.textContent = 'Loading collaboration network...';
+		graphRetry.hidden = true;
+		fetch('/api/v1/authors/graph?author=' + encodeURIComponent(authorName) + '&depth=' + depth, { signal: graphController.signal })
+			.then(r => {
+				if (!r.ok) throw new Error('Collaboration network request failed');
+				return r.json();
 			})
-			.catch(err => console.error('Failed to load graph:', err));
+			.then(resp => {
+				if (requestID !== graphRequestID) return;
+				if (!resp.success || !Array.isArray(resp.data?.nodes) || !Array.isArray(resp.data?.edges)) {
+					throw new Error('Collaboration network data unavailable');
+				}
+				if (typeof d3 === 'undefined') throw new Error('Graph renderer unavailable');
+				renderGraph(resp.data);
+				renderedDepth = depth;
+				graphStatus.textContent = depth === 2 ? 'Showing 2nd degree connections.' : 'Showing direct collaborators.';
+			})
+			.catch(err => {
+				if (requestID !== graphRequestID || err.name === 'AbortError') return;
+				graphStatus.textContent = 'Could not load the collaboration network.' +
+					(renderedDepth === undefined ? '' : ' The previous graph is still shown.') + ' Please retry.';
+				graphRetry.hidden = false;
+			})
+			.finally(() => {
+				if (requestID === graphRequestID) graphContainer.setAttribute('aria-busy', 'false');
+			});
 	}
+	graphRetry.addEventListener('click', () => loadGraph(currentDepth));
 
 	function renderGraph(data) {
 		const container = document.getElementById('graph-container');
 		const svg = d3.select('#collab-graph');
+		if (graphSimulation) graphSimulation.stop();
 		svg.selectAll('*').remove();
 
 		const width = container.clientWidth;
@@ -256,7 +291,7 @@
 		}
 
 		// Create simulation
-		const simulation = d3.forceSimulation(data.nodes)
+		const simulation = graphSimulation = d3.forceSimulation(data.nodes)
 			.force('link', d3.forceLink(data.edges).id(d => d.id).distance(100))
 			.force('charge', d3.forceManyBody().strength(-300))
 			.force('center', d3.forceCenter(width / 2, height / 2))

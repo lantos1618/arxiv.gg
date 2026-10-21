@@ -3,6 +3,7 @@ package arxiv
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -35,6 +36,8 @@ func (c *Cache) QuickSearch(ctx context.Context, query string, limit int) ([]Pap
 	if query == "" {
 		return nil, 0, nil
 	}
+
+	query = normalizeQuickSearchID(query)
 
 	if c.dbType == DBTypePostgres {
 		// Bound all paths, including author lookup and the legacy ILIKE fallback.
@@ -77,16 +80,28 @@ func (c *Cache) quickSearchPostgres(ctx context.Context, query string, limit int
 	var rows []quickSearchRow
 	var stopwordTitle bool
 	err := c.withPostgresQuickSearch(ctx, func(tx *gorm.DB) error {
+		// Score every match before counting, retaining only narrow scalar rows.
+		// A window over full rows retains large tsvectors and spills them to disk.
+		// Join the requested metadata only after ranking and LIMIT, in one snapshot.
 		if err := tx.Raw(`
-			SELECT id, created, updated, title, authors, categories, pdf_downloaded, src_downloaded,
-			       count(*) OVER() AS total
-			FROM papers
-			WHERE search_vector @@ plainto_tsquery('english', ?)
-			ORDER BY CASE WHEN lower(trim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) = ? THEN 0 ELSE 1 END,
-			         ts_rank(search_vector, plainto_tsquery('english', ?)) DESC,
-			         created DESC NULLS LAST, id ASC
-			LIMIT ?
-		`, query, strings.ToLower(query), query, limit).Scan(&rows).Error; err != nil {
+			WITH scored AS MATERIALIZED (
+				SELECT id, created,
+				       CASE WHEN lower(trim(regexp_replace(title, '[[:space:]]+', ' ', 'g'))) = ? THEN 0 ELSE 1 END AS title_order,
+				       ts_rank(search_vector, plainto_tsquery('english', ?)) AS rank
+				FROM papers
+				WHERE search_vector @@ plainto_tsquery('english', ?)
+			), selected AS MATERIALIZED (
+				SELECT id, created, title_order, rank, count(*) OVER() AS total
+				FROM scored
+				ORDER BY title_order, rank DESC, created DESC NULLS LAST, id ASC
+				LIMIT ?
+			)
+			SELECT p.id, p.created, p.updated, p.title, p.authors, p.categories,
+			       p.pdf_downloaded, p.src_downloaded, selected.total
+			FROM selected JOIN papers p ON p.id = selected.id
+			ORDER BY selected.title_order, selected.rank DESC,
+			         selected.created DESC NULLS LAST, selected.id ASC
+		`, strings.ToLower(query), query, query, limit).Scan(&rows).Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 && looksLikeAuthorSearchQuery(query) {
@@ -162,8 +177,45 @@ func (c *Cache) withPostgresQuickSearch(ctx context.Context, fn func(*gorm.DB) e
 		if err := tx.Exec("SET LOCAL jit = off").Error; err != nil {
 			return err
 		}
+		// Full-text matches span many heap pages. Keep their bitmap and narrow
+		// scored rows in a bounded request-local budget to avoid lossy rechecks.
+		if err := tx.Exec("SET LOCAL work_mem = '16MB'").Error; err != nil {
+			return err
+		}
 		return fn(tx)
 	})
+}
+
+// Normalize only complete, validated IDs. Arbitrary title text, URLs on other
+// hosts, and numeric ID prefixes must keep their existing search semantics.
+func normalizeQuickSearchID(query string) string {
+	id := query
+	candidate := query
+	lower := strings.ToLower(candidate)
+	if strings.HasPrefix(lower, "arxiv.org/") || strings.HasPrefix(lower, "www.arxiv.org/") || strings.HasPrefix(lower, "export.arxiv.org/") {
+		candidate = "https://" + candidate
+	}
+	if parsed, err := url.Parse(candidate); err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") &&
+		parsed.User == nil && parsed.Port() == "" {
+		host := strings.ToLower(parsed.Hostname())
+		if host == "arxiv.org" || host == "www.arxiv.org" || host == "export.arxiv.org" {
+			if strings.HasPrefix(parsed.Path, "/abs/") {
+				id = strings.TrimPrefix(parsed.Path, "/abs/")
+			} else if strings.HasPrefix(parsed.Path, "/pdf/") {
+				id = strings.TrimPrefix(parsed.Path, "/pdf/")
+				if strings.HasSuffix(strings.ToLower(id), ".pdf") {
+					id = id[:len(id)-4]
+				}
+			}
+		}
+	}
+	if !ValidArxivID(id) {
+		return query
+	}
+	if version := strings.LastIndexAny(id, "vV"); version >= 0 && ValidArxivID(id[:version]) {
+		return id[:version]
+	}
+	return id
 }
 
 func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit int) ([]Paper, int, bool, error) {
@@ -181,7 +233,8 @@ func (c *Cache) quickSearchPostgresID(ctx context.Context, query string, limit i
 		return nil, 0, true, err
 	}
 	if total == 0 {
-		return nil, 0, false, nil
+		// A complete ID with no match is a successful empty lookup.
+		return []Paper{}, 0, ValidArxivID(query), nil
 	}
 	var papers []Paper
 	err := matching.

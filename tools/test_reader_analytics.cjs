@@ -6,7 +6,9 @@ const document = {hidden: false, hasFocus: () => true, addEventListener: (n, f) 
 const window = {location: {origin: 'https://arxiv.gg'}, gtag: (...a) => events.push(a), setInterval: f => timers.push(f)};
 const context = vm.createContext({document, window, URL, Set});
 const template = fs.readFileSync(__dirname + '/../cmd/arxiv/templates/analytics.html', 'utf8');
-const source = template.match(/<script>\n(\(function \(\) \{[\s\S]*?)<\/script>/)[1];
+const match = template.match(/<script\b[^>]*>\s*(\(function \(\) \{[\s\S]*?)<\/script>/);
+assert(match, 'reader analytics script is present, including CSP nonce attributes');
+const source = match[1];
 vm.runInContext(source, context); vm.runInContext(source, context);
 assert.equal(timers.length, 1);
 window.arxivSearchComplete(1, 'quick', 10);

@@ -11,7 +11,7 @@
 <div class="search-container">
 	<form class="search-bar" action="/search" method="get" id="search-form" role="search">
 		<input type="text" name="q" id="search-input" class="search-input" placeholder="Title, author, keyword, or arXiv ID" value="{{.Query}}" autocomplete="off" aria-describedby="quick-help" maxlength="500" required>
-		<input type="hidden" name="mode" value="quick">
+		<input type="hidden" name="mode" id="search-mode" value="quick">
 		<div class="search-buttons">
 			<button type="button" class="search-btn search-btn-keyword" id="btn-quick" aria-describedby="quick-help">
 				<span class="btn-icon" aria-hidden="true">⚡</span><span>Quick Search</span>
@@ -115,6 +115,7 @@
 	const initialCount = {{if .IsDeep}}{{len .DeepResults}}{{else if .IsSemantic}}{{len .SemanticResults}}{{else}}{{len .Papers}}{{end}};
 	const authorDisplayLimit = 12;
 	const isSignedIn = {{if .CurrentUser}}true{{else}}false{{end}};
+	document.getElementById('search-mode').value = initialMode.toLowerCase();
 
 	if (initialQuery && initialCount > 0 && !statusEl.textContent.trim()) {
 		statusEl.textContent = initialCount + ' ' + initialMode + ' results for "' + initialQuery + '"';
@@ -158,6 +159,8 @@
 			'<div class="paper-categories">' + cats + '</div>' + simBadge + '</div>' + snippetHtml + '</div>';
 	}
 
+	{{template "search_input_helpers" .}}
+
 	function cancelActiveSearch() {
 		searchGeneration++;
 		if (activeEventSource) { activeEventSource.close(); activeEventSource = null; }
@@ -165,13 +168,24 @@
 	}
 
 	function doStreamSearch(query, mode, retry) {
-		if (!query.trim()) {
+		query = query.trim();
+		if (!query) {
+			cancelActiveSearch();
+			const terminal = document.getElementById('search-terminal');
+			if (terminal) terminal.classList.remove('active');
 			statusEl.style.display = '';
 			statusEl.classList.add('error');
 			statusEl.textContent = 'Enter a paper ID, author, keyword, or research idea.';
 			input.focus();
 			return;
 		}
+		const arxivID = extractArxivID(query);
+		if (arxivID) {
+			cancelActiveSearch();
+			window.location.href = encodeURI('/abs/' + arxivID);
+			return;
+		}
+		document.getElementById('search-mode').value = mode;
 		const isSemantic = mode === 'semantic';
 		const isDeep = mode === 'deep';
 		const isAdvanced = isSemantic || isDeep;
@@ -184,7 +198,11 @@
 		statusEl.classList.remove('error');
 
 		if (isDeep && !isSignedIn) {
-			window.location.href = '/login?next=' + encodeURIComponent('/search?q=' + encodeURIComponent(query) + '&mode=deep');
+			const nextParams = new URLSearchParams(window.location.search);
+			nextParams.set('q', query);
+			nextParams.set('mode', 'deep');
+			nextParams.delete('search-mode');
+			window.location.href = '/login?next=' + encodeURIComponent('/search?' + nextParams.toString());
 			return;
 		}
 
@@ -193,12 +211,14 @@
 			if (!terminalEl) {
 				paperContainer.insertAdjacentHTML('beforebegin', '<div class="terminal active" id="search-terminal">' +
 					'<div class="terminal-header"><span class="terminal-dot red"></span><span class="terminal-dot yellow"></span>' +
-						'<span class="terminal-dot green"></span><span class="terminal-title">' + (isDeep ? 'deep search' : 'semantic search') + '</span></div>' +
-							'<div class="terminal-body"><div class="terminal-line prompt">' + (isDeep ? 'deep search ' : 'semantic search ') + '"' + escapeHtml(query) + '"</div>' +
+						'<span class="terminal-dot green"></span><span class="terminal-title" id="terminal-title">' + (isDeep ? 'deep search' : 'semantic search') + '</span></div>' +
+							'<div class="terminal-body"><div class="terminal-line prompt" id="terminal-query">' + (isDeep ? 'deep search ' : 'semantic search ') + '"' + escapeHtml(query) + '"</div>' +
 						'<div class="terminal-line info" id="terminal-status" role="status" aria-live="polite" aria-atomic="true">' + (isDeep ? 'Searching prepared full-paper text...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span></div></div></div>');
 				terminalEl = document.getElementById('search-terminal');
 			} else {
 				terminalEl.classList.add('active');
+				document.getElementById('terminal-title').textContent = isDeep ? 'deep search' : 'semantic search';
+				document.getElementById('terminal-query').textContent = (isDeep ? 'deep search ' : 'semantic search ') + '"' + query + '"';
 					document.getElementById('terminal-status').innerHTML = (isDeep ? 'Searching prepared full-paper text...' : 'Understanding the idea...') + '<span class="terminal-cursor"></span>';
 			}
 			statusEl.style.display = 'none';
@@ -209,8 +229,9 @@
 		}
 		if (!isRetry) paperContainer.innerHTML = '';
 
-		const params = new URLSearchParams({ q: query, limit: '100' });
-		params.append('mode', mode);
+		const currentParams = new URLSearchParams(window.location.search);
+		const params = new URLSearchParams({ q: query, mode: mode, limit: currentParams.get('limit') || '100' });
+		if (currentParams.has('category')) params.set('category', currentParams.get('category'));
 
 		const eventSource = new EventSource('/api/v1/search/stream?' + params.toString());
 		activeEventSource = eventSource;
@@ -330,38 +351,52 @@
 		return 'Semantic';
 	}
 
+	function submitSearch(mode) {
+		const query = input.value.trim();
+		if (query && !extractArxivID(query) && (mode !== 'deep' || isSignedIn)) {
+			const params = new URLSearchParams(window.location.search);
+			params.set('q', query);
+			params.set('mode', mode);
+			params.delete('search-mode');
+			const nextURL = '/search?' + params.toString();
+			if (nextURL !== window.location.pathname + window.location.search) history.pushState(null, '', nextURL);
+		}
+		doStreamSearch(query, mode);
+	}
+
+	function restoreSearch() {
+		cancelActiveSearch();
+		const params = new URLSearchParams(window.location.search);
+		input.value = params.get('q') || '';
+		const rawMode = ((params.get('mode') || '').trim() || (params.get('search-mode') || '').trim()).toLowerCase();
+		const mode = ['deep', 'full', 'full-paper', 'fullpaper'].includes(rawMode) ? 'deep' :
+			['semantic', 'search'].includes(rawMode) ? 'semantic' : 'quick';
+		document.getElementById('search-mode').value = mode;
+		if (input.value.trim()) doStreamSearch(input.value, mode);
+		else {
+			const terminal = document.getElementById('search-terminal');
+			if (terminal) terminal.classList.remove('active');
+			paperContainer.innerHTML = '';
+			statusEl.textContent = '';
+			statusEl.classList.remove('error');
+			statusEl.style.display = '';
+		}
+	}
+
 	form.addEventListener('submit', function(e) {
 		e.preventDefault();
-		const query = input.value.trim();
-		if (query) {
-			history.pushState(null, '', '/search?q=' + encodeURIComponent(query) + '&mode=quick');
-			doStreamSearch(query, 'quick');
-		} else doStreamSearch(query, 'quick');
+		submitSearch('quick');
 	});
-
-	document.getElementById('btn-quick').addEventListener('click', function() {
-		const query = input.value.trim();
-		if (query) {
-			history.pushState(null, '', '/search?q=' + encodeURIComponent(query) + '&mode=quick');
-			doStreamSearch(query, 'quick');
-		}
+	input.addEventListener('invalid', function(e) {
+		e.preventDefault();
+		submitSearch('quick');
 	});
-
-	btnSemantic.addEventListener('click', function() {
-		const query = input.value.trim();
-		if (query) {
-			history.pushState(null, '', '/search?q=' + encodeURIComponent(query) + '&mode=semantic');
-			doStreamSearch(query, 'semantic');
-		}
-	});
-
-	document.getElementById('btn-deep').addEventListener('click', function() {
-		const query = input.value.trim();
-		if (query) {
-			history.pushState(null, '', '/search?q=' + encodeURIComponent(query) + '&mode=deep');
-			doStreamSearch(query, 'deep');
-		}
-	});
+	document.getElementById('btn-quick').addEventListener('click', () => submitSearch('quick'));
+	btnSemantic.addEventListener('click', () => submitSearch('semantic'));
+	document.getElementById('btn-deep').addEventListener('click', () => submitSearch('deep'));
+	window.addEventListener('popstate', restoreSearch);
+	window.addEventListener('pagehide', cancelActiveSearch);
+	window.addEventListener('pageshow', e => { if (e.persisted) restoreSearch(); });
 
 	input.addEventListener('input', cancelActiveSearch);
 

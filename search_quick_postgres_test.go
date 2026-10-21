@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,8 +15,9 @@ import (
 )
 
 // These tests require an explicitly supplied disposable PostgreSQL database.
-// Every fixture lives in a connection-local temporary table; Open is deliberately
-// avoided because it runs application migrations against the configured database.
+// Fixtures use connection-local temporary tables and install pg_trgm if needed.
+// Open is deliberately avoided because it runs application migrations against
+// the configured database.
 func quickSearchPostgresTestCache(t *testing.T) *Cache {
 	t.Helper()
 	dsn := os.Getenv("ARXIV_TEST_POSTGRES_DSN")
@@ -36,6 +38,7 @@ func quickSearchPostgresTestCache(t *testing.T) *Cache {
 	sqlDB.SetMaxIdleConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	for _, statement := range []string{
+		`CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public`,
 		`SET search_path = pg_temp`,
 		`CREATE TEMP TABLE papers (
 			id text PRIMARY KEY,
@@ -56,6 +59,10 @@ func quickSearchPostgresTestCache(t *testing.T) *Cache {
 		// Write directly to the GIN posting lists; a pending-list-only fixture
 		// would not exercise gin_fuzzy_search_limit's random reduction.
 		`CREATE INDEX ON papers USING gin(search_vector) WITH (fastupdate = off)`,
+		`CREATE INDEX idx_papers_id_trgm ON papers USING gin(id public.gin_trgm_ops) WITH (fastupdate = off)`,
+		`CREATE INDEX idx_papers_title_normalized_trgm ON papers USING gin((regexp_replace(title, '[[:space:]]+', ' ', 'g')) public.gin_trgm_ops) WITH (fastupdate = off)`,
+		`CREATE INDEX idx_papers_authors_trgm ON papers USING gin(authors public.gin_trgm_ops) WITH (fastupdate = off)`,
+		`CREATE INDEX idx_papers_categories_trgm ON papers USING gin(categories public.gin_trgm_ops) WITH (fastupdate = off)`,
 		`SET enable_seqscan = off`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
@@ -282,5 +289,98 @@ func TestQuickSearchPostgresDoesNotHideFullTextErrors(t *testing.T) {
 	}
 	if _, _, err := cache.QuickSearch(context.Background(), "fallback masking", 8); err == nil {
 		t.Fatal("QuickSearch hid a fulltext SQL error behind a successful broad fallback")
+	}
+}
+
+func TestQuickSearchPostgresVersionedAndMissingIDs(t *testing.T) {
+	cache := quickSearchPostgresTestCache(t)
+	addQuickSearchPostgresPaper(t, cache, "1706.03762", "Attention Is All You Need", "", "")
+	addQuickSearchPostgresPaper(t, cache, "hep-th/9901001", "Legacy paper", "", "")
+	for _, tc := range []struct{ query, id string }{
+		{"1706.03762v7", "1706.03762"},
+		{"1706.03762V7", "1706.03762"},
+		{"https://arxiv.org/pdf/1706.03762v7.pdf", "1706.03762"},
+		{"hep-th/9901001v2", "hep-th/9901001"},
+		{"export.arxiv.org/abs/hep-th/9901001v2", "hep-th/9901001"},
+	} {
+		papers, total, err := cache.QuickSearch(t.Context(), tc.query, 5)
+		if err != nil || total != 1 || len(papers) != 1 || papers[0].ID != tc.id {
+			t.Fatalf("versioned ID %q: papers=%v total=%d err=%v", tc.query, quickSearchPaperIDs(papers), total, err)
+		}
+	}
+	// Even if full-text search is unavailable, a valid absent ID is an empty ID
+	// lookup. It must not fall through to a whole-table text search.
+	if err := cache.db.Exec("ALTER TABLE papers RENAME COLUMN search_vector TO unavailable_vector").Error; err != nil {
+		t.Fatal(err)
+	}
+	papers, total, err := cache.QuickSearch(t.Context(), "9999.99999v1", 5)
+	if err != nil || total != 0 || len(papers) != 0 {
+		t.Fatalf("missing ID: papers=%v total=%d err=%v", quickSearchPaperIDs(papers), total, err)
+	}
+}
+
+type quickSearchSQLRecorder struct {
+	logger.Interface
+	fallbackSQL string
+}
+
+func (l *quickSearchSQLRecorder) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	sql, _ := fc()
+	if strings.Contains(sql, "WHERE id ILIKE") {
+		l.fallbackSQL = sql
+	}
+	l.Interface.Trace(ctx, begin, fc, err)
+}
+
+func TestQuickSearchPostgresUnmatchedFallbackUsesIndexes(t *testing.T) {
+	cache := quickSearchPostgresTestCache(t)
+	if err := cache.db.Exec(`INSERT INTO papers (id,title,authors,categories,created,updated)
+		SELECT '2501.' || lpad(n::text, 6, '0'),
+			'Unrelated discovery ' || md5(n::text), 'Fixture Researcher', 'cs.AI',
+			'2025-01-01'::timestamptz, '2025-01-01'::timestamptz
+		FROM generate_series(1, 25000) AS n`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{"ANALYZE papers", "SET enable_seqscan = on"} {
+		if err := cache.db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorder := &quickSearchSQLRecorder{Interface: logger.Default.LogMode(logger.Silent)}
+	cache.db = cache.db.Session(&gorm.Session{Logger: recorder})
+	papers, total, err := cache.QuickSearch(t.Context(), "zzqxyqaunfindable742019", 5)
+	if err != nil || total != 0 || len(papers) != 0 {
+		t.Fatalf("unmatched query: papers=%v total=%d err=%v", quickSearchPaperIDs(papers), total, err)
+	}
+	if recorder.fallbackSQL == "" {
+		t.Fatal("unmatched query did not exercise substring fallback")
+	}
+	var plan string
+	if err := cache.db.Raw("EXPLAIN (FORMAT JSON) " + recorder.fallbackSQL).Scan(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plan, "Seq Scan") || !strings.Contains(plan, "BitmapOr") {
+		t.Fatalf("unmatched fallback must use indexes with normal planner settings: %s", plan)
+	}
+	for _, index := range []string{"idx_papers_id_trgm", "idx_papers_title_normalized_trgm", "idx_papers_authors_trgm", "idx_papers_categories_trgm"} {
+		if !strings.Contains(plan, index) {
+			t.Errorf("fallback did not use %s: %s", index, plan)
+		}
+	}
+}
+
+func TestQuickSearchPostgresFallbackStillFindsNormalizedSubstring(t *testing.T) {
+	cache := quickSearchPostgresTestCache(t)
+	addQuickSearchPostgresPaper(t, cache, "2601.00001", "Supercalifragilistic\n\tDocument", "", "")
+	addQuickSearchPostgresPaper(t, cache, "2601.00002", "Unrelated", "", "Alphanumeric Researcher")
+	for _, tc := range []struct{ query, id string }{
+		{"fragilistic document", "2601.00001"},
+		{"FRAGILISTIC DOCUMENT", "2601.00001"},
+		{"phanumeric", "2601.00002"},
+	} {
+		papers, total, err := cache.QuickSearch(t.Context(), tc.query, 5)
+		if err != nil || total != 1 || len(papers) != 1 || papers[0].ID != tc.id {
+			t.Fatalf("substring query %q: papers=%v total=%d err=%v", tc.query, quickSearchPaperIDs(papers), total, err)
+		}
 	}
 }

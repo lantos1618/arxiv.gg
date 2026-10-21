@@ -6,3 +6,4 @@
 2026-05-31-admin-dashboard-indexes.sql
 2026-07-11-qwen-vector-not-null.sql
 2026-09-19-reviewed-paper-dates.sql
+2026-10-21-quick-search-substring-indexes.sql

@@ -109,7 +109,16 @@ func searchAvailabilityScript(t *testing.T, page string, signedIn bool) string {
 const searchAvailabilityDOM = `
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-function createPage(source) {
+function createPage(source, initialPath = '/search?q=initial&mode=quick') {
+  const windowListeners = {}, historyEntries = [new URL(initialPath, 'https://arxiv.gg').href];
+  let historyIndex = 0;
+  let currentURL = new URL(historyEntries[0]);
+  const location = {
+    get href() { return currentURL.href; },
+    set href(value) { currentURL = new URL(value, currentURL); },
+    get search() { return currentURL.search; },
+    get pathname() { return currentURL.pathname; },
+  };
   const elements = new Map(), streams = [], timers = new Map(), requests = [];
   let timerID = 0;
   const context = {
@@ -118,8 +127,12 @@ function createPage(source) {
       createElement: () => ({ set textContent(value) { this.innerHTML = String(value).replace(/</g, '&lt;'); } }),
     },
     navigator: { onLine: true },
-    window: { addEventListener() {}, location: {} },
-    history: { pushState() {} }, AbortController, URLSearchParams,
+    window: { addEventListener: (event, fn) => windowListeners[event] = fn, location },
+    history: { pushState(_, __, path) {
+      context.window.location.href = path;
+      historyEntries.splice(++historyIndex);
+      historyEntries.push(context.window.location.href);
+    } }, AbortController, URLSearchParams,
     setTimeout: (fn, delay) => { timers.set(++timerID, { fn, delay }); return timerID; },
     clearTimeout: id => timers.delete(id),
     fetch: (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject})),
@@ -154,7 +167,13 @@ function createPage(source) {
   }
   vm.runInNewContext(source, context);
   return {
-    element, streams, timers, requests, context,
+    element, streams, timers, requests, context, windowListeners, historyEntries,
+    moveHistory(delta) {
+      historyIndex += delta;
+      assert(historyIndex >= 0 && historyIndex < historyEntries.length);
+      context.window.location.href = historyEntries[historyIndex];
+      windowListeners.popstate({});
+    },
     start(mode, query = 'attention') {
       element('search-input').value = query;
       element('btn-' + mode).listeners.click();

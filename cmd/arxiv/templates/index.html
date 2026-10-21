@@ -201,17 +201,7 @@
 			return String(message || 'Preparing search...');
 		}
 
-	function extractArxivID(input) {
-		input = input.trim();
-		const newFormat = /^(\d{4}\.\d{4,6})$/;
-		if (newFormat.test(input)) return input;
-		const oldFormat = /^([a-z-]+\/\d{7,})$/i;
-		if (oldFormat.test(input)) return input;
-		const urlPattern = /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,6}|[a-z-]+\/\d{7,})/i;
-		const match = input.match(urlPattern);
-		if (match) return match[1].replace(/v\d+$/, '');
-		return null;
-	}
+	{{template "search_input_helpers" .}}
 
 	function showDropdown() {
 		input.ariaExpanded = 'true';
@@ -340,6 +330,7 @@
 	}
 
 	function doFullSearch(query, mode, retry) {
+		query = query.trim();
 		const isSemantic = mode === 'semantic';
 		const isDeep = mode === 'deep';
 		const isAdvanced = isSemantic || isDeep;
@@ -349,9 +340,10 @@
 		const retryAttempt = isRetry ? retry.attempt : 0;
 		if (generation !== searchGeneration) return;
 		hideDropdown();
-		if (!query.trim()) {
-			results.innerHTML = '';
+		if (!query) {
+			results.innerHTML = '<p class="search-status error" id="search-status" role="status" aria-live="polite" aria-atomic="true">Enter a paper ID, author, keyword, or research idea.</p>';
 			recent.style.display = '';
+			input.focus();
 			return;
 		}
 
@@ -587,6 +579,11 @@
 
 	document.addEventListener('click', function(e) {
 		if (!e.target.closest('.search-container')) hideDropdown();
+	});
+
+	input.addEventListener('invalid', function(e) {
+		e.preventDefault();
+		doFullSearch(input.value, 'quick');
 	});
 
 	document.getElementById('search-form').addEventListener('submit', function(e) {

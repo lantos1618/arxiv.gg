@@ -22,7 +22,7 @@ const absBaseURL = "https://arxiv.org/abs"
 const arxivFetchUserAgent = "arxiv.gg metadata fetcher (https://arxiv.gg)"
 
 var (
-	validArxivIDPattern    = regexp.MustCompile(`(?i)^(?:\d{4}\.\d{4,6}|(?:acc-phys|adap-org|alg-geom|ao-sci|astro-ph|atom-ph|bayes-an|chao-dyn|chem-ph|cmp-lg|comp-gas|cond-mat|cs|dg-ga|funct-an|gr-qc|hep-ex|hep-lat|hep-ph|hep-th|math|math-ph|mtrl-th|nlin|nucl-ex|nucl-th|patt-sol|physics|plasm-ph|q-alg|quant-ph|solv-int|supr-con)/\d{7})(?:v\d+)?$`)
+	validArxivIDPattern    = regexp.MustCompile(`(?i)^(?:\d{4}\.\d{4,6}|(?:acc-phys|adap-org|alg-geom|ao-sci|astro-ph|atom-ph|bayes-an|chao-dyn|chem-ph|cmp-lg|comp-gas|cond-mat|cs|dg-ga|funct-an|gr-qc|hep-ex|hep-lat|hep-ph|hep-th|math|math-ph|mtrl-th|nlin|nucl-ex|nucl-th|patt-sol|physics|plasm-ph|q-alg|quant-ph|solv-int|supr-con)(?:\.[a-z-]+)?/\d{7})(?:v\d+)?$`)
 	metaTagPattern         = regexp.MustCompile(`(?is)<meta\s+[^>]*>`)
 	htmlAttributePattern   = regexp.MustCompile(`(?is)([a-z_:.-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>/]+))`)
 	subjectCellPattern     = regexp.MustCompile(`(?is)<td[^>]*class=["'][^"']*\bsubjects\b[^"']*["'][^>]*>(.*?)</td>`)

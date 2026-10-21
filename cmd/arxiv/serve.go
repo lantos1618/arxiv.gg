@@ -1921,52 +1921,44 @@ func isArxivID(s string) bool {
 	return arxiv.ValidArxivID(s)
 }
 
-// extractArxivID extracts an arXiv ID from various input formats:
-// - Plain ID: "2301.00001" -> "2301.00001"
-// - URL: "https://arxiv.org/abs/2301.00001" -> "2301.00001"
-// - URL with version: "https://arxiv.org/abs/2301.00001v2" -> "2301.00001"
-// - PDF URL: "https://arxiv.org/pdf/2301.00001.pdf" -> "2301.00001"
-// Returns empty string if no valid ID found.
+// extractArxivID accepts a bare ID or an arxiv.org abstract/PDF URL and returns
+// the canonical base ID used by cached paper routes.
 func extractArxivID(input string) string {
-	input = strings.TrimSpace(input)
-
-	// Check if it's already a valid ID
-	if isArxivID(input) {
-		return input
-	}
-
-	// Try to extract from URL
-	// Patterns: arxiv.org/abs/ID, arxiv.org/pdf/ID, export.arxiv.org/abs/ID
-	for _, pattern := range []string{"/abs/", "/pdf/"} {
-		if idx := strings.Index(input, pattern); idx >= 0 {
-			id := input[idx+len(pattern):]
-			// Remove trailing .pdf if present
-			id = strings.TrimSuffix(id, ".pdf")
-			// Remove version suffix (v1, v2, etc.)
-			if vIdx := strings.LastIndex(id, "v"); vIdx > 0 {
-				// Check if everything after 'v' is numeric
-				allDigits := true
-				for _, c := range id[vIdx+1:] {
-					if c < '0' || c > '9' {
-						allDigits = false
-						break
-					}
-				}
-				if allDigits && len(id[vIdx+1:]) > 0 {
-					id = id[:vIdx]
-				}
-			}
-			// Remove any query params or fragments
-			if qIdx := strings.IndexAny(id, "?#"); qIdx >= 0 {
-				id = id[:qIdx]
-			}
-			if isArxivID(id) {
-				return id
-			}
+	id := strings.TrimSpace(input)
+	if !isArxivID(id) {
+		rawURL := id
+		if !strings.Contains(rawURL, "://") {
+			rawURL = "https://" + rawURL
+		}
+		u, err := url.Parse(rawURL)
+		if err != nil || u.User != nil || u.Port() != "" || (u.Scheme != "https" && u.Scheme != "http") {
+			return ""
+		}
+		switch strings.ToLower(u.Hostname()) {
+		case "arxiv.org", "www.arxiv.org", "export.arxiv.org":
+		default:
+			return ""
+		}
+		switch {
+		case strings.HasPrefix(u.Path, "/abs/"):
+			id = strings.TrimPrefix(u.Path, "/abs/")
+		case strings.HasPrefix(u.Path, "/pdf/"):
+			id = strings.TrimPrefix(u.Path, "/pdf/")
+		default:
+			return ""
+		}
+		if strings.HasSuffix(strings.ToLower(id), ".pdf") {
+			id = id[:len(id)-4]
+		}
+		if !isArxivID(id) {
+			return ""
 		}
 	}
-
-	return ""
+	// Validation guarantees any terminal v/V begins a numeric version suffix.
+	if idx := strings.LastIndexAny(id, "vV"); idx >= 0 && idx > strings.LastIndex(id, "/") {
+		id = id[:idx]
+	}
+	return id
 }
 
 func (s *server) handleCategory(w http.ResponseWriter, r *http.Request) {

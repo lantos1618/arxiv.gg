@@ -200,6 +200,8 @@
 
 			/* Citation graph - explicit height prevents CLS */
 			.graph-container { position: relative; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; height: 500px; margin: 1rem 0; contain: layout; }
+			#graph-container { overflow: hidden; }
+			#graph-container > svg { display: block; width: 100%; height: 100%; }
 			.graph-controls { position: absolute; top: 0.5rem; right: 0.5rem; display: flex; gap: 0.5rem; z-index: 10; }
 			.graph-btn { padding: 0.3rem 0.6rem; font-size: 0.75rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; }
 			.graph-btn:hover { background: #f1f5f9; }
@@ -214,7 +216,7 @@
 		.graph-node.selected { stroke: #1d4ed8; stroke-width: 3px; }
 			.graph-link { stroke: #94a3b8; stroke-opacity: 0.4; fill: none; }
 			.graph-link.highlighted { stroke: #1d4ed8; stroke-opacity: 1; stroke-width: 2px; }
-			.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; height: 100vh; border-radius: 0; }
+			#graph-container.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; height: 100vh; height: 100dvh; margin: 0; border-radius: 0; }
 			.semantic-map-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: -0.25rem; }
 			.semantic-map-status { color: #64748b; font-size: 0.8rem; min-height: 1.25rem; }
 			.semantic-map-container { height: 460px; background: linear-gradient(180deg, #f8fafc 0%, #eef6ff 100%); overflow: hidden; }
@@ -394,7 +396,7 @@
 <div class="graph-container" id="graph-container">
 	<div class="graph-controls">
 		<button class="graph-btn" id="reset-btn" data-help="Reset zoom and graph position." disabled>Reset</button>
-		<button class="graph-btn" id="fullscreen-btn" data-help="Expand the graph for easier exploration." disabled>Fullscreen</button>
+		<button class="graph-btn" id="fullscreen-btn" aria-pressed="false" data-help="Expand the graph for easier exploration." disabled>Fullscreen</button>
 	</div>
 	<div class="graph-legend">
 		<div class="legend-item helpable" tabindex="0" data-help="The page you are viewing now."><div class="legend-dot" style="background:#1d4ed8;"></div> This paper</div>
@@ -599,6 +601,35 @@
 	let graphInitialized = false;
 	let zoom;
 
+	function resizeCitationGraph() {
+		if (!svg) return;
+		const width = container.clientWidth;
+		const height = container.clientHeight;
+		if (!width || !height || (+svg.attr('width') === width && +svg.attr('height') === height)) return;
+		svg.attr('width', width).attr('height', height);
+		if (simulation) {
+			simulation.force('center', d3.forceCenter(width / 2, height / 2));
+			simulation.alpha(0.3).restart();
+			settleGraph(simulation);
+		}
+	}
+
+	// Observe the final layout, including CSS transitions and responsive heights.
+	// Measuring only inside the fullscreen click handler can read the old size.
+	if (typeof ResizeObserver !== 'undefined') {
+		const graphResizeObserver = new ResizeObserver(resizeCitationGraph);
+		graphResizeObserver.observe(container);
+	}
+
+	function setGraphFullscreen(fullscreen) {
+		container.classList.toggle('fullscreen', fullscreen);
+		const btn = document.getElementById('fullscreen-btn');
+		btn.textContent = fullscreen ? 'Exit' : 'Fullscreen';
+		btn.setAttribute('aria-pressed', String(fullscreen));
+		resizeCitationGraph();
+		requestAnimationFrame(resizeCitationGraph);
+	}
+
 	function highlightNode(id, highlight) {
 		if (!nodes || !links) return;
 		nodes.classed('selected', d => d.id === id && highlight);
@@ -686,25 +717,12 @@
 					});
 
 					document.getElementById('fullscreen-btn').addEventListener('click', () => {
-						container.classList.toggle('fullscreen');
-						const btn = document.getElementById('fullscreen-btn');
-						btn.textContent = container.classList.contains('fullscreen') ? 'Exit' : 'Fullscreen';
-						svg.attr('width', container.clientWidth).attr('height', container.clientHeight);
-						if (simulation) {
-							simulation.force('center', d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
-							simulation.alpha(0.3).restart();
-						}
+						setGraphFullscreen(!container.classList.contains('fullscreen'));
 					});
 
 					document.addEventListener('keydown', e => {
 						if (e.key === 'Escape' && container.classList.contains('fullscreen')) {
-							container.classList.remove('fullscreen');
-							document.getElementById('fullscreen-btn').textContent = 'Fullscreen';
-							svg.attr('width', container.clientWidth).attr('height', container.clientHeight);
-							if (simulation) {
-								simulation.force('center', d3.forceCenter(container.clientWidth / 2, container.clientHeight / 2));
-								simulation.alpha(0.3).restart();
-							}
+							setGraphFullscreen(false);
 						}
 					});
 
@@ -1513,6 +1531,7 @@
 		}
 
 		window.addEventListener('resize', () => {
+			resizeCitationGraph();
 			if (semanticMapLoaded && (semanticMapResults.length || semanticMapData?.points?.length)) {
 				renderSemanticMap(semanticMapResults, semanticMapModel, semanticMapData, true);
 			}

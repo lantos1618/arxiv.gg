@@ -1,0 +1,9 @@
+{{define "search_input_helpers"}}
+	function extractArxivID(value) {
+		let id = value.trim();
+		const url = id.match(/^(?:https?:\/\/)?(?:(?:www|export)\.)?arxiv\.org\/(?:abs|pdf)\/([^?#]+)(?:[?#].*)?$/i);
+		if (url) id = url[1].replace(/\.pdf$/i, '');
+		const match = id.match(/^((?:\d{4}\.\d{4,6}|(?:acc-phys|adap-org|alg-geom|ao-sci|astro-ph|atom-ph|bayes-an|chao-dyn|chem-ph|cmp-lg|comp-gas|cond-mat|cs|dg-ga|funct-an|gr-qc|hep-ex|hep-lat|hep-ph|hep-th|math|math-ph|mtrl-th|nlin|nucl-ex|nucl-th|patt-sol|physics|plasm-ph|q-alg|quant-ph|solv-int|supr-con)(?:\.[a-z-]+)?\/\d{7}))(?:v\d+)?$/i);
+		return match ? match[1] : null;
+	}
+{{end}}

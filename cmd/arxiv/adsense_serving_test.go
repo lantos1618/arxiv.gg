@@ -104,6 +104,10 @@ func TestAdSenseNonceMatchesEveryScriptAndBypassesCache(t *testing.T) {
 				if strings.Count(body, "pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9693175657690620") != 1 {
 					t.Fatal("missing or duplicate loader")
 				}
+				cmp := "https://fundingchoicesmessages.google.com/i/pub-9693175657690620?ers=1"
+				if strings.Count(body, cmp) != 1 || strings.Index(body, cmp) > strings.Index(body, "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js") {
+					t.Fatal("consent must bootstrap independently before the ad loader")
+				}
 				if strings.Count(body, `data-ad-slot="1234567890"`) != page.placements {
 					t.Fatal("wrong placement count")
 				}
@@ -120,8 +124,11 @@ func TestAdSenseExcludesOtherPages(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatal(w.Body.String())
 		}
-		if strings.Contains(w.Body.String(), "adsbygoogle") || strings.Contains(w.Body.String(), "googletagmanager.com") || w.Header().Get("Content-Security-Policy") != "" {
+		if strings.Contains(w.Body.String(), "adsbygoogle") || w.Header().Get("Content-Security-Policy") != "" {
 			t.Fatalf("ads enabled on %s", path)
+		}
+		if got := strings.Contains(w.Body.String(), "googletagmanager.com"); got != thirdPartyScriptsAllowed(httptest.NewRequest("GET", path, nil).URL.Path) {
+			t.Fatalf("wrong analytics visibility on %s", path)
 		}
 	}
 }
@@ -131,10 +138,10 @@ func TestAdSenseConsentCallbacks(t *testing.T) {
 	adSenseTestServer().renderTemplate(w, httptest.NewRequest("GET", "/privacy", nil), "privacy", adSenseTestData())
 	var analytics, controls, ads string
 	for _, match := range regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`).FindAllStringSubmatch(w.Body.String(), -1) {
-		if strings.Contains(match[1], "const permitted") {
+		if strings.Contains(match[1], "pauseAdRequests = permitted") {
 			ads = match[1]
 		}
-		if strings.Contains(match[1], "function startAnalytics") {
+		if strings.Contains(match[1], "window.__arxivAnalyticsLoaded") {
 			analytics = match[1]
 		}
 		if strings.Contains(match[1], "showRevocationMessage") {
@@ -159,7 +166,7 @@ const context = {window: {
  googlefc: {
   callbackQueue: [],
   getGoogleConsentModeValues: () => ({analyticsStoragePurposeConsentStatus: state, adStoragePurposeConsentStatus: state}),
-  ConsentModePurposeStatusEnum: {CONSENT_MODE_PURPOSE_STATUS_GRANTED: 1, CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE: 3},
+  ConsentModePurposeStatusEnum: {GRANTED: 1, NOT_APPLICABLE: 3},
   showRevocationMessage: () => revoked++,
  }
 }, document: {getElementById: () => button, createElement: () => ({}), head: {appendChild: s => appended.push(s)}}};
@@ -167,18 +174,39 @@ vm.createContext(context);
 vm.runInContext(`+string(d)+`, context);
 assert.equal(context.window.adsbygoogle.pauseAdRequests, 1, 'requests paused before CMP');
 const adsReady = context.window.googlefc.callbackQueue.shift().CONSENT_MODE_DATA_READY;
-for (const denied of [undefined, 0, 2, 4, 99]) { state = denied; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 1); }
-for (const permitted of [1, 3]) { state = permitted; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 0); }
+for (const statuses of [{GRANTED: 1, NOT_APPLICABLE: 3}, {CONSENT_MODE_PURPOSE_STATUS_GRANTED: 1, CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE: 3}]) {
+ context.window.googlefc.ConsentModePurposeStatusEnum = statuses;
+ for (const denied of [undefined, 0, 2, 4, 99]) { state = denied; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 1); }
+ for (const permitted of [1, 3]) { state = permitted; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 0); }
+}
 state = 2; adsReady(); assert.equal(context.window.adsbygoogle.pauseAdRequests, 1, 'refusal pauses requests');
 state = 0;
 vm.runInContext(`+string(a)+`, context);
-assert.equal(appended.length, 0, 'no analytics before CMP');
+assert.equal(appended.length, 1, 'cookieless analytics starts even if the CMP never becomes ready');
+for (const purpose of ['analytics_storage', 'ad_storage', 'ad_user_data', 'ad_personalization']) {
+ assert.equal(context.window.dataLayer[0][2][purpose], 'denied', 'storage denied before any measurement');
+}
+assert.equal(context.window.dataLayer[3][0], 'config');
+assert.equal(context.window.dataLayer[3][2].allow_google_signals, false);
+assert.equal(context.window.dataLayer[3][2].allow_ad_personalization_signals, false);
 const ready = context.window.googlefc.callbackQueue.shift().CONSENT_MODE_DATA_READY;
-for (const denied of [undefined, 0, 2, 4, 99]) { state = denied; ready(); assert.equal(appended.length, 0, 'unknown/denied/unconfigured consent blocks analytics'); }
-state = 1; ready(); ready();
-assert.equal(appended.length, 1, 'granted consent starts analytics exactly once');
-assert.equal(context.window.dataLayer[0][0], 'consent');
-assert.equal(context.window.dataLayer[0][2].ad_storage, 'denied');
+for (const statuses of [{GRANTED: 1, NOT_APPLICABLE: 3}, {CONSENT_MODE_PURPOSE_STATUS_GRANTED: 1, CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE: 3}, {}]) {
+ context.window.googlefc.ConsentModePurposeStatusEnum = statuses;
+ for (const denied of [undefined, 0, 2, 4, 99]) {
+  state = denied; ready();
+  assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, 'denied');
+ }
+ if (Object.keys(statuses).length) {
+  for (const permitted of [1, 3]) {
+   state = permitted; ready();
+   assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, 'granted');
+  }
+  state = 2; ready();
+  assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, 'denied', 'refusal after a grant revokes storage');
+ }
+}
+vm.runInContext(`+string(a)+`, context);
+assert.equal(appended.length, 1, 'consent updates and rerenders never duplicate the loader');
 vm.runInContext(`+string(c)+`, context);
 context.window.googlefc.callbackQueue.shift().CONSENT_API_READY();
 tcf(null, false); assert.equal(button.hidden, true);

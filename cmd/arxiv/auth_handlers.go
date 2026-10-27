@@ -357,11 +357,9 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 	}
 	viewData["BuildDate"] = buildDateLabel()
 	viewData["BuildCommit"] = buildCommitLabel()
-	// Once consent-managed advertising is configured, never load Analytics on
-	// a page without the CMP. This also respects a refusal when navigating away
-	// from the home/paper/privacy pages that host Google's consent controls.
-	if thirdPartyScriptsAllowed(r.URL.Path) &&
-		(!s.adSenseServingConfigured() || adSensePageAllowed(r.URL.Path, name)) {
+	// Analytics starts with storage denied on every public page. The CMP may
+	// grant storage on consent-managed pages; other pages remain cookieless.
+	if thirdPartyScriptsAllowed(r.URL.Path) {
 		viewData["GoogleAnalyticsID"] = s.googleAnalyticsID
 	}
 	viewData["GoogleAdSenseClientID"] = s.googleAdSenseClientID
@@ -374,6 +372,7 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 		}
 		viewData["CSPNonce"] = nonce
 		viewData["AdSensePage"] = true
+		viewData["GoogleConsentPublisherID"] = strings.TrimPrefix(s.googleAdSenseClientID, "ca-")
 		if name != "privacy" {
 			viewData["AdSenseAdSlot"] = s.googleAdSenseAdSlot
 		}

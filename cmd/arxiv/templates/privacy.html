@@ -2,12 +2,12 @@
 {{template "head" .}}
 <article style="max-width: 48rem; margin: 2rem auto; line-height: 1.7">
   <h1>Privacy</h1>
-  <p>Last updated: 20 October 2026.</p>
+  <p>Last updated: 27 October 2026.</p>
   <p>arXiv.gg helps you discover research papers. You can search and browse public papers without signing in.</p>
   <h2>Accounts and research activity</h2>
   <p>If you sign in with Google, we use account information, including your email address and profile information, to create and operate your account. Session cookies keep you signed in. Signed-in paper views can be associated with your account to support your research trail. Feedback you choose to submit is stored so that we can review and respond to it.</p>
   <h2>Analytics and service operation</h2>
-  <p>{{if .AdSenseConfigured}}We use Google Analytics on our home, paper, and privacy pages to understand visits and interactions, including searches and paper links. Analytics loads only when Google's consent controls report that Analytics storage is permitted or that the consent requirement does not apply.{{else}}We use Google Analytics on public discovery pages to understand visits and interactions, including searches and paper links.{{end}} Analytics can use cookies and process device, browser, and usage information. Service providers that host and protect this site may process network information such as IP addresses and request logs.</p>
+  <p>We use Google Analytics on public discovery pages to understand visits and interactions, including searches and paper links. Analytics starts with analytics and advertising storage denied. In this mode Google receives limited, cookieless measurement pings, which can include the page URL, referrer, browser information, timestamp, and consent state. Analytics cookies are enabled only when Google's consent controls report that analytics storage is permitted or the consent requirement does not apply. If those controls are unavailable, storage remains denied. We disable Google signals and advertising personalization in Analytics. Account, sign-in, admin, and API pages do not load Analytics. Service providers that host and protect this site may process network information such as IP addresses and request logs.</p>
   <p>For Google's data practices, see <a href="https://policies.google.com/privacy">Google's privacy policy</a> and <a href="https://policies.google.com/technologies/partner-sites">how Google uses information from sites that use its services</a>.</p>
   <h2>Advertising</h2>
   {{if .AdSenseConfigured}}

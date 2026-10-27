@@ -64,13 +64,16 @@ vm.runInContext(source, context);
 assert.equal(appended.length, 1, 'starts while document is loading');
 assert.equal(appended[0].async, true, 'does not block document parsing');
 assert.equal(appended[0].src, 'https://www.googletagmanager.com/gtag/js?id=G-TEST123');
-assert.equal(context.window.dataLayer.length, 2);
-assert.equal(context.window.dataLayer[0][0], 'js');
-assert.equal(context.window.dataLayer[1][0], 'config');
-assert.equal(context.window.dataLayer[1][1], 'G-TEST123');
+assert.equal(context.window.dataLayer.length, 4);
+assert.equal(context.window.dataLayer[0][0], 'consent');
+assert.equal(context.window.dataLayer[0][2].analytics_storage, 'denied');
+assert.equal(context.window.dataLayer[0][2].ad_storage, 'denied');
+assert.equal(context.window.dataLayer[2][0], 'js');
+assert.equal(context.window.dataLayer[3][0], 'config');
+assert.equal(context.window.dataLayer[3][1], 'G-TEST123');
 vm.runInContext(source, context);
 assert.equal(appended.length, 1, 'initialization is idempotent');
-assert.equal(context.window.dataLayer.length, 2, 'does not double-count configuration');
+assert.equal(context.window.dataLayer.length, 4, 'does not double-count configuration');
 `)
 		})
 	}

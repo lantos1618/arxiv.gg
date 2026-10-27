@@ -44,18 +44,30 @@ loads the consent controls but has no ad unit. Search, account, login, API,
 admin, feedback, category, and author pages do not load the AdSense script.
 The privacy notice switches to the advertising disclosure when enabled.
 
-Google's published messages are delivered by the AdSense tag. The application
+Google's published messages use an explicit Google Funding Choices bootstrap
+on the home, paper, and privacy pages, independently of paused ad requests. A published
+message does not prove that its runtime is being delivered to visitors: check
+the browser, particularly while the site is pending approval. Analytics startup
+must not depend on that delivery. The application
 uses Google's TCF API to expose the European consent-reopening control and
 leaves the US opt-out link to Google. Ad requests start paused and resume only
 when Google reports advertising storage granted or not applicable; unavailable,
 denied, or unconfigured consent keeps requests paused. Google still applies
 its own regional and personalization restrictions. Reopening consent pauses
 ad requests and disables Analytics until
-a new choice is made and the page reloads. On these pages, Analytics starts only
-when Google's consent API reports Analytics storage granted or not applicable;
-unknown, denied, or unconfigured states do not start it. While this integration
-is configured, Analytics is suppressed on all other pages, which do not load
-the CMP; navigating there must not bypass a consent refusal.
+a new choice is made and the page reloads. Analytics starts
+with every storage purpose denied, before configuration or events, on all
+public discovery pages. This is Google's advanced consent mode: limited
+cookieless pings can be sent while the CMP is unavailable or consent is denied.
+Analytics storage is granted only after Google's consent API reports granted
+or not applicable; unknown, denied, and unconfigured values retain denied
+storage. Public pages without the CMP remain in denied-storage mode, so
+navigation cannot bypass a refusal. Google signals and Analytics advertising
+personalization are disabled. Sensitive pages still exclude Analytics.
+
+The consent enum adapter accepts Google's short names (`GRANTED` and
+`NOT_APPLICABLE`) and the longer names used by its integration examples.
+Unknown values never grant analytics storage or resume ad requests.
 
 ## Security and caching
 
@@ -95,7 +107,9 @@ and mobile before claiming completion:
 - Home and paper pages: one async AdSense loader and one labeled responsive unit;
   no overflow or overlap with navigation, search controls, or PDF links.
 - Privacy page: consent controls, updated notice, and no ad unit.
-- Login/account/admin/search: no AdSense requests.
+- Login/account/admin/search: no AdSense requests; login/account/admin also
+  exclude Analytics. Public search/category/author pages load Analytics with
+  storage denied and do not load the AdSense script.
 - Google test parameters `?fc=alwaysshow&fctype=gdpr` and
   `?fc=alwaysshow&fctype=ccpa`: exercise consent, refusal, reopening, and US opt-out.
   These tests use real consent records; use a separate browser test profile.

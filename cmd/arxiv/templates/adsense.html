@@ -9,14 +9,30 @@
  window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
  window.googlefc.callbackQueue.push({CONSENT_MODE_DATA_READY: function () {
   const consent = window.googlefc.getGoogleConsentModeValues();
-  const statuses = window.googlefc.ConsentModePurposeStatusEnum;
+  const statuses = window.googlefc.ConsentModePurposeStatusEnum || {};
   if (!consent || !statuses) return;
   const status = consent.adStoragePurposeConsentStatus;
   const permitted = typeof status === 'number' &&
-   (status === statuses.CONSENT_MODE_PURPOSE_STATUS_GRANTED ||
-    status === statuses.CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE);
+   (status === (statuses.GRANTED ?? statuses.CONSENT_MODE_PURPOSE_STATUS_GRANTED) ||
+    status === (statuses.NOT_APPLICABLE ?? statuses.CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE));
   window.adsbygoogle.pauseAdRequests = permitted ? 0 : 1;
  }});
+})();
+</script>
+{{/* Start the CMP independently: paused ad requests must not prevent consent delivery. */}}
+<script nonce="{{.CSPNonce}}" async src="https://fundingchoicesmessages.google.com/i/{{.GoogleConsentPublisherID}}?ers=1"></script>
+<script nonce="{{.CSPNonce}}">
+(function () {
+ function signalConsentRuntime() {
+  if (window.frames['googlefcPresent']) return;
+  const frame = document.createElement('iframe');
+  frame.name = 'googlefcPresent';
+  frame.hidden = true;
+  frame.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(frame);
+ }
+ if (document.body) signalConsentRuntime();
+ else document.addEventListener('DOMContentLoaded', signalConsentRuntime, {once: true});
 })();
 </script>
 <script nonce="{{.CSPNonce}}" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{.GoogleAdSenseClientID}}" crossorigin="anonymous"></script>

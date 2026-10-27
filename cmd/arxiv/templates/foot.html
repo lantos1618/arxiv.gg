@@ -1,10 +1,12 @@
 {{define "build_footer"}}
 <footer class="site-footer" aria-label="Site information">
 	<a href="/privacy">Privacy</a>
+	{{if .GoogleAnalyticsID}}<button id="analytics-privacy-settings" class="nav-button" type="button" aria-controls="analytics-consent-banner" aria-expanded="false">Analytics cookies</button>{{end}}
 	{{if .AdSensePage}}<button id="ad-privacy-settings" class="nav-button" type="button" hidden>Privacy and cookie settings</button>{{end}}
 	{{if and .Paper (not .LocalMode)}}<span class="site-footer-source">Source files are served from <a href="https://arxiv.org/src/{{.Paper.ID}}" target="_blank" rel="noopener noreferrer">arXiv.org</a> for compliance.</span>{{end}}
 	<span>Build {{.BuildDate}}</span>{{if .BuildCommit}}<span class="site-footer-separator">·</span><span>{{.BuildCommit}}</span>{{end}}
 </footer>
+{{template "analytics_privacy_controls" .}}
 {{template "adsense_privacy_controls" .}}
 {{template "accessibility_script" .}}
 {{end}}

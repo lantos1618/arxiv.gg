@@ -16,7 +16,9 @@ In the existing AdSense account:
    on paper pages, away from search, PDF, and graph controls.
 3. Publish Google's European regulations message for arxiv.gg with a first-page
    decline choice, English, and `https://arxiv.gg/privacy` as the policy URL.
-   Enable Consent Mode support including Analytics.
+   Enable Consent Mode for advertising purposes. Disable its Analytics-purpose
+   option: the separate site analytics-cookie choice is the sole authority for
+   analytics storage.
 4. Publish the US state regulations message for all supported current and future
    states. Retain Google's default Do Not Sell or Share link.
 
@@ -54,20 +56,24 @@ leaves the US opt-out link to Google. Ad requests start paused and resume only
 when Google reports advertising storage granted or not applicable; unavailable,
 denied, or unconfigured consent keeps requests paused. Google still applies
 its own regional and personalization restrictions. Reopening consent pauses
-ad requests and disables Analytics until
-a new choice is made and the page reloads. Analytics starts
-with every storage purpose denied, before configuration or events, on all
-public discovery pages. This is Google's advanced consent mode: limited
-cookieless pings can be sent while the CMP is unavailable or consent is denied.
-Analytics storage is granted only after Google's consent API reports granted
-or not applicable; unknown, denied, and unconfigured values retain denied
-storage. Public pages without the CMP remain in denied-storage mode, so
-navigation cannot bypass a refusal. Google signals and Analytics advertising
-personalization are disabled. Sensitive pages still exclude Analytics.
+ad requests until a new advertising choice is made and the page reloads.
 
-The consent enum adapter accepts Google's short names (`GRANTED` and
+Analytics loads on all public discovery pages independently of the advertising
+CMP. Advertising storage defaults to denied. Analytics storage defaults to denied
+unless the visitor previously chose “Allow analytics cookies” in the site's
+separate prompt. “Keep cookies off” retains denied storage and removes existing
+`_ga` cookies without touching login or advertising preferences. The choice is
+stored locally and applies across public pages; the footer's “Analytics cookies”
+button reopens it. Blocked local storage falls back to denied on navigation.
+Google signals and Analytics advertising personalization are disabled. Sensitive
+pages still exclude Analytics. Limited cookieless pings can be sent without
+analytics-cookie permission; these do not guarantee ordinary GA reporting or
+eligibility for consent-mode modeling.
+
+The advertising enum adapter accepts Google's short names (`GRANTED` and
 `NOT_APPLICABLE`) and the longer names used by its integration examples.
-Unknown values never grant analytics storage or resume ad requests.
+Unknown values never resume ad requests. Advertising controls do not override
+the separate analytics-cookie choice.
 
 ## Security and caching
 
@@ -109,7 +115,9 @@ and mobile before claiming completion:
 - Privacy page: consent controls, updated notice, and no ad unit.
 - Login/account/admin/search: no AdSense requests; login/account/admin also
   exclude Analytics. Public search/category/author pages load Analytics with
-  storage denied and do not load the AdSense script.
+  the saved analytics choice and do not load the AdSense script.
+- Analytics choice: allow, refuse, reopen, navigate, and verify that refusal
+  removes only GA cookies. Confirm receipt of a consented visit in GA Realtime.
 - Google test parameters `?fc=alwaysshow&fctype=gdpr` and
   `?fc=alwaysshow&fctype=ccpa`: exercise consent, refusal, reopening, and US opt-out.
   These tests use real consent records; use a separate browser test profile.

@@ -6,9 +6,13 @@
 	const analyticsID = {{.GoogleAnalyticsID}};
 	window.dataLayer = window.dataLayer || [];
 	window.gtag = function(){ window.dataLayer.push(arguments); };
+	let analyticsStorage = 'denied';
+	try {
+		if (window.localStorage.getItem('arxiv.analytics-consent.v1') === 'granted') analyticsStorage = 'granted';
+	} catch (_) {}
 	// Advanced consent mode measures without cookies while the CMP is unavailable
 	// or consent is denied. Never infer permission from an ad approval or timeout.
-	window.gtag('consent', 'default', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
+	window.gtag('consent', 'default', {analytics_storage: analyticsStorage, ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
 	window.gtag('set', 'ads_data_redaction', true);
 	window.gtag('js', new Date());
 	window.gtag('config', analyticsID, {transport_type: 'beacon', allow_google_signals: false, allow_ad_personalization_signals: false});
@@ -16,19 +20,6 @@
 	script.async = true;
 	script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(analyticsID);
  document.head.appendChild(script);
- {{if .AdSensePage}}
- window.googlefc = window.googlefc || {};
- window.googlefc.callbackQueue = window.googlefc.callbackQueue || [];
- window.googlefc.callbackQueue.push({CONSENT_MODE_DATA_READY: function () {
-  const consent = window.googlefc.getGoogleConsentModeValues();
-  const statuses = window.googlefc.ConsentModePurposeStatusEnum || {};
-  const status = consent && consent.analyticsStoragePurposeConsentStatus;
-  const permitted = typeof status === 'number' &&
-   (status === (statuses.GRANTED ?? statuses.CONSENT_MODE_PURPOSE_STATUS_GRANTED) ||
-    status === (statuses.NOT_APPLICABLE ?? statuses.CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE));
-  window.gtag('consent', 'update', {analytics_storage: permitted ? 'granted' : 'denied'});
- }});
- {{end}}
 })();
 </script><script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function () {
@@ -76,4 +67,62 @@
   };
 })();
 </script>{{end}}
+{{end}}
+
+{{define "analytics_privacy_controls"}}
+{{if .GoogleAnalyticsID}}
+<style>
+#analytics-consent-banner { position: fixed; bottom: 1rem; right: 1rem; width: calc(100% - 2rem); max-width: 28rem; box-sizing: border-box; padding: 1rem; background: #fff; color: #111827; border: 1px solid #d1d5db; border-radius: .5rem; box-shadow: 0 4px 24px #0002; z-index: 1000; }
+#analytics-consent-banner h2 { font-size: 1rem; margin: 0 0 .5rem; }
+#analytics-consent-banner p { font-size: .875rem; line-height: 1.5; margin: 0 0 .75rem; }
+#analytics-consent-banner .analytics-consent-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+#analytics-consent-banner button { font: inherit; font-size: .875rem; padding: .6rem .75rem; border: 1px solid #6b7280; border-radius: .25rem; background: #fff; color: #111827; cursor: pointer; }
+#analytics-consent-banner button:focus-visible { outline: 2px solid #0066cc; outline-offset: 2px; }
+</style>
+<section id="analytics-consent-banner" role="region" aria-labelledby="analytics-consent-title" hidden>
+ <h2 id="analytics-consent-title">Analytics cookies</h2>
+ <p>May we use optional Google Analytics cookies to understand visits and improve arXiv.gg? Without them, limited cookieless measurement still runs. <a href="/privacy">Privacy details</a>.</p>
+ <div class="analytics-consent-actions">
+  <button id="analytics-consent-allow" type="button">Allow analytics cookies</button>
+  <button id="analytics-consent-deny" type="button">Keep cookies off</button>
+ </div>
+</section>
+<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
+(function () {
+ const key = 'arxiv.analytics-consent.v1';
+ const banner = document.getElementById('analytics-consent-banner');
+ const settings = document.getElementById('analytics-privacy-settings');
+ if (!banner || !settings) return;
+ let choice;
+ try { choice = window.localStorage.getItem(key); } catch (_) {}
+ banner.hidden = choice === 'granted' || choice === 'denied';
+ settings.setAttribute('aria-expanded', String(!banner.hidden));
+ settings.addEventListener('click', function () {
+  banner.hidden = false;
+  settings.setAttribute('aria-expanded', 'true');
+  document.getElementById('analytics-consent-allow').focus();
+ });
+ function choose(value) {
+  let saved = false;
+  try { window.localStorage.setItem(key, value); saved = true; } catch (_) {}
+  if (typeof window.gtag === 'function') window.gtag('consent', 'update', {analytics_storage: value});
+  if (value === 'denied') {
+   for (const item of document.cookie.split(';')) {
+    const name = item.split('=')[0].trim();
+    if (!/^_ga(?:_|$)/.test(name)) continue;
+    const expired = name + '=; Max-Age=0; path=/; SameSite=Lax';
+    document.cookie = expired;
+    document.cookie = expired + '; domain=' + window.location.hostname;
+    document.cookie = expired + '; domain=.' + window.location.hostname;
+   }
+  }
+  banner.hidden = true;
+  settings.setAttribute('aria-expanded', 'false');
+  if (saved) window.location.reload();
+ }
+ document.getElementById('analytics-consent-allow').addEventListener('click', () => choose('granted'));
+ document.getElementById('analytics-consent-deny').addEventListener('click', () => choose('denied'));
+})();
+</script>
+{{end}}
 {{end}}

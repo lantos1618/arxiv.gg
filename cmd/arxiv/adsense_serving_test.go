@@ -189,22 +189,6 @@ for (const purpose of ['analytics_storage', 'ad_storage', 'ad_user_data', 'ad_pe
 assert.equal(context.window.dataLayer[3][0], 'config');
 assert.equal(context.window.dataLayer[3][2].allow_google_signals, false);
 assert.equal(context.window.dataLayer[3][2].allow_ad_personalization_signals, false);
-const ready = context.window.googlefc.callbackQueue.shift().CONSENT_MODE_DATA_READY;
-for (const statuses of [{GRANTED: 1, NOT_APPLICABLE: 3}, {CONSENT_MODE_PURPOSE_STATUS_GRANTED: 1, CONSENT_MODE_PURPOSE_STATUS_NOT_APPLICABLE: 3}, {}]) {
- context.window.googlefc.ConsentModePurposeStatusEnum = statuses;
- for (const denied of [undefined, 0, 2, 4, 99]) {
-  state = denied; ready();
-  assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, 'denied');
- }
- if (Object.keys(statuses).length) {
-  for (const permitted of [1, 3]) {
-   state = permitted; ready();
-   assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, 'granted');
-  }
-  state = 2; ready();
-  assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, 'denied', 'refusal after a grant revokes storage');
- }
-}
 vm.runInContext(`+string(a)+`, context);
 assert.equal(appended.length, 1, 'consent updates and rerenders never duplicate the loader');
 vm.runInContext(`+string(c)+`, context);
@@ -215,10 +199,86 @@ tcf({gdprApplies: true, eventStatus: 'tcloaded'}, true); assert.equal(button.hid
 context.window.adsbygoogle.pauseAdRequests = 0;
 button.click();
 assert.equal(context.window.adsbygoogle.pauseAdRequests, 1, 'reopening pauses new requests');
-assert.equal(context.window['ga-disable-G-TEST123'], true);
+assert.equal(context.window['ga-disable-G-TEST123'], undefined);
+assert.equal(context.window.dataLayer.at(-1)[2].ad_storage, 'denied');
+assert.equal(context.window.dataLayer.at(-1)[2].analytics_storage, undefined, 'advertising controls do not override the separate analytics choice');
 context.window.googlefc.callbackQueue.shift().CONSENT_API_READY();
 assert.equal(revoked, 1);
 tcf({gdprApplies: true, eventStatus: 'useractioncomplete'}, true);
 assert.equal(reloads, 1, 'new page applies changed consent from a clean state');
+`)
+}
+
+func TestAnalyticsCookieChoice(t *testing.T) {
+	w := httptest.NewRecorder()
+	adSenseTestServer().renderTemplate(w, httptest.NewRequest("GET", "/privacy", nil), "privacy", adSenseTestData())
+	var loader, controls string
+	for _, match := range regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`).FindAllStringSubmatch(w.Body.String(), -1) {
+		if strings.Contains(match[1], "window.__arxivAnalyticsLoaded") {
+			loader = match[1]
+		}
+		if strings.Contains(match[1], "const key = 'arxiv.analytics-consent.v1'") {
+			controls = match[1]
+		}
+	}
+	if loader == "" || controls == "" {
+		t.Fatal("missing analytics consent controls")
+	}
+	l, _ := json.Marshal(loader)
+	c, _ := json.Marshal(controls)
+	runFrontendReviewJavaScript(t, `
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const preferences = new Map();
+const key = 'arxiv.analytics-consent.v1';
+function page(blocked = false) {
+ const elements = {};
+ for (const id of ['analytics-consent-banner', 'analytics-privacy-settings', 'analytics-consent-allow', 'analytics-consent-deny']) {
+  elements[id] = {hidden: true, attributes: {}, setAttribute(name, value) {this.attributes[name] = value;}, addEventListener(name, cb) {this[name] = cb;}, focus() {this.focused = true;}};
+ }
+ const expired = [], appended = [];
+ let reloads = 0;
+ const document = {getElementById: id => elements[id], createElement: () => ({}), head: {appendChild: script => appended.push(script)}};
+ Object.defineProperty(document, 'cookie', {get: () => '_ga=old; _ga_TEST=old; session=keep', set: value => expired.push(value)});
+ const context = {document, window: {location: {hostname: 'arxiv.gg', reload: () => reloads++}, localStorage: {
+  getItem: key => {if (blocked) throw Error('blocked'); return preferences.get(key) || null;},
+  setItem: (key, value) => {if (blocked) throw Error('blocked'); preferences.set(key, value);}
+ }}};
+ vm.createContext(context);
+ vm.runInContext(`+string(l)+`, context);
+ vm.runInContext(`+string(c)+`, context);
+ return {context, elements, expired, appended, reloads: () => reloads};
+}
+let current = page();
+assert.equal(current.appended.length, 1);
+assert.equal(current.context.window.dataLayer[0][2].analytics_storage, 'denied');
+assert.equal(current.elements['analytics-consent-banner'].hidden, false);
+current.elements['analytics-consent-allow'].click();
+assert.equal(preferences.get(key), 'granted');
+assert.equal(current.context.window.dataLayer.at(-1)[2].analytics_storage, 'granted');
+assert.equal(current.reloads(), 1);
+current = page();
+assert.equal(current.context.window.dataLayer[0][2].analytics_storage, 'granted');
+for (const purpose of ['ad_storage', 'ad_user_data', 'ad_personalization']) assert.equal(current.context.window.dataLayer[0][2][purpose], 'denied');
+assert.equal(current.elements['analytics-consent-banner'].hidden, true);
+current.elements['analytics-privacy-settings'].click();
+assert.equal(current.elements['analytics-consent-banner'].hidden, false);
+assert.equal(current.elements['analytics-consent-allow'].focused, true);
+current.elements['analytics-consent-deny'].click();
+assert.equal(preferences.get(key), 'denied');
+assert.equal(current.context.window.dataLayer.at(-1)[2].analytics_storage, 'denied');
+assert.equal(current.reloads(), 1);
+assert.equal(current.expired.length, 6);
+assert.ok(current.expired.every(value => /^_ga(?:_|=)/.test(value) && value.includes('Max-Age=0')));
+assert.ok(current.expired.every(value => !value.includes('session=')));
+current = page();
+assert.equal(current.context.window.dataLayer[0][2].analytics_storage, 'denied');
+assert.equal(current.elements['analytics-consent-banner'].hidden, true, 'refusal persists across navigation');
+current = page(true);
+assert.equal(current.context.window.dataLayer[0][2].analytics_storage, 'denied');
+assert.equal(current.elements['analytics-consent-banner'].hidden, false);
+current.elements['analytics-consent-deny'].click();
+assert.equal(current.reloads(), 0, 'blocked storage remains usable without a reload loop');
+assert.equal(current.context.window.dataLayer.at(-1)[2].analytics_storage, 'denied');
 `)
 }

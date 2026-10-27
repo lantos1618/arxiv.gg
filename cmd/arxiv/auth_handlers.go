@@ -357,8 +357,8 @@ func (s *server) renderTemplate(w http.ResponseWriter, r *http.Request, name str
 	}
 	viewData["BuildDate"] = buildDateLabel()
 	viewData["BuildCommit"] = buildCommitLabel()
-	// Analytics starts with storage denied on every public page. The CMP may
-	// grant storage on consent-managed pages; other pages remain cookieless.
+	// Analytics loads on public pages independently of ad consent delivery.
+	// The separate analytics-cookie choice controls storage across public pages.
 	if thirdPartyScriptsAllowed(r.URL.Path) {
 		viewData["GoogleAnalyticsID"] = s.googleAnalyticsID
 	}

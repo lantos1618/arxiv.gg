@@ -76,8 +76,7 @@
  button.addEventListener('click', function () {
   reopening = true;
   (window.adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 1;
-  {{if .GoogleAnalyticsID}}window['ga-disable-' + {{.GoogleAnalyticsID}}] = true;{{end}}
-  if (typeof window.gtag === 'function') window.gtag('consent', 'update', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
+  if (typeof window.gtag === 'function') window.gtag('consent', 'update', {ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
   window.googlefc.callbackQueue.push({CONSENT_API_READY: function () {
    window.googlefc.showRevocationMessage();
   }});

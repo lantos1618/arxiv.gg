@@ -103,8 +103,8 @@
   document.getElementById('analytics-consent-allow').focus();
  });
  function choose(value) {
-  let saved = false;
-  try { window.localStorage.setItem(key, value); saved = true; } catch (_) {}
+  try { window.localStorage.setItem(key, value); } catch (_) {}
+  // Apply in place: an immediate reload can cancel consent-update measurements.
   if (typeof window.gtag === 'function') window.gtag('consent', 'update', {analytics_storage: value});
   if (value === 'denied') {
    for (const item of document.cookie.split(';')) {
@@ -118,7 +118,6 @@
   }
   banner.hidden = true;
   settings.setAttribute('aria-expanded', 'false');
-  if (saved) window.location.reload();
  }
  document.getElementById('analytics-consent-allow').addEventListener('click', () => choose('granted'));
  document.getElementById('analytics-consent-deny').addEventListener('click', () => choose('denied'));

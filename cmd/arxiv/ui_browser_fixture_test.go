@@ -39,6 +39,9 @@ func TestUIBrowserFixtureServer(t *testing.T) {
 		data := map[string]any{"CurrentUser": nil, "Stats": &arxiv.CacheStats{TotalPapers: 1, QwenEmbeddingsCount: 1}, "Papers": []arxiv.Paper{paper}, "GoogleEnabled": true}
 		name := ""
 		switch {
+		case r.URL.Path == "/ad-presentation":
+			serveAdPresentationFixture(w, r)
+			return
 		case r.URL.Path == "/":
 			name = "index"
 		case r.URL.Path == "/search":

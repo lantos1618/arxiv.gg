@@ -36,23 +36,76 @@
 })();
 </script>
 <script nonce="{{.CSPNonce}}" async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{.GoogleAdSenseClientID}}" crossorigin="anonymous"></script>
-<style>
-.ad-placement { margin: 2rem 0; padding: 1rem 0; border-top: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; min-width: 0; }
-.ad-placement-label { margin: 0 0 0.5rem; color: #4b5563; font-size: 0.75rem; }
-.ad-placement .adsbygoogle { display: block; min-height: 250px; }
-.ad-placement .adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
-</style>
+{{template "adsense_styles" .}}
 {{end}}
+{{end}}
+
+{{define "adsense_styles"}}
+<style>
+.ad-placement { margin: 0; padding: 0; border: 0; min-width: 0; }
+.ad-placement-filled { margin: 2rem 0; padding: 1rem 0; border-top: 1px solid #d1d5db; border-bottom: 1px solid #d1d5db; }
+.ad-placement-label { margin: 0 0 0.5rem; color: #4b5563; font-size: 0.75rem; }
+.ad-placement-label[hidden] { display: none; }
+.ad-placement .adsbygoogle { display: block; }
+.ad-placement .adsbygoogle[data-ad-status="unfilled"],
+.ad-placement-error .adsbygoogle { display: none !important; }
+</style>
 {{end}}
 
 {{define "adsense_placement"}}
 {{if .AdSenseAdSlot}}
-<aside class="ad-placement" aria-label="Advertisement">
- <p class="ad-placement-label">Advertisement</p>
+<div class="ad-placement">
+ <p class="ad-placement-label" hidden>Advertisement</p>
  <ins class="adsbygoogle" style="display:block" data-ad-client="{{.GoogleAdSenseClientID}}" data-ad-slot="{{.AdSenseAdSlot}}" data-ad-format="auto" data-full-width-responsive="false"></ins>
-</aside>
+</div>
 <script nonce="{{.CSPNonce}}">
-(window.adsbygoogle = window.adsbygoogle || []).push({});
+(function () {
+ const placement = document.currentScript.previousElementSibling;
+ if (!placement || placement.adPresentationReady) return;
+ placement.adPresentationReady = true;
+ const slot = placement.querySelector('.adsbygoogle');
+ const label = placement.querySelector('.ad-placement-label');
+ let requestFailed = false;
+ function updatePresentation() {
+  const filled = slot.getAttribute('data-ad-status') === 'filled';
+  if (filled) requestFailed = false;
+  placement.classList.toggle('ad-placement-error', requestFailed);
+  const bounds = slot.getBoundingClientRect();
+  const style = getComputedStyle(slot);
+  const visible = filled && bounds.width > 0 && bounds.height > 0 &&
+   style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.opacity !== '0';
+  label.hidden = !visible;
+  placement.classList.toggle('ad-placement-filled', visible);
+  if (visible) {
+   placement.setAttribute('role', 'complementary');
+   placement.setAttribute('aria-label', 'Advertisement');
+  } else {
+   placement.removeAttribute('role');
+   placement.removeAttribute('aria-label');
+  }
+ }
+ // A processed request or an iframe alone does not mean an ad was filled.
+ // Leave pending slots measurable; never time out a delayed consent/ad request.
+ const mutations = new MutationObserver(updatePresentation);
+ const sizes = typeof ResizeObserver === 'function' ? new ResizeObserver(updatePresentation) : null;
+ function observe() {
+  mutations.observe(slot, {attributes: true, attributeFilter: ['data-ad-status', 'style', 'class']});
+  if (sizes) sizes.observe(slot);
+  updatePresentation();
+ }
+ window.addEventListener('pagehide', function () {
+  mutations.disconnect();
+  if (sizes) sizes.disconnect();
+ });
+ window.addEventListener('pageshow', observe);
+ observe();
+ try {
+  (window.adsbygoogle = window.adsbygoogle || []).push({});
+ } catch (error) {
+  requestFailed = true;
+  updatePresentation();
+ }
+})();
 </script>
 {{end}}
 {{end}}

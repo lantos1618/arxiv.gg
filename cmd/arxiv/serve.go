@@ -230,6 +230,8 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/logout", srv.handleLogout)
 	mux.HandleFunc("/account", srv.handleAccount)
 	mux.HandleFunc("/account/api-key/regenerate", srv.handleRegenerateAPIKey)
+	mux.HandleFunc("/account/api-key/create", srv.handleCreateAPIKey)
+	mux.HandleFunc("/account/api-key/revoke", srv.handleRevokeAPIKey)
 	mux.HandleFunc("/feedback", srv.handleFeedback)
 	mux.HandleFunc("/feedback/vote", srv.handleFeedbackVote)
 	mux.HandleFunc("/feedback/delete", srv.handleFeedbackDelete)
@@ -768,13 +770,15 @@ func (s *server) handleAPIRoot(w http.ResponseWriter, r *http.Request) {
 		"MCPURL":  strings.TrimRight(base, "/") + "/mcp",
 	}
 	if user, ok := s.sessionUser(r); ok {
-		apiKey, err := s.cache.ActiveUserAPIKey(r.Context(), user.ID, "Agent access")
+		keys, err := s.cache.ActiveUserAPIKeys(r.Context(), user.ID)
 		if err != nil {
 			log.Printf("api page api key lookup failed: %v", err)
 		}
 		data["CurrentUser"] = user
-		data["APIKeyRecord"] = apiKey
-		data["APIKeyMasked"] = arxiv.MaskAPIKey(apiKey)
+		if len(keys) > 0 {
+			data["APIKeyRecord"] = &keys[0]
+			data["APIKeyMasked"] = arxiv.MaskAPIKey(&keys[0])
+		}
 	}
 	s.renderTemplate(w, r, "api", data)
 }

@@ -24,7 +24,7 @@ func TestAccountRotationConfirmationAndOneTimeDisclosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, oldRaw, err := cache.CreateUserAPIKey(ctx, user.ID, "Agent access")
+	oldKey, oldRaw, err := cache.CreateUserAPIKey(ctx, user.ID, "Agent access")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestAccountRotationConfirmationAndOneTimeDisclosure(t *testing.T) {
 	if _, _, err := cache.UserForAPIKey(ctx, oldRaw); err != nil {
 		t.Fatal("unconfirmed request revoked existing key")
 	}
-	rotated := request(http.MethodPost, "/account/api-key/regenerate", "confirm_rotation=rotate")
+	rotated := request(http.MethodPost, "/account/api-key/regenerate", "confirm_rotation=rotate&key_id="+oldKey.ID)
 	match := regexp.MustCompile(`id="account-api-key"[^>]*value="([^"]+)"`).FindStringSubmatch(rotated.Body.String())
 	if len(match) != 2 {
 		t.Fatal("replacement key was not disclosed")

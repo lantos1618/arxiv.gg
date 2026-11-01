@@ -113,7 +113,7 @@ func TestAnalyticsIdentifiersAreConfiguredTemplateData(t *testing.T) {
 
 func TestSensitivePagesDoNotLoadThirdPartyAnalytics(t *testing.T) {
 	for _, signedIn := range []bool{false, true} {
-		for _, path := range []string{"/login", "/account", "/account/api-key/regenerate", "/api/v1/", "/admin", "/admin/users", "/auth/google/start", "/auth/google/callback"} {
+		for _, path := range []string{"/login", "/account", "/account/api-key/regenerate", "/account/api-key/create", "/account/api-key/revoke", "/api/v1/", "/admin", "/admin/users", "/auth/google/start", "/auth/google/callback"} {
 			rec := httptest.NewRecorder()
 			data := map[string]any{"Title": "Sensitive"}
 			if signedIn {

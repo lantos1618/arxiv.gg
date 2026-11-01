@@ -18,7 +18,7 @@
  .nav > a:first-of-type { color:#1b2638; font-weight:650; }
  .nav > a:hover,.nav .nav-button:hover { color:#2563eb; }
  @media(max-width:600px) { .nav { gap:10px 15px; } }
- .settings-shell { --ink:#19212e; --muted:#687282; --line:#e7e9ed; --blue:#2563eb; color:var(--ink); display:grid; grid-template-columns:190px minmax(0,1fr); gap:48px; margin:42px 0 64px; min-height:650px; font-size:var(--account-text); line-height:1.5; }
+ .settings-shell { --ink:#19212e; --muted:#687282; --line:#e7e9ed; --blue:#2563eb; color:var(--ink); display:grid; grid-template-columns:175px minmax(0,1fr); gap:32px; margin:42px 0 64px; min-height:650px; font-size:var(--account-text); line-height:1.5; }
  .settings-shell *, .settings-dialog * { box-sizing:border-box; }
  .settings-icon { width:var(--account-icon); height:var(--account-icon); flex:none; vertical-align:middle; }
  .settings-sidebar { padding-right:20px; border-right:1px solid var(--line); }
@@ -60,10 +60,10 @@
  .key-count { background:#f1f3f6; border:1px solid #e7e9ed; color:#647084; border-radius:5px; padding:0 5px; font-size:var(--account-meta); line-height:17px; }
  .key-surface-heading > span { font-size:var(--account-meta); color:var(--muted); }
  .key-table { width:100%; border-collapse:collapse; font-size:var(--account-text); }
- .key-table th { font-weight:500; color:#687282; background:#fafbfc; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 16px; text-align:left; font-size:var(--account-meta); }
+ .key-table th { font-weight:500; color:#687282; background:#fafbfc; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 12px; text-align:left; font-size:var(--account-meta); }
  .key-table th:first-child, .key-table td:first-child { padding-left:20px; }
- .key-table td { padding:20px 16px; white-space:nowrap; }
- .key-name { display:flex; gap:10px; align-items:center; }
+ .key-table td { padding:20px 12px; white-space:nowrap; }
+ .key-name { min-width:0; display:flex; gap:10px; align-items:center; }
  .key-name-icon { border:1px solid #e5e8ee; border-radius:7px; padding:8px; color:#6c7a90; display:grid; place-items:center; }
  .key-name strong { display:block; font-weight:550; }
  .key-status { display:inline-flex; align-items:center; gap:5px; color:#28815b; font-size:var(--account-meta); margin-top:3px; }
@@ -99,9 +99,9 @@
  .settings-dialog { width:min(460px,calc(100% - 32px)); border:1px solid #e5e7eb; padding:26px; border-radius:14px; box-shadow:0 24px 90px #0f172a33; color:#253044; }
  .settings-dialog::backdrop { background:#15203366; backdrop-filter:blur(3px); }
  .dialog-heading { display:flex; justify-content:space-between; align-items:center; gap:14px; margin-bottom:12px; }
- .dialog-heading h2 { font-size:var(--account-dialog-heading); margin:0; letter-spacing:-.025em; }
+ .dialog-heading h2 { min-width:0; overflow-wrap:anywhere; font-size:var(--account-dialog-heading); margin:0; letter-spacing:-.025em; }
  .dialog-heading button { border:0; background:transparent; cursor:pointer; color:#7e8795; width:var(--account-control); height:var(--account-control); display:grid; place-items:center; flex:none; padding:8px; border-radius:5px; }
- .rotation-warning { color:#677183; font-size:var(--account-text); line-height:1.7; margin:14px 0; }
+ .rotation-warning { overflow-wrap:anywhere; color:#677183; font-size:var(--account-text); line-height:1.7; margin:14px 0; }
  .rotation-confirm { display:flex; gap:9px; align-items:flex-start; background:#f7f8fa; border:1px solid #e8ebef; border-radius:7px; padding:12px; margin:20px 0; font-size:var(--account-text); line-height:1.6; }
  .rotation-confirm input { margin:3px 0 0; accent-color:#2563eb; }
  .rotation-actions { display:flex; justify-content:flex-end; gap:9px; }
@@ -120,7 +120,7 @@
  .settings-toast:empty { display:none; }
  .settings-shell :focus-visible,.settings-dialog :focus-visible { outline:3px solid #8bb2ff; outline-offset:3px; }
  @media(max-width:950px) { .settings-shell { gap:28px; grid-template-columns:160px minmax(0,1fr); } .key-table th,.key-table td { padding:12px 9px; } .key-name-icon { display:none; } }
- @media(max-width:900px) {
+ @media(max-width:1100px) {
   .settings-shell { display:block; margin-top:24px; }
   .settings-sidebar { border:0; padding:0; margin-bottom:28px; }
   .settings-identity,.settings-sidebar .settings-eyebrow,.settings-sidebar-footer { display:none; }
@@ -139,7 +139,7 @@
   .key-table td:first-child { border-bottom:1px solid var(--line); margin-bottom:8px; padding-bottom:14px !important; }
   .key-name { justify-content:space-between; width:100%; }
   .key-name-icon { display:grid; }
-  .key-name > div:last-child { display:flex; flex:1; align-items:center; justify-content:space-between; gap:10px; }
+  .key-name > div:last-child { min-width:0; display:flex; flex:1; align-items:center; justify-content:space-between; gap:10px; }
   .key-status { margin:0; }
   .key-note { align-items:flex-start; line-height:1.6; }
   .key-note .settings-icon { margin-top:3px; }
@@ -149,6 +149,15 @@
   .key-copy-field input { flex-basis:100%; }
   .profile-fields > div { grid-template-columns:100px 1fr; }
  }
+ .key-row-actions { display:flex; flex-wrap:wrap; gap:12px; }
+ .key-row-actions a { font-size:var(--account-text); text-decoration:none; }
+ .key-row-actions a[data-key-action="revoke"] { color:#a63d36; }
+ .key-table td { border-bottom:1px solid var(--line); }
+ .key-table tr:last-child td { border-bottom:0; }
+ .key-name strong { white-space:normal; overflow-wrap:anywhere; max-width:170px; }
+ .key-name-label { display:grid; gap:8px; font-size:var(--account-text); margin:20px 0; }
+ .key-name-label input { width:100%; min-height:var(--account-control); border:1px solid #dce0e7; border-radius:7px; padding:8px 12px; font:inherit; }
+ @media(max-width:1100px) { .key-table tr + tr { border-top:1px solid var(--line); padding-top:16px; } .key-table td { border-bottom:0; } .key-name strong { max-width:none; } .key-surface-heading { gap:12px; flex-wrap:wrap; } }
 </style>
 <div class="settings-shell" id="account-settings">
  <aside class="settings-sidebar">
@@ -169,9 +178,9 @@
    <div class="settings-breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span>API keys</span></div>
    <header class="settings-header">
     <div><h1 id="api-keys-title">API keys</h1><p class="settings-muted">Give your tools access to your arXiv.gg account.</p></div>
-    {{if .APIKeyRecord}}<button type="button" class="settings-button primary" data-open-rotation hidden><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3"/></svg> Rotate key</button>{{else}}<form method="post" action="/account/api-key/regenerate" data-key-form><button class="settings-button primary" type="submit">+ Create API key</button></form>{{end}}
+    <a href="#create-key-fallback" class="settings-button primary" data-open-create>+ Create API key</a>
    </header>
-   {{if .APIKeyWarning}}<div class="settings-alert" role="alert">{{.APIKeyNotice}}</div>{{end}}
+   {{if .APIKeyWarning}}<div class="settings-alert" role="alert">{{.APIKeyNotice}}</div>{{else if and .APIKeyNotice (not .APIKey)}}<div class="key-created" role="status">{{.APIKeyNotice}}</div>{{end}}
    {{if .APIKey}}
    <div class="key-created">
     <div class="key-created-title"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Your new key is ready</div>
@@ -182,26 +191,45 @@
    </div>
    {{end}}
    <div class="key-surface">
-    <div class="key-surface-heading"><h2>Personal key <span class="key-count">{{if .APIKeyRecord}}1{{else}}0{{end}}</span></h2><span>One key per account</span></div>
-    {{if .APIKeyRecord}}
-    <table class="key-table" aria-label="Your API key"><thead><tr><th scope="col">Name</th><th scope="col">Secret key</th><th scope="col">Created · UTC</th><th scope="col">Last used · UTC</th></tr></thead><tbody><tr>
-     <td><div class="key-name"><span class="key-name-icon"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><div><strong>{{if .APIKeyRecord.Name}}{{.APIKeyRecord.Name}}{{else}}Agent access{{end}}</strong><span class="key-status">Active</span></div></div></td>
-     <td data-label="Secret key"><code class="key-secret">{{.APIKeyMasked}}</code></td>
-     <td data-label="Created · UTC">{{timeStamp .APIKeyRecord.CreatedAt}}</td>
-     <td data-label="Last used · UTC">{{if .APIKeyRecord.LastUsedAt}}{{timeOrDash .APIKeyRecord.LastUsedAt}}{{else}}Never used{{end}}</td>
-    </tr></tbody></table>
-    <div class="key-note"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg> The full key is only shown when created. Lost it? Rotate your key to get a new one.</div>
-    {{else}}<div class="key-empty"><span class="key-name-icon"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><h2>Your tools, connected.</h2><p class="settings-muted">Create an API key to use account features and Deep Search from your favorite tools.</p></div>{{end}}
+    <div class="key-surface-heading"><h2>Your keys <span class="key-count">{{len .APIKeys}}</span></h2><span>Use a separate key for each tool</span></div>
+    {{if .APIKeys}}
+    <table class="key-table" aria-label="Your API keys"><thead><tr><th scope="col">Name</th><th scope="col">Secret key</th><th scope="col">Created · UTC</th><th scope="col">Last used · UTC</th><th scope="col">Actions</th></tr></thead><tbody>{{range .APIKeys}}<tr>
+     <td><div class="key-name"><div><strong>{{.Name}}</strong><span class="key-status">Active</span></div></div></td>
+     <td data-label="Secret key"><code class="key-secret">{{.Masked}}</code></td>
+     <td data-label="Created · UTC">{{timeStamp .CreatedAt}}</td>
+     <td data-label="Last used · UTC">{{if .LastUsedAt}}{{timeOrDash .LastUsedAt}}{{else}}Never used{{end}}</td>
+     <td data-label="Actions"><div class="key-row-actions"><a href="#rotate-{{.ID}}" data-key-action="rotate" data-key-id="{{.ID}}" data-key-name="{{.Name}}">Rotate</a><a href="#revoke-{{.ID}}" data-key-action="revoke" data-key-id="{{.ID}}" data-key-name="{{.Name}}">Revoke</a></div></td>
+    </tr>{{end}}</tbody></table>
+    <div class="key-note">The full secret is shown only when a key is created or rotated.</div>
+    {{else}}<div class="key-empty"><span class="key-name-icon"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><h2>Your tools, connected.</h2><p class="settings-muted">Create a named key for each tool. You can rotate or revoke a key without affecting the others.</p></div>{{end}}
    </div>
-   {{if .APIKeyRecord}}
-   <details class="settings-rotation" id="rotation-fallback"><summary>Rotate API key</summary>
-    <form method="post" action="/account/api-key/regenerate" data-key-form>
-     <p class="rotation-warning">Rotating your key immediately revokes the current key. Any connected tools will stop working until you update them with the new key.</p>
-     <label class="rotation-confirm"><input type="checkbox" name="confirm_rotation" value="rotate" required><span>I understand that I’ll need to update my connected tools.</span></label>
-     <div class="rotation-actions"><button type="button" class="settings-button" data-close-rotation hidden>Cancel</button><button type="submit" class="settings-button danger">Rotate API key</button></div>
-    </form>
-   </details>
-   {{end}}
+   <div id="key-action-fallbacks">
+    <details class="settings-rotation" id="create-key-fallback"><summary>Create an API key</summary>
+     <form method="post" action="/account/api-key/create" data-key-form>
+      <p class="rotation-warning">Give this key a name so you know which tool uses it.</p>
+      <label class="key-name-label">Key name<input name="name" type="text" required maxlength="120" placeholder="e.g. Claude Desktop" autocomplete="off"></label>
+      <div class="rotation-actions"><button type="button" class="settings-button" data-close-keys hidden>Cancel</button><button type="submit" class="settings-button primary">Create API key</button></div>
+     </form>
+    </details>
+    {{range .APIKeys}}
+    <details class="settings-rotation" id="rotate-{{.ID}}"><summary>Rotate {{.Name}}</summary>
+     <form method="post" action="/account/api-key/regenerate" data-key-form>
+      <input type="hidden" name="key_id" value="{{.ID}}">
+      <p class="rotation-warning">Rotating “{{.Name}}” immediately revokes the current key for this tool. Update the tool with the replacement key. Your other keys stay active.</p>
+      <label class="rotation-confirm"><input type="checkbox" name="confirm_rotation" value="rotate" required><span>I understand that this tool will need the new key.</span></label>
+      <div class="rotation-actions"><button type="button" class="settings-button" data-close-keys hidden>Cancel</button><button type="submit" class="settings-button danger">Rotate API key</button></div>
+     </form>
+    </details>
+    <details class="settings-rotation" id="revoke-{{.ID}}"><summary>Revoke {{.Name}}</summary>
+     <form method="post" action="/account/api-key/revoke" data-key-form>
+      <input type="hidden" name="key_id" value="{{.ID}}">
+      <p class="rotation-warning">Revoke “{{.Name}}”? This key will stop working immediately. Your other keys stay active.</p>
+      <label class="rotation-confirm"><input type="checkbox" name="confirm_revocation" value="revoke" required><span>I understand this key will no longer work.</span></label>
+      <div class="rotation-actions"><button type="button" class="settings-button" data-close-keys hidden>Cancel</button><button type="submit" class="settings-button danger">Revoke API key</button></div>
+     </form>
+    </details>
+    {{end}}
+   </div>
    <h2 class="settings-section-label">Start building</h2>
    <div class="setup-grid">
     <a href="/api/v1/#agent-setup" class="setup-card"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18"/></svg><div><strong>Connect an AI tool</strong><p>Set up Codex, Claude, or an MCP client with your account.</p><span>Connection guide <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></div></a>
@@ -265,9 +293,9 @@
   </section>
  </div>
 </div>
-<dialog class="settings-dialog" id="rotation-dialog" aria-labelledby="rotation-title">
- <div class="dialog-heading"><h2 id="rotation-title">Rotate your API key?</h2><button type="button" data-close-rotation aria-label="Close rotation dialog"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
- <div id="rotation-dialog-body"></div>
+<dialog class="settings-dialog" id="key-dialog" aria-labelledby="key-dialog-title">
+ <div class="dialog-heading"><h2 id="key-dialog-title">Manage API key</h2><button type="button" data-close-keys aria-label="Close dialog"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+ <div id="key-dialog-body"></div>
 </dialog>
 <div class="settings-toast" id="account-copy-status" role="status" aria-live="polite"></div>
 <script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
@@ -283,15 +311,28 @@
  shell.classList.add('is-enhanced');
  showPanel();
  window.addEventListener('hashchange', showPanel);
- const dialog = document.getElementById('rotation-dialog');
- const fallback = document.getElementById('rotation-fallback');
- const openButton = shell.querySelector('[data-open-rotation]');
- if (fallback && typeof dialog.showModal === 'function') {
-  document.getElementById('rotation-dialog-body').appendChild(fallback.querySelector('form'));
-  fallback.hidden = true;
-  openButton.hidden = false;
-  openButton.addEventListener('click', () => { dialog.querySelector('input[type="checkbox"]').checked = false; dialog.showModal(); });
-  dialog.querySelectorAll('[data-close-rotation]').forEach(button => { button.hidden = false; button.addEventListener('click', () => dialog.close()); });
+ const dialog = document.getElementById('key-dialog');
+ const fallbacks = document.getElementById('key-action-fallbacks');
+ if (typeof dialog.showModal === 'function') {
+  fallbacks.hidden = true;
+  function openKeyDialog(id, title) {
+   const form = document.getElementById(id).querySelector('form').cloneNode(true);
+   form.querySelectorAll('[data-close-keys]').forEach(button => { button.hidden = false; });
+   document.getElementById('key-dialog-body').replaceChildren(form);
+   document.getElementById('key-dialog-title').textContent = title;
+   dialog.showModal();
+  }
+  shell.querySelector('[data-open-create]').addEventListener('click', event => { event.preventDefault(); openKeyDialog('create-key-fallback', 'Create API key'); });
+  shell.querySelectorAll('[data-key-action]').forEach(link => {
+   link.addEventListener('click', event => {
+    event.preventDefault();
+    const action = link.dataset.keyAction;
+    openKeyDialog(action + '-' + link.dataset.keyId, (action === 'rotate' ? 'Rotate' : 'Revoke') + ' “' + link.dataset.keyName + '”?');
+   });
+  });
+  dialog.addEventListener('click', event => { if (event.target.closest('[data-close-keys]')) dialog.close(); });
+ } else {
+  shell.querySelectorAll('[data-open-create], [data-key-action]').forEach(link => { link.addEventListener('click', () => { document.getElementById(link.hash.slice(1)).open = true; }); });
  }
  let toastTimer;
  function report(message) {
@@ -327,11 +368,15 @@
    button.setAttribute('aria-pressed', String(visible));
   });
  });
- document.querySelectorAll('[data-key-form]').forEach(form => {
+ document.addEventListener('submit', event => {
+  const form = event.target.closest('[data-key-form]');
+  if (!form) return;
   const button = form.querySelector('button[type="submit"]');
-  const label = button.textContent;
-  form.addEventListener('submit', () => { button.disabled = true; button.textContent = 'Updating key…'; });
-  window.addEventListener('pageshow', () => { button.disabled = false; button.textContent = label; });
+  button.dataset.originalLabel = button.textContent;
+  button.disabled = true; button.textContent = 'Updating keys…';
+ });
+ window.addEventListener('pageshow', () => {
+  document.querySelectorAll('[data-key-form] button[type="submit"]').forEach(button => { button.disabled = false; if (button.dataset.originalLabel) button.textContent = button.dataset.originalLabel; });
  });
 })();
 </script>

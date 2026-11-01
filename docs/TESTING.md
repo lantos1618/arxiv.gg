@@ -60,18 +60,18 @@ Both scripts require a loopback `ARXIV_TEST_URL`. The search suite defaults to p
 
 ## Account API Key Checks
 
-The account page opens on API keys, with separate Profile and Reading sections. Existing keys stay masked in a compact table; **Rotate key** opens a confirmation dialog. New keys are shown once with reveal and copy controls. Recoverable key errors remain on the account page. Settings navigation preserves browser history, and a normal confirmation form remains available without JavaScript.
+The account page opens on API keys, with separate Profile and Reading sections. Multiple named keys stay masked in a compact table; each has its own Rotate and Revoke confirmation dialog. Create API key adds a separate key without changing existing ones. New keys are shown once with reveal and copy controls. Recoverable key errors remain on the account page. Settings navigation preserves browser history, and a normal confirmation form remains available without JavaScript.
 
-The same loopback browser fixture supports `node tools/test_account_ui.cjs`. It uses example account data and fake keys, checks layouts from 320px to 1280px, key/header copying, secret reveal, dialog confirmation/cancel/Escape, settings navigation, duplicate submission prevention, and the JavaScript-free fallback. Use the browser environment variables above; `ARXIV_TEST_OUTPUT_DIR` saves screenshots of all four account states.
+The same loopback browser fixture supports `node tools/test_account_ui.cjs`. It uses example account data and fake keys, checks layouts from 320px to 1280px, key/header copying, secret reveal, create/rotate/revoke dialogs with the selected key ID, confirmation/cancel/Escape, settings navigation, duplicate submission prevention, and the JavaScript-free fallback. Login is checked in normal, error, and unavailable states at the same widths. Use the browser environment variables above; `ARXIV_TEST_OUTPUT_DIR` saves screenshots of all four account states.
 
 Run the PostgreSQL rotation regression against a disposable database:
 
 ```bash
 ARXIV_TEST_POSTGRES_DSN='postgres://arxivqa@127.0.0.1:55432/arxivqa?sslmode=disable' \
-  go test -race . -run '^TestAPIKeyPostgresRotationAndRollback$' -count=1
+  go test -race . -run '^TestAPIKeyPostgres' -count=1
 ```
 
-This checks successful revocation and replacement, authentication with the new key, and preservation of the current key when replacement insertion fails. Fixtures use temporary tables and do not rotate a real account key.
+The PostgreSQL API-key tests check independent named keys, ownership boundaries, stale rotation requests, revocation and replacement, authentication with the new key, and rollback when replacement insertion fails. Fixtures use temporary tables and do not rotate a real account key.
 
 ## Quick Search PostgreSQL Checks
 

@@ -1,53 +1,64 @@
 {{define "login"}}
 {{template "head" .}}
-<div class="auth-shell">
-	<section class="auth-copy" aria-labelledby="auth-title">
-		<p class="auth-eyebrow">Free arXiv.gg account</p>
-		<h1 id="auth-title">Pick up where your research left off.</h1>
-		<p class="auth-lede">Keep a private trail of papers you opened and return to useful work without rebuilding the path.</p>
-	</section>
-
-	<section class="auth-card" aria-label="Sign in">
-		{{if .Error}}<p class="inline-notice error">{{.Error}}</p>{{end}}
-
-		{{if .GoogleEnabled}}
-			<div class="auth-card-header">
-				<h2>Create your free account or sign in</h2>
-				<p>One step with Google. No new password to create.</p>
-			</div>
-			<a class="google-signin-btn" href="/auth/google/start?next={{urlquery .Next}}">
-				<svg class="google-signin-icon" viewBox="0 0 24 24" aria-hidden="true">
+<style>
+ body { max-width:1160px; }
+ .nav { display:flex; flex-wrap:wrap; align-items:center; gap:18px; border-bottom:1px solid #e7e9ed; padding:3px 0 17px; margin-bottom:0; }
+ .nav > span { display:none; }
+ .nav > a,.nav .nav-button { font-size:.875rem; color:#667184; text-decoration:none; }
+ .nav > a:first-of-type { color:#1b2638; font-weight:650; }
+ .nav > a:hover { color:#2563eb; }
+ .site-footer { font-size:.75rem; }
+ .signin-page { max-width:440px; margin:64px auto 72px; color:#19212e; font-size:.875rem; line-height:1.5; }
+ .signin-card { padding:32px; border:1px solid #e7e9ed; border-radius:12px; box-shadow:0 6px 24px #172b4d05; }
+ .signin-brand { display:inline-block; color:#2563eb; text-decoration:none; font-size:1rem; font-weight:650; margin-bottom:24px; }
+ .signin-card h1 { font-size:1.75rem; font-weight:650; line-height:1.25; letter-spacing:-.035em; margin:0 0 12px; }
+ .signin-intro { color:#687282; margin:0 0 28px; }
+ .signin-page .google-signin-btn { display:flex; width:100%; min-height:40px; gap:12px; padding:8px 16px; border:1px solid #dce0e7; border-radius:7px; font-size:.875rem; font-weight:600; background:white; color:#263244; text-decoration:none; box-shadow:0 1px 2px #18233808; }
+ .signin-page .google-signin-btn:hover { border-color:#a9bbdf; background:#f8faff; }
+ .signin-page .google-signin-icon { width:18px; height:18px; }
+ .signin-note { color:#687282; font-size:.75rem; line-height:1.65; margin:16px 0 0; text-align:center; }
+ .signin-error { padding:12px 14px; margin:0 0 20px; border:1px solid #f1d9c5; border-radius:7px; background:#fff7ef; color:#91482b; }
+ .signin-divider { height:1px; background:#e7e9ed; margin:28px 0 24px; }
+ .signin-features { display:grid; gap:18px; margin:0; padding:0; list-style:none; }
+ .signin-features li { display:flex; gap:12px; align-items:flex-start; }
+ .signin-feature-icon { color:#55739c; background:#eff4fd; border-radius:6px; padding:7px; width:30px; height:30px; flex:none; }
+ .signin-feature-icon svg { display:block; width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+ .signin-features strong { display:block; font-weight:600; }
+ .signin-features p { margin:4px 0 0; font-size:.75rem; line-height:1.65; color:#687282; }
+ .signin-browse { text-align:center; margin:24px 0 0; }
+ .signin-browse a { color:#536783; text-decoration:none; }
+ .signin-browse a:hover { color:#2563eb; }
+ .signin-privacy { text-align:center; margin:18px 0 0; color:#687282; font-size:.75rem; }
+ .signin-privacy a { color:inherit; }
+ .signin-page :focus-visible { outline:3px solid #8bb2ff; outline-offset:3px; }
+ @media(max-width:600px) { .nav { gap:10px 15px; } .signin-page { margin:32px auto 48px; } .signin-card { padding:24px; } }
+</style>
+<div class="signin-page">
+ <section class="signin-card" aria-labelledby="signin-title">
+  <a href="/" class="signin-brand">arXiv.gg</a>
+  <h1 id="signin-title">Your research, connected.</h1>
+  <p class="signin-intro">Sign in or create a free account to pick up where you left off.</p>
+  {{if .Error}}<div class="signin-error" role="alert">{{.Error}}</div>{{end}}
+  {{if .GoogleEnabled}}
+   <a class="google-signin-btn" href="/auth/google/start?next={{urlquery .Next}}"><svg class="google-signin-icon" viewBox="0 0 24 24" aria-hidden="true">
 					<path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
 					<path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
 					<path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"/>
 					<path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06L5.84 9.9C6.71 7.31 9.14 5.38 12 5.38z"/>
-				</svg>
-				<span>Continue free with Google</span>
-			</a>
-			<p class="auth-trust">We use your account to provide signed-in features and protect access. Your research trail is not shown publicly.</p>
-		{{else}}
-			<p class="inline-notice error">Sign-in is temporarily unavailable.</p>
-		{{end}}
-	</section>
-
-	<section class="auth-unlocks" aria-labelledby="auth-unlocks-title">
-		<h2 id="auth-unlocks-title">Useful from your first session</h2>
-		<div class="auth-unlock-list">
-			<div class="auth-unlock">
-				<span class="auth-unlock-mark" aria-hidden="true">01</span>
-				<div><strong>Return to papers</strong><span>See your recently opened papers and continue the trail.</span></div>
-			</div>
-			<div class="auth-unlock">
-				<span class="auth-unlock-mark" aria-hidden="true">02</span>
-				<div><strong>Search full text</strong><span>{{if .SemanticAvailable}}Deep Search can match prepared full-paper text after sign-in. Requests may queue, and coverage varies by paper.{{else}}Deep Search is not enabled on this site. Signing in does not enable it; Quick Search remains available without an account.{{end}}</span></div>
-			</div>
-			<div class="auth-unlock">
-				<span class="auth-unlock-mark" aria-hidden="true">03</span>
-				<div><strong>Discover the next paper</strong><span>When enough shared reading history is available, find papers other readers opened. Otherwise, see recent community reading.</span></div>
-			</div>
-		</div>
-	</section>
+				</svg><span>Continue with Google</span></a>
+   <p class="signin-note">No new password. One account for your reading and tools.</p>
+  {{else}}
+   <div class="signin-error" role="status">Sign-in is temporarily unavailable. You can still browse and search papers.</div>
+  {{end}}
+  <div class="signin-divider" aria-hidden="true"></div>
+  <ul class="signin-features">
+   <li><span class="signin-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 6v15M3 3c4 0 6 1 9 3 3-2 5-3 9-3v15c-4 0-6 1-9 3-3-2-5-3-9-3Z"/></svg></span><div><strong>Keep your reading history</strong><p>Return to papers you’ve opened, all in one place.</p></div></li>
+   <li><span class="signin-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><div><strong>Connect your tools</strong><p>Create separate API keys for your agents and scripts.</p></div></li>
+   <li><span class="signin-feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6m-3-3v6"/></svg></span><div><strong>Explore with Deep Search</strong><p>{{if .SemanticAvailable}}Search prepared full-paper text. Coverage varies, and requests may queue.{{else}}Deep Search is not enabled on this site. Quick Search works without an account.{{end}}</p></div></li>
+  </ul>
+ </section>
+ <p class="signin-browse"><a href="/">← Continue browsing without an account</a></p>
+ <p class="signin-privacy">Google sign-in uses your basic profile and email. <a href="/privacy">Privacy policy</a></p>
 </div>
-
 {{template "foot" .}}
 {{end}}

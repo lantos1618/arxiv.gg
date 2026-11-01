@@ -16,6 +16,8 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/lantos1618/arxiv.gg"
 	"gorm.io/gorm"
@@ -211,49 +213,118 @@ func (s *server) handleAccount(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?next=/account", http.StatusSeeOther)
 		return
 	}
-	s.renderAccountPage(w, r, user, "", "")
+	s.renderAccountPage(w, r, user, "", "", false)
 }
 
-func (s *server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+// API key management is restricted to signed-in browser sessions.
+func (s *server) keyManagementUser(w http.ResponseWriter, r *http.Request) (*arxiv.User, bool) {
 	setPrivateNoStore(w)
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return nil, false
 	}
 	user, ok := s.sessionUser(r)
 	if !ok {
 		http.Redirect(w, r, "/login?next=/account", http.StatusSeeOther)
+		return nil, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return nil, false
+	}
+	return user, true
+}
+
+func (s *server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.keyManagementUser(w, r)
+	if !ok {
 		return
 	}
-	existingKey, err := s.cache.ActiveUserAPIKey(r.Context(), user.ID, "Agent access")
+	name := strings.TrimSpace(r.PostForm.Get("name"))
+	if name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > 120 || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		s.renderAccountPage(w, r, user, "", "Give your key a name between 1 and 120 characters.", true)
+		return
+	}
+	existing, err := s.cache.ActiveUserAPIKey(r.Context(), user.ID, name)
 	if err != nil {
-		log.Printf("load api key before rotation failed: %v", err)
-		s.renderAccountPage(w, r, user, "", "We couldn’t load your API key. Please try again.")
+		s.renderAccountPage(w, r, user, "", "We couldn’t check your keys. Please try again.", true)
 		return
 	}
-	if existingKey != nil && !apiKeyRotationConfirmed(r) {
-		s.renderAccountPage(w, r, user, "", "Confirm that rotating the key will revoke the current key.")
+	if existing != nil {
+		s.renderAccountPage(w, r, user, "", "You already have an active key with that name. Choose a different name.", true)
 		return
 	}
-	key, raw, err := s.cache.RegenerateUserAPIKey(r.Context(), user.ID, "Agent access")
+	_, raw, err := s.cache.CreateUserAPIKey(r.Context(), user.ID, name)
 	if err != nil {
-		log.Printf("regenerate api key failed: %v", err)
-		s.renderAccountPage(w, r, user, "", "We couldn’t update your API key. Your existing key has not been changed. Please try again.")
+		log.Printf("create api key failed: %v", err)
+		s.renderAccountPage(w, r, user, "", "We couldn’t create the key. Try again with a unique name.", true)
 		return
 	}
-	_ = key
-	notice := "API key created. Copy it now; it is only shown on this screen."
-	if existingKey != nil {
-		notice = "API key rotated. The previous key is revoked. Copy the new key now; it is only shown on this screen."
+	s.renderAccountPage(w, r, user, raw, "Created “"+name+"”. Copy it now; the full key won’t be shown again.", false)
+}
+
+func (s *server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.keyManagementUser(w, r)
+	if !ok {
+		return
 	}
-	s.renderAccountPage(w, r, user, raw, notice)
+	if !apiKeyRotationConfirmed(r) {
+		s.renderAccountPage(w, r, user, "", "Confirm that rotating the key will revoke the current key.", true)
+		return
+	}
+	_, raw, err := s.cache.RegenerateUserAPIKeyByID(r.Context(), user.ID, r.PostForm.Get("key_id"))
+	if err != nil {
+		message := "We couldn’t rotate this key. Please refresh the page and try again."
+		if err == gorm.ErrRecordNotFound {
+			message = "That key is no longer available. Refresh the page to see your current keys."
+		} else {
+			log.Printf("regenerate api key failed: %v", err)
+		}
+		s.renderAccountPage(w, r, user, "", message, true)
+		return
+	}
+	s.renderAccountPage(w, r, user, raw, "Key rotated. Copy the new key now and update the tool that uses it. Your other keys are unchanged.", false)
+}
+
+func (s *server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.keyManagementUser(w, r)
+	if !ok {
+		return
+	}
+	if r.PostForm.Get("confirm_revocation") != "revoke" {
+		s.renderAccountPage(w, r, user, "", "Confirm that you want to revoke this key.", true)
+		return
+	}
+	if err := s.cache.RevokeUserAPIKey(r.Context(), user.ID, r.PostForm.Get("key_id")); err != nil {
+		if err != gorm.ErrRecordNotFound {
+			log.Printf("revoke api key failed: %v", err)
+		}
+		s.renderAccountPage(w, r, user, "", "We couldn’t revoke this key. Refresh the page to see your current keys.", true)
+		return
+	}
+	s.renderAccountPage(w, r, user, "", "Key revoked. Your other API keys are still active.", false)
+}
+
+type accountAPIKey struct {
+	ID, Name, Masked string
+	CreatedAt        time.Time
+	LastUsedAt       *time.Time
+}
+
+func accountAPIKeys(keys []arxiv.UserAPIKey) []accountAPIKey {
+	rows := make([]accountAPIKey, 0, len(keys))
+	for _, key := range keys {
+		rows = append(rows, accountAPIKey{ID: key.ID, Name: key.Name, Masked: arxiv.MaskAPIKey(&key), CreatedAt: key.CreatedAt, LastUsedAt: key.LastUsedAt})
+	}
+	return rows
 }
 
 func apiKeyRotationConfirmed(r *http.Request) bool {
 	return r != nil && r.ParseForm() == nil && r.FormValue("confirm_rotation") == "rotate"
 }
 
-func (s *server) renderAccountPage(w http.ResponseWriter, r *http.Request, user *arxiv.User, rawAPIKey, apiKeyNotice string) {
+func (s *server) renderAccountPage(w http.ResponseWriter, r *http.Request, user *arxiv.User, rawAPIKey, apiKeyNotice string, apiKeyWarning bool) {
 	setPrivateNoStore(w)
 	views, err := s.cache.RecentUserPaperViews(r.Context(), user.ID, 25)
 	if err != nil {
@@ -274,7 +345,7 @@ func (s *server) renderAccountPage(w http.ResponseWriter, r *http.Request, user 
 			peerViews = []arxiv.UserPaperViewRow{}
 		}
 	}
-	apiKey, err := s.cache.ActiveUserAPIKey(r.Context(), user.ID, "Agent access")
+	apiKeys, err := s.cache.ActiveUserAPIKeys(r.Context(), user.ID)
 	if err != nil {
 		log.Printf("account api key lookup failed: %v", err)
 	}
@@ -284,11 +355,10 @@ func (s *server) renderAccountPage(w http.ResponseWriter, r *http.Request, user 
 		"RecentViews":     views,
 		"PeerViews":       peerViews,
 		"PeerViewsSource": peerViewsSource,
-		"APIKeyRecord":    apiKey,
+		"APIKeys":         accountAPIKeys(apiKeys),
 		"APIKey":          rawAPIKey,
-		"APIKeyMasked":    arxiv.MaskAPIKey(apiKey),
 		"APIKeyNotice":    apiKeyNotice,
-		"APIKeyWarning":   apiKeyNotice != "" && rawAPIKey == "",
+		"APIKeyWarning":   apiKeyWarning,
 	})
 }
 
@@ -601,7 +671,7 @@ func setPrivateNoStore(w http.ResponseWriter) {
 func thirdPartyScriptsAllowed(path string) bool {
 	return path != "/login" &&
 		path != "/account" &&
-		path != "/account/api-key/regenerate" &&
+		!strings.HasPrefix(path, "/account/") &&
 		path != "/api/v1/" &&
 		!strings.HasPrefix(path, "/auth/") &&
 		!strings.HasPrefix(path, "/admin")

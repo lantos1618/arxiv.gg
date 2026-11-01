@@ -50,9 +50,12 @@ func TestUIBrowserFixtureServer(t *testing.T) {
 			data["CurrentUser"], data["User"] = user, user
 			data["PeerViewsSource"] = "community"
 			state := r.URL.Query().Get("state")
+			data["APIKeys"] = []accountAPIKey{}
 			if state != "empty" {
-				data["APIKeyRecord"] = &arxiv.UserAPIKey{CreatedAt: time.Date(2026, 7, 9, 13, 46, 0, 0, time.UTC)}
-				data["APIKeyMasked"] = "arxivgg_example...demo"
+				data["APIKeys"] = []accountAPIKey{
+					{ID: "key_fixture_one", Name: "Claude Desktop", Masked: "arxivgg_example...demo", CreatedAt: time.Date(2026, 7, 9, 13, 46, 0, 0, time.UTC)},
+					{ID: "key_fixture_two", Name: "Research script", Masked: "arxivgg_script...demo", CreatedAt: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)},
+				}
 			}
 			if state == "new" {
 				data["APIKey"] = "arxivgg_fixture_only_not_a_real_key"
@@ -61,6 +64,13 @@ func TestUIBrowserFixtureServer(t *testing.T) {
 			if state == "error" {
 				data["APIKeyNotice"] = "We couldn’t update your API key. Your existing key has not been changed. Please try again."
 				data["APIKeyWarning"] = true
+			}
+		case r.URL.Path == "/login":
+			name = "login"
+			data["Next"] = "/account"
+			data["GoogleEnabled"] = r.URL.Query().Get("state") != "unavailable"
+			if r.URL.Query().Get("state") == "error" {
+				data["Error"] = "Google sign-in could not start. Try again in a moment."
 			}
 		case r.URL.Path == "/search":
 			name = "search"

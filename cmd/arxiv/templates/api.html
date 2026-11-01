@@ -264,7 +264,7 @@ curl "{{.BaseURL}}/api/v1/papers/1706.03762/export/bibtex"</code></pre>
 			return 'Use this account API key for authenticated REST and MCP calls:\nAuthorization: Bearer ' + apiKey + '\n\n';
 		}
 		if (apiKeyMask) {
-			return 'This account has an active API key (' + apiKeyMask + '), but the full key is only shown when created. Open ' + accountURL + ' and regenerate the key if the agent needs authenticated access.\n\n';
+			return 'This account has an active API key (' + apiKeyMask + '), but the full key is only shown when created. Open ' + accountURL + ' and create a separate key for this tool if it needs authenticated access.\n\n';
 		}
 		if (signedIn) {
 			return 'Open ' + accountURL + ' to create an API key before authenticated agent work.\n\n';

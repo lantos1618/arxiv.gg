@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const apiKeyPrefix = "arxivgg_"
@@ -121,6 +122,59 @@ func (c *Cache) RegenerateUserAPIKey(ctx context.Context, userID, name string) (
 	return created, raw, nil
 }
 
+// ActiveUserAPIKeys lists metadata for every active key belonging to a user.
+func (c *Cache) ActiveUserAPIKeys(ctx context.Context, userID string) ([]UserAPIKey, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("user ID is required")
+	}
+	var keys []UserAPIKey
+	err := c.db.WithContext(ctx).Where("user_id = ? AND revoked_at IS NULL", userID).Order("created_at DESC, id DESC").Find(&keys).Error
+	return keys, err
+}
+
+// RegenerateUserAPIKeyByID replaces exactly one owned, active key. A stale ID
+// cannot replace a newer key, and a failed insertion rolls back revocation.
+func (c *Cache) RegenerateUserAPIKeyByID(ctx context.Context, userID, keyID string) (*UserAPIKey, string, error) {
+	c.apiKeyMu.Lock()
+	defer c.apiKeyMu.Unlock()
+	var created *UserAPIKey
+	var raw string
+	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var key UserAPIKey
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ? AND revoked_at IS NULL", keyID, userID).First(&key).Error; err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		result := tx.Model(&UserAPIKey{}).Where("id = ? AND user_id = ? AND revoked_at IS NULL", keyID, userID).Updates(map[string]any{"revoked_at": now, "updated_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		var err error
+		created, raw, err = c.createUserAPIKey(ctx, tx, userID, key.Name)
+		return err
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return created, raw, nil
+}
+
+// RevokeUserAPIKey disables only the selected key owned by this user.
+func (c *Cache) RevokeUserAPIKey(ctx context.Context, userID, keyID string) error {
+	now := time.Now().UTC()
+	result := c.db.WithContext(ctx).Model(&UserAPIKey{}).Where("id = ? AND user_id = ? AND revoked_at IS NULL", keyID, userID).Updates(map[string]any{"revoked_at": now, "updated_at": now})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // UserForAPIKey returns the user associated with an active raw API key.
 func (c *Cache) UserForAPIKey(ctx context.Context, rawKey string) (*User, *UserAPIKey, error) {
 	rawKey = strings.TrimSpace(rawKey)
@@ -195,7 +249,10 @@ func (c *Cache) createUserAPIKey(ctx context.Context, db *gorm.DB, userID, name 
 }
 
 func normalizeAPIKeyName(name string) string {
-	name = trimForStorage(name, 120)
+	name = strings.TrimSpace(name)
+	if runes := []rune(name); len(runes) > 120 {
+		name = string(runes[:120])
+	}
 	if name == "" {
 		return "Agent access"
 	}

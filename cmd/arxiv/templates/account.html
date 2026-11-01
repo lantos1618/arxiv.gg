@@ -1,93 +1,213 @@
 {{define "account"}}
 {{template "head" .}}
 <style>
- .account-page { color: #172033; }
- .account-page h1 { margin: 0; font-size: 1.8rem; letter-spacing: -.04em; }
- .account-page h2 { margin: 0 0 .4rem; font-size: 1.15rem; }
- .account-page p { margin: .45rem 0; }
- .account-heading, .account-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
- .account-heading form { flex-shrink: 0; }
- .account-heading .btn { white-space: nowrap; }
- .account-heading { margin: 2rem 0 1.25rem; }
- .account-profile { display: flex; gap: 1rem; align-items: center; min-width: 0; }
- .account-avatar { width: 48px; height: 48px; border-radius: 50%; }
- .account-card { border: 1px solid #dfe5ed; border-radius: 12px; padding: 1.4rem; margin-bottom: 1.5rem; }
- .account-summary { display: flex; flex-wrap: wrap; gap: 1rem 2.5rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
- .account-summary dt, .account-muted { color: #586579; font-size: .9rem; }
- .account-summary dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
- .account-summary { margin-bottom: 0; padding: 1rem 0 0; background: transparent; border-radius: 0; }
- .account-status { display: inline-block; background: #eaf5ee; color: #236341; padding: .2rem .6rem; border-radius: 20px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
- .account-key { background: #f5f7fa; border: 1px solid #e5eaf0; border-radius: 8px; padding: 1rem; margin: 1.15rem 0; }
- .account-key code { font-size: 1rem; overflow-wrap: anywhere; }
- .account-api-copy { display: flex; gap: .6rem; margin: .5rem 0; }
- .account-api-copy input { flex: 1; min-width: 0; border: 1px solid #ccd5e0; border-radius: 6px; padding: .65rem; font-family: monospace; background: white; }
- .account-page .btn { padding: .65rem .9rem; border-radius: 6px; font-weight: 600; font-family: inherit; }
- .account-page .btn-secondary { background: white; color: #31425a; border: 1px solid #ccd5e0; }
- .account-page .btn-secondary:hover { background: #f0f4f8; }
- .account-page .btn:disabled { opacity: .65; cursor: wait; }
- .account-notice { border-radius: 8px; background: #eaf5ee; color: #236341; padding: .9rem 1rem; margin: 1rem 0; }
- .account-notice.warning { background: #fff7e8; color: #805117; }
- .account-rotation { margin-top: 1.25rem; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
- .account-rotation summary { cursor: pointer; font-weight: 600; color: #31425a; padding: .35rem 0; }
- .account-confirm { display: flex; align-items: flex-start; gap: .5rem; margin: 1rem 0; }
- .account-confirm input { margin-top: .35rem; flex-shrink: 0; }
- .account-page .account-replace { background: #963b23; }
- .account-page .account-replace:hover { background: #79301d; }
- .account-table-wrap { overflow-x: auto; margin: 1rem 0 2rem; }
- .account-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
- .account-table th, .account-table td { border-bottom: 1px solid #e5e7eb; padding: .8rem .6rem; text-align: left; vertical-align: top; }
- .account-table th { color: #586579; font-weight: 600; background: #f5f7fa; }
- .account-table td:first-child { min-width: 220px; }
- .account-table code { color: #586579; font-size: .8rem; }
- .account-empty { padding: 1rem 0 2rem; color: #586579; }
- .account-page :focus-visible { outline: 3px solid #0066cc; outline-offset: 3px; }
- @media (max-width: 600px) {
-  .account-card { padding: 1rem; }
-  .account-heading, .account-section-heading { align-items: flex-start; }
-  .account-api-copy { flex-direction: column; }
-  .account-summary { gap: 1rem; flex-direction: column; }
-  .account-avatar { display: none; }
+ body { max-width: 1160px; }
+ .nav { display:flex; flex-wrap:wrap; align-items:center; gap:18px; border-bottom:1px solid #e7e9ed; padding:3px 0 17px; margin-bottom:0; }
+ .nav > span { display:none; }
+ .nav > a,.nav .nav-button { font-size:12px; color:#667184; text-decoration:none; }
+ .nav > a:first-of-type { color:#1b2638; font-weight:650; }
+ .nav > a:hover,.nav .nav-button:hover { color:#2563eb; }
+ @media(max-width:600px) { .nav { gap:10px 15px; } }
+ .settings-shell { --ink:#19212e; --muted:#687282; --line:#e7e9ed; --blue:#2563eb; color:var(--ink); display:grid; grid-template-columns:190px minmax(0,1fr); gap:48px; margin:42px 0 64px; min-height:650px; font-size:14px; }
+ .settings-shell *, .settings-dialog * { box-sizing:border-box; }
+ .settings-icon { width:18px; height:18px; flex:none; vertical-align:middle; }
+ .settings-sidebar { padding-right:20px; border-right:1px solid var(--line); }
+ .settings-eyebrow { font-size:10px; font-weight:700; letter-spacing:.12em; color:#687282; text-transform:uppercase; margin:0 0 16px; }
+ .settings-identity { display:flex; gap:10px; align-items:center; padding:0 0 28px; min-width:0; }
+ .settings-avatar { width:34px; height:34px; flex:none; display:grid; place-items:center; border:1px solid #dae3f4; background:#eef3fd; border-radius:9px; color:#4266a9; object-fit:cover; }
+ .settings-person { overflow:hidden; }
+ .settings-person strong { display:block; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .settings-person small { display:block; color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .settings-nav { display:grid; gap:5px; }
+ .settings-nav a { display:flex; align-items:center; gap:10px; padding:10px 11px; border-radius:7px; color:#657080; text-decoration:none; font-size:13px; font-weight:500; }
+ .settings-nav a:hover { color:#19212e; background:#f5f6f8; }
+ .settings-nav a[aria-current="page"] { background:#edf3ff; color:#245ac6; font-weight:600; }
+ .settings-sidebar-footer { margin-top:32px; padding-top:20px; border-top:1px solid var(--line); font-size:12px; }
+ .settings-sidebar-footer a { text-decoration:none; color:var(--muted); display:flex; align-items:center; justify-content:space-between; }
+ .settings-content { min-width:0; }
+ .settings-panel { scroll-margin-top:24px; }
+ .settings-panel:focus { outline:none; }
+ .settings-panel + .settings-panel { margin-top:48px; }
+ .settings-shell.is-enhanced .settings-panel { margin-top:0; }
+ .settings-breadcrumb { display:flex; gap:8px; color:#687282; font-size:12px; margin:0 0 25px; }
+ .settings-breadcrumb span:last-child { color:#485365; }
+ .settings-shell h1 { margin:0; font-size:28px; letter-spacing:-.035em; line-height:1.25; font-weight:650; }
+ .settings-shell h2 { margin:0; font-size:16px; letter-spacing:-.015em; font-weight:600; }
+ .settings-shell p { margin:8px 0; }
+ .settings-muted { color:var(--muted); line-height:1.65; font-size:13px; }
+ .settings-header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:30px; }
+ .settings-header p { max-width:470px; }
+ .settings-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; padding:8px 13px; border:1px solid #dce0e7; border-radius:7px; font:600 12px/1.4 system-ui,sans-serif; text-decoration:none; background:white; color:#364152; cursor:pointer; white-space:nowrap; box-shadow:0 1px 2px #18233808; }
+ .settings-button:hover { background:#f6f8fb; border-color:#bfc7d4; }
+ .settings-button.primary { background:#2563eb; border-color:#2563eb; color:white; box-shadow:0 2px 3px #1d4ed121; }
+ .settings-button.primary:hover { background:#1d4ed8; }
+ .settings-button:disabled { opacity:.6; cursor:wait; }
+ .settings-button.danger { background:#b43b36; border-color:#b43b36; color:white; }
+ .settings-button[hidden], .settings-shell [hidden] { display:none !important; }
+ .key-surface { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+ .key-surface-heading { display:flex; align-items:center; justify-content:space-between; padding:17px 20px; }
+ .key-surface-heading h2 { font-size:13px; display:flex; align-items:center; gap:8px; }
+ .key-count { background:#f1f3f6; border:1px solid #e7e9ed; color:#647084; border-radius:5px; padding:0 5px; font-size:10px; line-height:17px; }
+ .key-surface-heading > span { font-size:11px; color:var(--muted); }
+ .key-table { width:100%; border-collapse:collapse; font-size:12px; }
+ .key-table th { font-weight:500; color:#687282; background:#fafbfc; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:10px 16px; text-align:left; font-size:11px; }
+ .key-table th:first-child, .key-table td:first-child { padding-left:20px; }
+ .key-table td { padding:20px 16px; white-space:nowrap; }
+ .key-name { display:flex; gap:10px; align-items:center; }
+ .key-name-icon { border:1px solid #e5e8ee; border-radius:7px; padding:8px; color:#6c7a90; display:grid; place-items:center; }
+ .key-name strong { display:block; font-weight:550; }
+ .key-status { display:inline-flex; align-items:center; gap:5px; color:#28815b; font-size:10px; margin-top:3px; }
+ .key-status::before { content:""; width:5px; height:5px; background:#32a575; border-radius:50%; }
+ .key-secret { display:inline-block; background:#f4f5f7; border:1px solid #e9ebee; border-radius:5px; padding:5px 7px; font:11px ui-monospace,SFMono-Regular,monospace; color:#647084; }
+ .key-note { display:flex; align-items:center; gap:7px; padding:12px 20px; border-top:1px solid var(--line); color:#687282; font-size:11px; background:#fdfdfe; }
+ .key-note .settings-icon { width:13px; height:13px; }
+ .key-empty { padding:35px 24px; text-align:center; border-top:1px solid var(--line); }
+ .key-empty .key-name-icon { width:42px; margin:0 auto 14px; }
+ .key-empty h2 { font-size:14px; }
+ .key-empty p { max-width:360px; margin:8px auto; }
+ .settings-section-label { margin:32px 0 14px !important; color:#7b8595; font-size:10px !important; font-weight:650; letter-spacing:.1em !important; text-transform:uppercase; }
+ .setup-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+ .setup-card { border:1px solid var(--line); border-radius:9px; padding:19px; color:inherit; text-decoration:none; display:flex; gap:12px; align-items:flex-start; transition:border-color .15s,background .15s; }
+ .setup-card:hover { border-color:#becdec; background:#fbfcff; }
+ .setup-card > .settings-icon { color:#607799; margin-top:2px; }
+ .setup-card strong { display:block; font-size:12px; font-weight:600; }
+ .setup-card p { color:var(--muted); font-size:12px; line-height:1.6; margin:5px 0 10px; }
+ .setup-card span { color:#2563eb; font-size:11px; font-weight:550; }
+ .setup-card span .settings-icon { width:12px; height:12px; }
+ .settings-footnote { display:flex; gap:8px; align-items:flex-start; margin-top:25px; color:#687282; font-size:11px; line-height:1.65; }
+ .settings-footnote .settings-icon { width:14px; height:14px; margin-top:2px; }
+ .key-created { border:1px solid #bbddcb; border-radius:10px; background:#f7fcf9; padding:20px; margin-bottom:22px; }
+ .key-created-title { display:flex; align-items:center; gap:8px; color:#24714d; font-weight:600; font-size:13px; }
+ .key-created p { color:#5e786b; font-size:12px; }
+ .key-copy-field { display:flex; align-items:center; gap:8px; margin-top:14px; }
+ .key-copy-field input { min-width:0; width:100%; border:1px solid #d9e6df; border-radius:6px; padding:10px 12px; font:12px ui-monospace,monospace; background:white; color:#263b30; }
+ .key-created details { margin-top:14px; color:#526b5d; font-size:11px; }
+ .key-created summary { cursor:pointer; }
+ .settings-alert { color:#91482b; background:#fff7ef; border:1px solid #f1d9c5; padding:13px 16px; border-radius:8px; margin-bottom:20px; font-size:12px; }
+ .settings-rotation { margin-top:18px; font-size:12px; }
+ .settings-rotation summary { cursor:pointer; color:#7c4b37; }
+ .settings-dialog { width:min(460px,calc(100% - 32px)); border:1px solid #e5e7eb; padding:26px; border-radius:14px; box-shadow:0 24px 90px #0f172a33; color:#253044; }
+ .settings-dialog::backdrop { background:#15203366; backdrop-filter:blur(3px); }
+ .dialog-heading { display:flex; justify-content:space-between; align-items:center; gap:14px; margin-bottom:12px; }
+ .dialog-heading h2 { font-size:19px; margin:0; letter-spacing:-.025em; }
+ .dialog-heading button { border:0; background:transparent; cursor:pointer; color:#7e8795; padding:5px; border-radius:5px; }
+ .rotation-warning { color:#677183; font-size:13px; line-height:1.7; margin:14px 0; }
+ .rotation-confirm { display:flex; gap:9px; align-items:flex-start; background:#f7f8fa; border:1px solid #e8ebef; border-radius:7px; padding:12px; margin:20px 0; font-size:12px; line-height:1.6; }
+ .rotation-confirm input { margin:3px 0 0; accent-color:#2563eb; }
+ .rotation-actions { display:flex; justify-content:flex-end; gap:9px; }
+ .profile-fields { margin:25px 0; border-top:1px solid var(--line); }
+ .profile-fields > div { display:grid; grid-template-columns:140px 1fr; border-bottom:1px solid var(--line); padding:18px 0; gap:15px; font-size:13px; }
+ .profile-fields dt { color:var(--muted); }
+ .profile-fields dd { margin:0; overflow-wrap:anywhere; }
+ .account-table-wrap { overflow:auto; margin:18px 0 30px; border:1px solid var(--line); border-radius:9px; }
+ .account-table { width:100%; border-collapse:collapse; font-size:12px; }
+ .account-table th,.account-table td { padding:12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+ .account-table th { background:#fafbfc; color:var(--muted); font-weight:500; }
+ .account-table td:first-child { min-width:220px; }
+ .account-table code { font-size:10px; color:var(--muted); }
+ .reading-empty { padding:20px; border:1px dashed #dce1e9; border-radius:8px; color:var(--muted); font-size:13px; margin:16px 0 32px !important; }
+ .settings-toast { position:fixed; bottom:25px; left:50%; transform:translateX(-50%); z-index:10001; color:white; background:#213348; border-radius:8px; box-shadow:0 5px 20px #18263a26; padding:11px 18px; font-size:12px; max-width:calc(100% - 32px); }
+ .settings-toast:empty { display:none; }
+ .settings-shell :focus-visible,.settings-dialog :focus-visible { outline:3px solid #8bb2ff; outline-offset:3px; }
+ @media(max-width:950px) { .settings-shell { gap:28px; grid-template-columns:160px minmax(0,1fr); } .key-table th,.key-table td { padding:12px 9px; } .key-name-icon { display:none; } }
+ @media(max-width:760px) {
+  .settings-shell { display:block; margin-top:24px; }
+  .settings-sidebar { border:0; padding:0; margin-bottom:28px; }
+  .settings-identity,.settings-sidebar .settings-eyebrow,.settings-sidebar-footer { display:none; }
+  .settings-nav { display:flex; gap:4px; border-bottom:1px solid var(--line); padding-bottom:10px; }
+  .settings-nav a { font-size:12px; padding:9px 11px; }
+  .settings-breadcrumb { margin-bottom:18px; font-size:11px; }
+  .settings-shell h1 { font-size:25px; }
+  .settings-header { gap:12px; margin-bottom:22px; }
+  .settings-header .settings-button { padding:8px 10px; font-size:11px; }
+  .settings-header .settings-button .settings-icon { display:none; }
+  .key-table thead { display:none; }
+  .key-table tbody,.key-table tr { display:block; }
+  .key-table tr { padding:4px 18px 16px; }
+  .key-table td { display:flex; justify-content:space-between; gap:12px; padding:9px 0 !important; font-size:12px; }
+  .key-table td::before { content:attr(data-label); color:var(--muted); font-size:11px; }
+  .key-table td:first-child { border-bottom:1px solid var(--line); margin-bottom:8px; padding-bottom:14px !important; }
+  .key-name { justify-content:space-between; width:100%; }
+  .key-name-icon { display:grid; }
+  .key-name > div:last-child { display:flex; flex:1; align-items:center; justify-content:space-between; gap:10px; }
+  .key-status { margin:0; }
+  .key-note { align-items:flex-start; line-height:1.6; }
+  .key-note .settings-icon { margin-top:3px; }
+  .setup-grid { grid-template-columns:1fr; gap:10px; }
+  .setup-card { padding:16px; }
+  .key-copy-field { flex-wrap:wrap; }
+  .key-copy-field input { flex-basis:100%; }
+  .profile-fields > div { grid-template-columns:100px 1fr; }
  }
 </style>
-<div class="account-page">
- <div class="account-heading">
-  <div><h1>Your account</h1><p class="account-muted">Manage your profile and API access.</p></div>
-  <form method="post" action="/logout"><button class="btn btn-secondary" type="submit">Sign out</button></form>
- </div>
- <section class="account-card" aria-label="Profile">
-  <div class="account-profile">
-   {{if .User.PictureURL}}<img class="account-avatar" src="{{.User.PictureURL}}" alt="" width="48" height="48">{{end}}
-   <div><h2>{{if .User.Name}}{{.User.Name}}{{else}}Profile{{end}}</h2><p class="account-muted" style="overflow-wrap:anywhere">{{.User.Email}}</p></div>
+<div class="settings-shell" id="account-settings">
+ <aside class="settings-sidebar">
+  <p class="settings-eyebrow">Personal account</p>
+  <div class="settings-identity">
+   {{if .User.PictureURL}}<img class="settings-avatar" src="{{.User.PictureURL}}" alt="" width="34" height="34">{{else}}<span class="settings-avatar"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg></span>{{end}}
+   <div class="settings-person"><strong>{{if .User.Name}}{{.User.Name}}{{else}}Your account{{end}}</strong><small title="{{.User.Email}}">{{.User.Email}}</small></div>
   </div>
-  <dl class="account-summary"><div><dt>Signed in with</dt><dd>{{.User.AuthProvider}}</dd></div><div><dt>Plan</dt><dd>{{.User.Plan}}</dd></div></dl>
- </section>
- <section class="account-card" aria-labelledby="api-access-title">
-  <div class="account-section-heading"><div><h2 id="api-access-title">API access</h2><p class="account-muted">Connect Codex, Claude, or your own tools.</p></div>{{if .APIKeyRecord}}<span class="account-status">Key active</span>{{end}}</div>
-  {{if .APIKeyNotice}}<div class="account-notice{{if .APIKeyWarning}} warning{{end}}" role="{{if .APIKeyWarning}}alert{{else}}status{{end}}">{{.APIKeyNotice}}</div>{{end}}
-  <div class="account-key">
+  <nav class="settings-nav" aria-label="Account settings">
+   <a href="#api-keys" data-settings-nav aria-current="page"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg> API keys</a>
+   <a href="#profile" data-settings-nav><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg> Profile</a>
+   <a href="#reading-history" data-settings-nav><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v15M3 3c4 0 6 1 9 3 3-2 5-3 9-3v15c-4 0-6 1-9 3-3-2-5-3-9-3Z"/></svg> Reading</a>
+  </nav>
+  <div class="settings-sidebar-footer"><a href="/api/v1/">Developer docs <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div>
+ </aside>
+ <div class="settings-content">
+  <section class="settings-panel" id="api-keys" tabindex="-1" aria-labelledby="api-keys-title">
+   <div class="settings-breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span>API keys</span></div>
+   <header class="settings-header">
+    <div><h1 id="api-keys-title">API keys</h1><p class="settings-muted">Give your tools access to your arXiv.gg account.</p></div>
+    {{if .APIKeyRecord}}<button type="button" class="settings-button primary" data-open-rotation hidden><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 3M5 15a8 8 0 0 0 13 3"/></svg> Rotate key</button>{{else}}<form method="post" action="/account/api-key/regenerate" data-key-form><button class="settings-button primary" type="submit">+ Create API key</button></form>{{end}}
+   </header>
+   {{if .APIKeyWarning}}<div class="settings-alert" role="alert">{{.APIKeyNotice}}</div>{{end}}
    {{if .APIKey}}
-    <label for="account-api-key"><strong>Your new API key</strong></label>
-    <div class="account-api-copy"><input id="account-api-key" type="text" readonly spellcheck="false" autocomplete="off" value="{{.APIKey}}"><button class="btn" type="button" data-copy-target="account-api-key">Copy API key</button></div>
-    <p class="account-muted">Save this somewhere secure. You won’t be able to view the full key again.</p>
-    <details><summary>Authorization header</summary><label class="account-muted" for="account-api-header">Use this header in REST requests</label><div class="account-api-copy"><input id="account-api-header" type="text" readonly spellcheck="false" autocomplete="off" value="Authorization: Bearer {{.APIKey}}"><button class="btn btn-secondary" type="button" data-copy-target="account-api-header">Copy header</button></div></details>
-   {{else if .APIKeyMasked}}
-    <code>{{.APIKeyMasked}}</code><p class="account-muted">For security, only part of your key is visible. Lost the full key? Replace it below.</p>
-   {{else}}<p>No API key yet.</p><p class="account-muted">Create one when you’re ready to connect a tool.</p>{{end}}
-   {{with .APIKeyRecord}}<dl class="account-summary"><div><dt>Created (UTC)</dt><dd>{{timeStamp .CreatedAt}}</dd></div><div><dt>Last used (UTC)</dt><dd>{{if .LastUsedAt}}{{timeOrDash .LastUsedAt}}{{else}}Not used yet{{end}}</dd></div></dl>{{end}}
-  </div>
-  <p class="account-muted">Public paper and search tools work without a key. Account features and Deep Search require one.</p>
-  <p><a href="/api/v1/">API setup and connection instructions →</a></p>
-  {{if .APIKeyRecord}}<details class="account-rotation"{{if .APIKeyWarning}} open{{end}}><summary>Replace API key</summary>{{end}}
-   <form method="post" action="/account/api-key/regenerate" data-key-form>
+   <div class="key-created">
+    <div class="key-created-title"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Your new key is ready</div>
+    <p role="status">{{.APIKeyNotice}}</p>
+    <label class="settings-eyebrow" for="account-api-key">Secret key</label>
+    <div class="key-copy-field"><input id="account-api-key" type="password" readonly spellcheck="false" autocomplete="off" value="{{.APIKey}}"><button type="button" class="settings-button" data-toggle-secret aria-controls="account-api-key" aria-pressed="false">Reveal</button><button type="button" class="settings-button primary" data-copy-target="account-api-key"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></svg> <span>Copy API key</span></button></div>
+    <details><summary>Authorization header</summary><label for="account-api-header">For authenticated REST requests</label><div class="key-copy-field"><input id="account-api-header" type="password" readonly spellcheck="false" autocomplete="off" value="Authorization: Bearer {{.APIKey}}"><button type="button" class="settings-button" data-copy-target="account-api-header"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></svg> <span>Copy header</span></button></div></details>
+   </div>
+   {{end}}
+   <div class="key-surface">
+    <div class="key-surface-heading"><h2>Personal key <span class="key-count">{{if .APIKeyRecord}}1{{else}}0{{end}}</span></h2><span>One key per account</span></div>
     {{if .APIKeyRecord}}
-     <p class="account-notice warning">Replacing your key immediately revokes the current key. Update every connected tool with the new key.</p>
-     <label class="account-confirm"><input type="checkbox" name="confirm_rotation" value="rotate" required><span>I understand that my connected tools will need the new key.</span></label>
-     <button class="btn account-replace" type="submit">Replace API key</button>
-    {{else}}<button class="btn" type="submit">Create API key</button>{{end}}
-   </form>
-  {{if .APIKeyRecord}}</details>{{end}}
-  <p id="account-copy-status" class="account-muted" role="status" aria-live="polite"></p>
- </section>
+    <table class="key-table" aria-label="Your API key"><thead><tr><th scope="col">Name</th><th scope="col">Secret key</th><th scope="col">Created · UTC</th><th scope="col">Last used · UTC</th></tr></thead><tbody><tr>
+     <td><div class="key-name"><span class="key-name-icon"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><div><strong>{{if .APIKeyRecord.Name}}{{.APIKeyRecord.Name}}{{else}}Agent access{{end}}</strong><span class="key-status">Active</span></div></div></td>
+     <td data-label="Secret key"><code class="key-secret">{{.APIKeyMasked}}</code></td>
+     <td data-label="Created · UTC">{{timeStamp .APIKeyRecord.CreatedAt}}</td>
+     <td data-label="Last used · UTC">{{if .APIKeyRecord.LastUsedAt}}{{timeOrDash .APIKeyRecord.LastUsedAt}}{{else}}Never used{{end}}</td>
+    </tr></tbody></table>
+    <div class="key-note"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg> The full key is only shown when created. Lost it? Rotate your key to get a new one.</div>
+    {{else}}<div class="key-empty"><span class="key-name-icon"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="4"/><path d="m11 12 9 9m-3-3 3-3m-6 0 3-3"/></svg></span><h2>Your tools, connected.</h2><p class="settings-muted">Create an API key to use account features and Deep Search from your favorite tools.</p></div>{{end}}
+   </div>
+   {{if .APIKeyRecord}}
+   <details class="settings-rotation" id="rotation-fallback"><summary>Rotate API key</summary>
+    <form method="post" action="/account/api-key/regenerate" data-key-form>
+     <p class="rotation-warning">Rotating your key immediately revokes the current key. Any connected tools will stop working until you update them with the new key.</p>
+     <label class="rotation-confirm"><input type="checkbox" name="confirm_rotation" value="rotate" required><span>I understand that I’ll need to update my connected tools.</span></label>
+     <div class="rotation-actions"><button type="button" class="settings-button" data-close-rotation hidden>Cancel</button><button type="submit" class="settings-button danger">Rotate API key</button></div>
+    </form>
+   </details>
+   {{end}}
+   <h2 class="settings-section-label">Start building</h2>
+   <div class="setup-grid">
+    <a href="/api/v1/#agent-setup" class="setup-card"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18"/></svg><div><strong>Connect an AI tool</strong><p>Set up Codex, Claude, or an MCP client with your account.</p><span>Connection guide <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></div></a>
+    <a href="/api/v1/" class="setup-card"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v15M3 3c4 0 6 1 9 3 3-2 5-3 9-3v15c-4 0-6 1-9 3-3-2-5-3-9-3Z"/></svg><div><strong>Build with the API</strong><p>Explore endpoints and add research to your own workflow.</p><span>View API documentation <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></div></a>
+   </div>
+   <div class="settings-footnote"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg><span>Keep your key private. Public paper and search tools work without a key; account features and Deep Search require one.</span></div>
+  </section>
+  <section class="settings-panel" id="profile" tabindex="-1" aria-labelledby="profile-title">
+   <div class="settings-breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span>Profile</span></div>
+   <header class="settings-header"><div><h1 id="profile-title">Profile</h1><p class="settings-muted">Your account and sign-in details.</p></div></header>
+   <dl class="profile-fields"><div><dt>Name</dt><dd>{{if .User.Name}}{{.User.Name}}{{else}}Not provided{{end}}</dd></div><div><dt>Email</dt><dd>{{.User.Email}}</dd></div><div><dt>Sign-in method</dt><dd>{{.User.AuthProvider}}</dd></div><div><dt>Plan</dt><dd>{{.User.Plan}}</dd></div></dl>
+   <form method="post" action="/logout"><button type="submit" class="settings-button">Sign out</button></form>
+  </section>
+  <section class="settings-panel" id="reading-history" tabindex="-1" aria-labelledby="reading-title">
+   <div class="settings-breadcrumb"><span>Account</span><span aria-hidden="true">/</span><span>Reading</span></div>
+   <header class="settings-header"><div><h1 id="reading-title">Your reading</h1><p class="settings-muted">Pick up where you left off and discover what others are reading.</p></div></header>
 <h2>Recently Viewed</h2>
 {{if .RecentViews}}
 <div class="account-table-wrap" role="region" aria-label="Reading activity" tabindex="0"><table class="account-table">
@@ -104,15 +224,15 @@
 	</tbody>
 </table></div>
 {{else}}
-<p class="account-empty">Your recently viewed papers will appear here. <a href="/">Find a paper to get started →</a></p>
+<p class="reading-empty">Your recently viewed papers will appear here. <a href="/">Find a paper to get started →</a></p>
 {{end}}
 
 {{if eq .PeerViewsSource "personalized"}}
 <h2>Readers With Similar History</h2>
-<p class="account-muted">Personalized from papers you viewed and papers viewed by readers with overlapping history.</p>
+<p class="settings-muted">Personalized from papers you viewed and papers viewed by readers with overlapping history.</p>
 {{else}}
 <h2>Recent Community Reading</h2>
-<p class="account-muted">Global signed-in reading activity, shown because there is not enough overlap for personalized results yet.</p>
+<p class="settings-muted">Global signed-in reading activity, shown because there is not enough overlap for personalized results yet.</p>
 {{end}}
 {{if .PeerViews}}
 <div class="account-table-wrap" role="region" aria-label="Reading activity" tabindex="0"><table class="account-table">
@@ -129,54 +249,81 @@
 	</tbody>
 </table></div>
 {{else}}
-<p class="account-empty">Community reading activity will appear here as readers explore papers.</p>
+<p class="reading-empty">Community reading activity will appear here as readers explore papers.</p>
 {{end}}
 
+  </section>
+ </div>
 </div>
-
+<dialog class="settings-dialog" id="rotation-dialog" aria-labelledby="rotation-title">
+ <div class="dialog-heading"><h2 id="rotation-title">Rotate your API key?</h2><button type="button" data-close-rotation aria-label="Close rotation dialog"><svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+ <div id="rotation-dialog-body"></div>
+</dialog>
+<div class="settings-toast" id="account-copy-status" role="status" aria-live="polite"></div>
 <script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function() {
-	function copyValue(id, button) {
-		const input = document.getElementById(id);
-		if (!input) return;
-		const value = input.value;
-		const report = function(message) {
-			if (!button) return;
-			const original = button.dataset.label || button.textContent;
-			button.dataset.label = original;
-			document.getElementById('account-copy-status').textContent = message === 'Copied' ? 'Copied to clipboard.' : 'Could not copy. Select the text and copy it manually.';
-			button.textContent = message;
-			window.setTimeout(function() { button.textContent = original; }, 1400);
-		};
-		const fallbackCopy = function() {
-			input.focus();
-			input.select();
-			try {
-				const copied = document.execCommand('copy');
-				report(copied ? 'Copied' : 'Copy failed');
-			} catch (err) {
-				report('Copy failed');
-			}
-		};
-		if (navigator.clipboard && navigator.clipboard.writeText) {
-			navigator.clipboard.writeText(value).then(function() { report('Copied'); }).catch(fallbackCopy);
-			return;
-		}
-		fallbackCopy();
-	}
-	document.querySelectorAll('[data-copy-target]').forEach(function(button) {
-		button.addEventListener('click', function() {
-			copyValue(button.getAttribute('data-copy-target'), button);
-		});
-	});
- document.querySelectorAll('[data-key-form]').forEach(function(form) {
+ const shell = document.getElementById('account-settings');
+ const panels = Array.from(shell.querySelectorAll('.settings-panel'));
+ const links = Array.from(shell.querySelectorAll('[data-settings-nav]'));
+ function showPanel() {
+  const selected = panels.find(panel => '#' + panel.id === location.hash) || panels[0];
+  panels.forEach(panel => { panel.hidden = panel !== selected; });
+  links.forEach(link => { if (link.hash === '#' + selected.id) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
+ }
+ shell.classList.add('is-enhanced');
+ showPanel();
+ window.addEventListener('hashchange', showPanel);
+ const dialog = document.getElementById('rotation-dialog');
+ const fallback = document.getElementById('rotation-fallback');
+ const openButton = shell.querySelector('[data-open-rotation]');
+ if (fallback && typeof dialog.showModal === 'function') {
+  document.getElementById('rotation-dialog-body').appendChild(fallback.querySelector('form'));
+  fallback.hidden = true;
+  openButton.hidden = false;
+  openButton.addEventListener('click', () => { dialog.querySelector('input[type="checkbox"]').checked = false; dialog.showModal(); });
+  dialog.querySelectorAll('[data-close-rotation]').forEach(button => { button.hidden = false; button.addEventListener('click', () => dialog.close()); });
+ }
+ let toastTimer;
+ function report(message) {
+  const status = document.getElementById('account-copy-status');
+  status.textContent = message;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => { status.textContent = ''; }, 4000);
+ }
+ document.querySelectorAll('[data-copy-target]').forEach(button => {
+  button.addEventListener('click', async () => {
+   const input = document.getElementById(button.dataset.copyTarget);
+   const fallbackCopy = () => {
+    const oldType = input.type;
+    input.type = 'text'; input.focus(); input.select();
+    try { return document.execCommand('copy'); } finally { input.type = oldType; button.focus(); }
+   };
+   let copied = false;
+   try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(input.value); copied = true; } else copied = fallbackCopy(); }
+   catch (error) { try { copied = fallbackCopy(); } catch (_) {} }
+   report(copied ? 'Copied to clipboard.' : 'Copy failed. Reveal the key, then select and copy it manually.');
+   if (copied) {
+    const label = button.querySelector('span');
+    if (label) { const original = label.dataset.original || label.textContent; label.dataset.original = original; label.textContent = 'Copied'; window.setTimeout(() => { label.textContent = original; }, 1600); }
+   }
+  });
+ });
+ document.querySelectorAll('[data-toggle-secret]').forEach(button => {
+  button.addEventListener('click', () => {
+   const input = document.getElementById(button.getAttribute('aria-controls'));
+   const visible = input.type === 'password';
+   input.type = visible ? 'text' : 'password';
+   button.textContent = visible ? 'Hide' : 'Reveal';
+   button.setAttribute('aria-pressed', String(visible));
+  });
+ });
+ document.querySelectorAll('[data-key-form]').forEach(form => {
   const button = form.querySelector('button[type="submit"]');
   const label = button.textContent;
-  form.addEventListener('submit', function() { button.disabled = true; button.textContent = 'Updating key…'; });
-  window.addEventListener('pageshow', function() { button.disabled = false; button.textContent = label; });
+  form.addEventListener('submit', () => { button.disabled = true; button.textContent = 'Updating key…'; });
+  window.addEventListener('pageshow', () => { button.disabled = false; button.textContent = label; });
  });
 })();
 </script>
-
 {{template "foot" .}}
 {{end}}

@@ -228,7 +228,7 @@ func (s *server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) 
 	existingKey, err := s.cache.ActiveUserAPIKey(r.Context(), user.ID, "Agent access")
 	if err != nil {
 		log.Printf("load api key before rotation failed: %v", err)
-		http.Error(w, "could not update API key", http.StatusInternalServerError)
+		s.renderAccountPage(w, r, user, "", "We couldn’t load your API key. Please try again.")
 		return
 	}
 	if existingKey != nil && !apiKeyRotationConfirmed(r) {
@@ -238,7 +238,7 @@ func (s *server) handleRegenerateAPIKey(w http.ResponseWriter, r *http.Request) 
 	key, raw, err := s.cache.RegenerateUserAPIKey(r.Context(), user.ID, "Agent access")
 	if err != nil {
 		log.Printf("regenerate api key failed: %v", err)
-		http.Error(w, "could not regenerate API key", http.StatusInternalServerError)
+		s.renderAccountPage(w, r, user, "", "We couldn’t update your API key. Your existing key has not been changed. Please try again.")
 		return
 	}
 	_ = key
@@ -288,6 +288,7 @@ func (s *server) renderAccountPage(w http.ResponseWriter, r *http.Request, user 
 		"APIKey":          rawAPIKey,
 		"APIKeyMasked":    arxiv.MaskAPIKey(apiKey),
 		"APIKeyNotice":    apiKeyNotice,
+		"APIKeyWarning":   apiKeyNotice != "" && rawAPIKey == "",
 	})
 }
 

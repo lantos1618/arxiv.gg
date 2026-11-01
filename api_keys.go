@@ -94,7 +94,10 @@ func (c *Cache) RegenerateUserAPIKey(ctx context.Context, userID, name string) (
 	var raw string
 	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if c.dbType == DBTypePostgres {
-			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", userID+"\x00"+name).Error; err != nil {
+			// PostgreSQL text cannot contain NUL. Hash the unambiguous pair in
+			// Go before passing its printable digest to PostgreSQL.
+			lockKey := sha256.Sum256([]byte(userID + "\x00" + name))
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", hex.EncodeToString(lockKey[:])).Error; err != nil {
 				return fmt.Errorf("lock api key rotation: %w", err)
 			}
 		}

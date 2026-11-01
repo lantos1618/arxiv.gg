@@ -1,75 +1,96 @@
 {{define "account"}}
 {{template "head" .}}
 <style>
-	.account-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin-bottom: 1rem; }
-	.account-table th, .account-table td { border-bottom: 1px solid #e5e7eb; padding: 0.55rem 0.45rem; text-align: left; vertical-align: top; }
-	.account-table th { color: #374151; font-weight: 700; background: #f9fafb; }
-	.account-api { border: 1px solid #d1d5db; border-radius: 8px; padding: 1rem; margin: 1.25rem 0 1.75rem; background: #f9fafb; }
-	.account-api-grid { display: grid; gap: 0.55rem; margin: 0.75rem 0; }
-	.account-api-copy { display: flex; gap: 0.5rem; align-items: stretch; }
-	.account-api-copy input { flex: 1; min-width: 0; border: 1px solid #d1d5db; border-radius: 6px; padding: 0.55rem 0.65rem; font: inherit; background: #fff; }
-	.account-api code { word-break: break-all; }
-	.account-api-notice { color: #047857; font-size: 0.9rem; margin: 0.5rem 0; }
-	.account-api-notice.warning { color: #92400e; }
-	.account-api-muted { color: #6b7280; font-size: 0.9rem; }
-	.account-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-	@media (max-width: 760px) {
-		.account-table { display: block; overflow-x: auto; white-space: nowrap; }
-		.account-api-copy { flex-direction: column; }
-	}
+ .account-page { color: #172033; }
+ .account-page h1 { margin: 0; font-size: 1.8rem; letter-spacing: -.04em; }
+ .account-page h2 { margin: 0 0 .4rem; font-size: 1.15rem; }
+ .account-page p { margin: .45rem 0; }
+ .account-heading, .account-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+ .account-heading form { flex-shrink: 0; }
+ .account-heading .btn { white-space: nowrap; }
+ .account-heading { margin: 2rem 0 1.25rem; }
+ .account-profile { display: flex; gap: 1rem; align-items: center; min-width: 0; }
+ .account-avatar { width: 48px; height: 48px; border-radius: 50%; }
+ .account-card { border: 1px solid #dfe5ed; border-radius: 12px; padding: 1.4rem; margin-bottom: 1.5rem; }
+ .account-summary { display: flex; flex-wrap: wrap; gap: 1rem 2.5rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
+ .account-summary dt, .account-muted { color: #586579; font-size: .9rem; }
+ .account-summary dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+ .account-summary { margin-bottom: 0; padding: 1rem 0 0; background: transparent; border-radius: 0; }
+ .account-status { display: inline-block; background: #eaf5ee; color: #236341; padding: .2rem .6rem; border-radius: 20px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+ .account-key { background: #f5f7fa; border: 1px solid #e5eaf0; border-radius: 8px; padding: 1rem; margin: 1.15rem 0; }
+ .account-key code { font-size: 1rem; overflow-wrap: anywhere; }
+ .account-api-copy { display: flex; gap: .6rem; margin: .5rem 0; }
+ .account-api-copy input { flex: 1; min-width: 0; border: 1px solid #ccd5e0; border-radius: 6px; padding: .65rem; font-family: monospace; background: white; }
+ .account-page .btn { padding: .65rem .9rem; border-radius: 6px; font-weight: 600; font-family: inherit; }
+ .account-page .btn-secondary { background: white; color: #31425a; border: 1px solid #ccd5e0; }
+ .account-page .btn-secondary:hover { background: #f0f4f8; }
+ .account-page .btn:disabled { opacity: .65; cursor: wait; }
+ .account-notice { border-radius: 8px; background: #eaf5ee; color: #236341; padding: .9rem 1rem; margin: 1rem 0; }
+ .account-notice.warning { background: #fff7e8; color: #805117; }
+ .account-rotation { margin-top: 1.25rem; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+ .account-rotation summary { cursor: pointer; font-weight: 600; color: #31425a; padding: .35rem 0; }
+ .account-confirm { display: flex; align-items: flex-start; gap: .5rem; margin: 1rem 0; }
+ .account-confirm input { margin-top: .35rem; flex-shrink: 0; }
+ .account-page .account-replace { background: #963b23; }
+ .account-page .account-replace:hover { background: #79301d; }
+ .account-table-wrap { overflow-x: auto; margin: 1rem 0 2rem; }
+ .account-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+ .account-table th, .account-table td { border-bottom: 1px solid #e5e7eb; padding: .8rem .6rem; text-align: left; vertical-align: top; }
+ .account-table th { color: #586579; font-weight: 600; background: #f5f7fa; }
+ .account-table td:first-child { min-width: 220px; }
+ .account-table code { color: #586579; font-size: .8rem; }
+ .account-empty { padding: 1rem 0 2rem; color: #586579; }
+ .account-page :focus-visible { outline: 3px solid #0066cc; outline-offset: 3px; }
+ @media (max-width: 600px) {
+  .account-card { padding: 1rem; }
+  .account-heading, .account-section-heading { align-items: flex-start; }
+  .account-api-copy { flex-direction: column; }
+  .account-summary { gap: 1rem; flex-direction: column; }
+  .account-avatar { display: none; }
+ }
 </style>
-<h1>Account</h1>
-<div class="account-summary">
-	{{if .User.PictureURL}}<p><img src="{{.User.PictureURL}}" alt="" width="48" height="48" style="border-radius:50%;"></p>{{end}}
-	{{if .User.Name}}<p><strong>Name:</strong> {{.User.Name}}</p>{{end}}
-	<p><strong>Email:</strong> {{.User.Email}}</p>
-	<p><strong>Sign-in:</strong> {{.User.AuthProvider}}</p>
-	<p><strong>Plan:</strong> {{.User.Plan}}</p>
-</div>
-
-<h2>Sub-Agent API Access</h2>
-<div class="account-api">
-	{{if .APIKeyNotice}}<p class="account-api-notice">{{.APIKeyNotice}}</p>{{end}}
-	{{if .APIKey}}
-		<div class="account-api-grid">
-			<label for="account-api-key"><strong>API key</strong></label>
-			<div class="account-api-copy">
-				<input id="account-api-key" type="text" readonly value="{{.APIKey}}">
-				<button class="btn" type="button" data-copy-target="account-api-key">Copy API key</button>
-			</div>
-			<div class="account-api-copy">
-				<input id="account-api-header" type="text" readonly value="Authorization: Bearer {{.APIKey}}">
-				<button class="btn btn-secondary" type="button" data-copy-target="account-api-header">Copy header</button>
-			</div>
-		</div>
-	{{else if .APIKeyMasked}}
-		<p><strong>Active key:</strong> <code>{{.APIKeyMasked}}</code></p>
-		<p class="account-api-muted">The full key is only shown when it is created or regenerated.</p>
-	{{else}}
-		<p class="account-api-muted">No API key is active yet.</p>
-	{{end}}
-	{{with .APIKeyRecord}}
-		<p class="account-api-muted">Created {{timeStamp .CreatedAt}}. Last used {{timeOrDash .LastUsedAt}}.</p>
-	{{end}}
-	<p class="account-api-muted">Use this for REST calls and MCP tools from Codex, Claude, or a sub-agent. Public paper/search tools still work without a key; account and Deep Search flows require one.</p>
-	<div class="account-actions">
-		<form method="post" action="/account/api-key/regenerate">
-			{{if .APIKeyRecord}}
-			<p class="account-api-notice warning"><strong>Warning:</strong> Rotating the key immediately revokes the current key. Any agent or integration using it will stop working until updated.</p>
-			<label><input type="checkbox" name="confirm_rotation" value="rotate" required> I understand and want to rotate this key.</label><br>
-			<button class="btn btn-secondary" type="submit">Rotate API key</button>
-			{{else}}
-			<p class="account-api-muted">Create a key only when an agent or integration needs authenticated access.</p>
-			<button class="btn" type="submit">Create API key</button>
-			{{end}}
-		</form>
-		<a class="btn btn-secondary" href="/api/v1/">Open API setup</a>
-	</div>
-</div>
-
+<div class="account-page">
+ <div class="account-heading">
+  <div><h1>Your account</h1><p class="account-muted">Manage your profile and API access.</p></div>
+  <form method="post" action="/logout"><button class="btn btn-secondary" type="submit">Sign out</button></form>
+ </div>
+ <section class="account-card" aria-label="Profile">
+  <div class="account-profile">
+   {{if .User.PictureURL}}<img class="account-avatar" src="{{.User.PictureURL}}" alt="" width="48" height="48">{{end}}
+   <div><h2>{{if .User.Name}}{{.User.Name}}{{else}}Profile{{end}}</h2><p class="account-muted" style="overflow-wrap:anywhere">{{.User.Email}}</p></div>
+  </div>
+  <dl class="account-summary"><div><dt>Signed in with</dt><dd>{{.User.AuthProvider}}</dd></div><div><dt>Plan</dt><dd>{{.User.Plan}}</dd></div></dl>
+ </section>
+ <section class="account-card" aria-labelledby="api-access-title">
+  <div class="account-section-heading"><div><h2 id="api-access-title">API access</h2><p class="account-muted">Connect Codex, Claude, or your own tools.</p></div>{{if .APIKeyRecord}}<span class="account-status">Key active</span>{{end}}</div>
+  {{if .APIKeyNotice}}<div class="account-notice{{if .APIKeyWarning}} warning{{end}}" role="{{if .APIKeyWarning}}alert{{else}}status{{end}}">{{.APIKeyNotice}}</div>{{end}}
+  <div class="account-key">
+   {{if .APIKey}}
+    <label for="account-api-key"><strong>Your new API key</strong></label>
+    <div class="account-api-copy"><input id="account-api-key" type="text" readonly spellcheck="false" autocomplete="off" value="{{.APIKey}}"><button class="btn" type="button" data-copy-target="account-api-key">Copy API key</button></div>
+    <p class="account-muted">Save this somewhere secure. You won’t be able to view the full key again.</p>
+    <details><summary>Authorization header</summary><label class="account-muted" for="account-api-header">Use this header in REST requests</label><div class="account-api-copy"><input id="account-api-header" type="text" readonly spellcheck="false" autocomplete="off" value="Authorization: Bearer {{.APIKey}}"><button class="btn btn-secondary" type="button" data-copy-target="account-api-header">Copy header</button></div></details>
+   {{else if .APIKeyMasked}}
+    <code>{{.APIKeyMasked}}</code><p class="account-muted">For security, only part of your key is visible. Lost the full key? Replace it below.</p>
+   {{else}}<p>No API key yet.</p><p class="account-muted">Create one when you’re ready to connect a tool.</p>{{end}}
+   {{with .APIKeyRecord}}<dl class="account-summary"><div><dt>Created (UTC)</dt><dd>{{timeStamp .CreatedAt}}</dd></div><div><dt>Last used (UTC)</dt><dd>{{if .LastUsedAt}}{{timeOrDash .LastUsedAt}}{{else}}Not used yet{{end}}</dd></div></dl>{{end}}
+  </div>
+  <p class="account-muted">Public paper and search tools work without a key. Account features and Deep Search require one.</p>
+  <p><a href="/api/v1/">API setup and connection instructions →</a></p>
+  {{if .APIKeyRecord}}<details class="account-rotation"{{if .APIKeyWarning}} open{{end}}><summary>Replace API key</summary>{{end}}
+   <form method="post" action="/account/api-key/regenerate" data-key-form>
+    {{if .APIKeyRecord}}
+     <p class="account-notice warning">Replacing your key immediately revokes the current key. Update every connected tool with the new key.</p>
+     <label class="account-confirm"><input type="checkbox" name="confirm_rotation" value="rotate" required><span>I understand that my connected tools will need the new key.</span></label>
+     <button class="btn account-replace" type="submit">Replace API key</button>
+    {{else}}<button class="btn" type="submit">Create API key</button>{{end}}
+   </form>
+  {{if .APIKeyRecord}}</details>{{end}}
+  <p id="account-copy-status" class="account-muted" role="status" aria-live="polite"></p>
+ </section>
 <h2>Recently Viewed</h2>
 {{if .RecentViews}}
-<table class="account-table">
+<div class="account-table-wrap" role="region" aria-label="Reading activity" tabindex="0"><table class="account-table">
 	<thead><tr><th>Paper</th><th>Categories</th><th>Views</th><th>Last viewed</th></tr></thead>
 	<tbody>
 		{{range .RecentViews}}
@@ -81,20 +102,20 @@
 		</tr>
 		{{end}}
 	</tbody>
-</table>
+</table></div>
 {{else}}
-<p>No signed-in paper views yet.</p>
+<p class="account-empty">Your recently viewed papers will appear here. <a href="/">Find a paper to get started →</a></p>
 {{end}}
 
 {{if eq .PeerViewsSource "personalized"}}
 <h2>Readers With Similar History</h2>
-<p class="account-api-muted">Personalized from papers you viewed and papers viewed by readers with overlapping history.</p>
+<p class="account-muted">Personalized from papers you viewed and papers viewed by readers with overlapping history.</p>
 {{else}}
 <h2>Recent Community Reading</h2>
-<p class="account-api-muted">Global signed-in reading activity, shown because there is not enough overlap for personalized results yet.</p>
+<p class="account-muted">Global signed-in reading activity, shown because there is not enough overlap for personalized results yet.</p>
 {{end}}
 {{if .PeerViews}}
-<table class="account-table">
+<div class="account-table-wrap" role="region" aria-label="Reading activity" tabindex="0"><table class="account-table">
 	<thead><tr><th>Paper</th><th>Categories</th><th>Readers</th><th>Views</th></tr></thead>
 	<tbody>
 		{{range .PeerViews}}
@@ -106,16 +127,14 @@
 		</tr>
 		{{end}}
 	</tbody>
-</table>
+</table></div>
 {{else}}
-<p>No signed-in community reading activity is available yet.</p>
+<p class="account-empty">Community reading activity will appear here as readers explore papers.</p>
 {{end}}
 
-<form method="post" action="/logout">
-	<button class="btn btn-secondary" type="submit">Sign out</button>
-</form>
+</div>
 
-<script>
+<script{{if .CSPNonce}} nonce="{{.CSPNonce}}"{{end}}>
 (function() {
 	function copyValue(id, button) {
 		const input = document.getElementById(id);
@@ -123,7 +142,9 @@
 		const value = input.value;
 		const report = function(message) {
 			if (!button) return;
-			const original = button.textContent;
+			const original = button.dataset.label || button.textContent;
+			button.dataset.label = original;
+			document.getElementById('account-copy-status').textContent = message === 'Copied' ? 'Copied to clipboard.' : 'Could not copy. Select the text and copy it manually.';
 			button.textContent = message;
 			window.setTimeout(function() { button.textContent = original; }, 1400);
 		};
@@ -148,6 +169,12 @@
 			copyValue(button.getAttribute('data-copy-target'), button);
 		});
 	});
+ document.querySelectorAll('[data-key-form]').forEach(function(form) {
+  const button = form.querySelector('button[type="submit"]');
+  const label = button.textContent;
+  form.addEventListener('submit', function() { button.disabled = true; button.textContent = 'Updating key…'; });
+  window.addEventListener('pageshow', function() { button.disabled = false; button.textContent = label; });
+ });
 })();
 </script>
 

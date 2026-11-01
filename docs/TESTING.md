@@ -58,6 +58,21 @@ node tools/test_graph_ui.cjs
 
 Both scripts require a loopback `ARXIV_TEST_URL`. The search suite defaults to port 18081; the graph suite defaults to 8080, so the shared setting above points both at the fixture. Search checks cover history restoration, cancellation, query validation, filters, and identifier shortcuts. Graph checks cover resizing/fullscreen behavior, stale responses, and visible error recovery. Each script prints its results and exits nonzero on failure. Set `ARXIV_TEST_OUTPUT_DIR` when running the search suite to save its JSON report and screenshots; no artifacts are written by default. Rebuild and restart the fixture after template changes because templates are embedded in the test binary.
 
+## Account API Key Checks
+
+The account page groups profile details, API access, and reading history. Existing keys remain masked; expand **Replace API key** to review and confirm revocation. New keys are shown once with copy controls. Recoverable key errors remain on the account page.
+
+The same loopback browser fixture supports `node tools/test_account_ui.cjs`. It uses example account data and fake keys, checks desktop/mobile layouts, key/header copying, explicit replacement confirmation, duplicate submission prevention, and back navigation. Use the browser environment variables above; `ARXIV_TEST_OUTPUT_DIR` saves screenshots of all four account states.
+
+Run the PostgreSQL rotation regression against a disposable database:
+
+```bash
+ARXIV_TEST_POSTGRES_DSN='postgres://arxivqa@127.0.0.1:55432/arxivqa?sslmode=disable' \
+  go test -race . -run '^TestAPIKeyPostgresRotationAndRollback$' -count=1
+```
+
+This checks successful revocation and replacement, authentication with the new key, and preservation of the current key when replacement insertion fails. Fixtures use temporary tables and do not rotate a real account key.
+
 ## Quick Search PostgreSQL Checks
 
 Run the focused database regressions against an explicitly disposable PostgreSQL instance. The harness uses temporary tables, installs `pg_trgm` if necessary, and avoids application startup migrations:

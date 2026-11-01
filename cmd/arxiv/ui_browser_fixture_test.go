@@ -44,6 +44,24 @@ func TestUIBrowserFixtureServer(t *testing.T) {
 			return
 		case r.URL.Path == "/":
 			name = "index"
+		case r.URL.Path == "/account":
+			name = "account"
+			user := &arxiv.User{ID: "fixture", Name: "Alex Reader", Email: "alex@example.test", AuthProvider: "google", Plan: "free"}
+			data["CurrentUser"], data["User"] = user, user
+			data["PeerViewsSource"] = "community"
+			state := r.URL.Query().Get("state")
+			if state != "empty" {
+				data["APIKeyRecord"] = &arxiv.UserAPIKey{CreatedAt: time.Date(2026, 7, 9, 13, 46, 0, 0, time.UTC)}
+				data["APIKeyMasked"] = "arxivgg_example...demo"
+			}
+			if state == "new" {
+				data["APIKey"] = "arxivgg_fixture_only_not_a_real_key"
+				data["APIKeyNotice"] = "API key created. Copy it now; it is only shown on this screen."
+			}
+			if state == "error" {
+				data["APIKeyNotice"] = "We couldn’t update your API key. Your existing key has not been changed. Please try again."
+				data["APIKeyWarning"] = true
+			}
 		case r.URL.Path == "/search":
 			name = "search"
 			data["Query"] = r.URL.Query().Get("q")

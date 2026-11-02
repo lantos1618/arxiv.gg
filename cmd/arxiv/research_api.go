@@ -36,6 +36,7 @@ type researchRequest struct {
 }
 type researchPaper struct {
 	ID               string    `json:"id"`
+	PublishedMonth   string    `json:"publishedMonth"`
 	Title            string    `json:"title"`
 	Abstract         string    `json:"abstract"`
 	Authors          string    `json:"authors"`
@@ -93,18 +94,18 @@ func researchPaperView(p *arxiv.Paper) *researchPaper {
 	if len(links) > 0 {
 		state = "linked"
 	}
-	return &researchPaper{ID: p.ID, Title: p.Title, Abstract: p.Abstract, Authors: p.Authors, Categories: strings.Fields(p.Categories), Created: p.Created, Updated: p.Updated, ArxivURL: "https://arxiv.org/abs/" + p.ID, URL: "https://arxiv.gg" + paperPath(p.ID), CodeLinks: links, CodeAvailability: state}
+	return &researchPaper{ID: p.ID, PublishedMonth: arxiv.PaperSubmissionMonth(p), Title: p.Title, Abstract: p.Abstract, Authors: p.Authors, Categories: strings.Fields(p.Categories), Created: p.Created, Updated: p.Updated, ArxivURL: "https://arxiv.org/abs/" + p.ID, URL: "https://arxiv.gg" + paperPath(p.ID), CodeLinks: links, CodeAvailability: state}
 }
 func parseResearchDate(raw string) (time.Time, error) {
 	if raw == "" {
 		return time.Time{}, nil
 	}
-	for _, layout := range []string{"2006-01-02", "2006-01", "2006"} {
+	for _, layout := range []string{"2006-01", "2006"} {
 		if date, err := time.Parse(layout, raw); err == nil {
 			return date, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("dates must use YYYY, YYYY-MM, or YYYY-MM-DD")
+	return time.Time{}, fmt.Errorf("dates must use YYYY or YYYY-MM (original arXiv submission month)")
 }
 func (q *researchRequest) validate() error {
 	var err error
@@ -360,7 +361,8 @@ func (s *server) runResearch(ctx context.Context, q researchRequest) (researchRe
 			}
 		}
 		if q.RecencyBoost > 0 && !row.Paper.Created.IsZero() {
-			years := math.Max(0, now.Sub(row.Paper.Created).Hours()/(365.25*24))
+			published, _ := time.Parse("2006-01", row.Paper.PublishedMonth)
+			years := math.Max(0, now.Sub(published).Hours()/(365.25*24))
 			row.Score += q.RecencyBoost * .02 / (1 + years)
 		}
 		out.Results = append(out.Results, *row)

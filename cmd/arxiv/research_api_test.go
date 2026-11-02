@@ -12,7 +12,7 @@ import (
 )
 
 func TestResearchValidation(t *testing.T) {
-	for _, query := range []string{"q=ocean&limit=101", "q=ocean&limit=-1", "q=ocean&minSimilarity=NaN", "q=ocean&recencyBoost=Inf", "q=ocean&waitSeconds=9", "q=ocean&since=2025-15", "q=ocean&since=2026&until=2025", "q=ocean&year=2025&since=2024", "q=ocean&mode=unknown", "q=ocean&category=cs.GR%27"} {
+	for _, query := range []string{"q=ocean&since=2025-01-15", "q=ocean&limit=101", "q=ocean&limit=-1", "q=ocean&minSimilarity=NaN", "q=ocean&recencyBoost=Inf", "q=ocean&waitSeconds=9", "q=ocean&since=2025-15", "q=ocean&since=2026&until=2025", "q=ocean&year=2025&since=2024", "q=ocean&mode=unknown", "q=ocean&category=cs.GR%27"} {
 		v, _ := url.ParseQuery(query)
 		if _, err := researchFromURL(v); err == nil {
 			t.Errorf("accepted %s", query)
@@ -32,7 +32,7 @@ func TestResearchPaperContract(t *testing.T) {
 	raw, _ := json.Marshal(p)
 	var body map[string]any
 	json.Unmarshal(raw, &body)
-	for _, key := range []string{"id", "title", "abstract", "authors", "categories", "created", "updated", "arxivUrl", "url", "codeLinks", "codeAvailability"} {
+	for _, key := range []string{"id", "publishedMonth", "title", "abstract", "authors", "categories", "created", "updated", "arxivUrl", "url", "codeLinks", "codeAvailability"} {
 		if _, ok := body[key]; !ok {
 			t.Errorf("missing %s", key)
 		}

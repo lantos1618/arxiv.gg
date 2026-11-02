@@ -3,6 +3,8 @@ package arxiv
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,34 @@ type ResearchFilter struct {
 	MinSimilarity float64
 }
 
+// Publication dates from imported feeds can describe a revision. arXiv IDs
+// reliably preserve the original submission month, including legacy IDs.
+const researchPublicationMonthSQL = `(CASE
+ WHEN p.id ~ '^[0-9]{2}(0[1-9]|1[0-2])[.][0-9]{4,5}$' THEN '20'||substr(p.id,1,2)||'-'||substr(p.id,3,2)
+ WHEN p.id ~ '^[a-z.-]+/[0-9]{2}(0[1-9]|1[0-2])[0-9]{3}$' THEN
+ (CASE WHEN substr(split_part(p.id,'/',2),1,2)>='91' THEN '19' ELSE '20' END)||substr(split_part(p.id,'/',2),1,2)||'-'||substr(split_part(p.id,'/',2),3,2)
+ ELSE to_char(p.created AT TIME ZONE 'UTC','YYYY-MM') END)`
+
+var researchModernID = regexp.MustCompile(`^[0-9]{2}(0[1-9]|1[0-2])[.][0-9]{4,5}$`)
+var researchLegacyID = regexp.MustCompile(`^[a-z.-]+/[0-9]{2}(0[1-9]|1[0-2])[0-9]{3}$`)
+
+// PaperSubmissionMonth returns original arXiv publication precision without
+// inventing a day. Unrecognized identifiers fall back to the stored date.
+func PaperSubmissionMonth(p *Paper) string {
+	id := p.ID
+	century := "20"
+	if researchLegacyID.MatchString(id) {
+		id = strings.SplitN(id, "/", 2)[1]
+		year, _ := strconv.Atoi(id[:2])
+		if year >= 91 {
+			century = "19"
+		}
+	} else if !researchModernID.MatchString(id) {
+		return p.Created.UTC().Format("2006-01")
+	}
+	return century + id[:2] + "-" + id[2:4]
+}
+
 func researchWhere(f ResearchFilter) (string, []any) {
 	where := ""
 	args := []any{}
@@ -24,12 +54,12 @@ func researchWhere(f ResearchFilter) (string, []any) {
 		args = append(args, f.Category)
 	}
 	if !f.Since.IsZero() {
-		where += " AND p.created >= ?"
-		args = append(args, f.Since)
+		where += " AND " + researchPublicationMonthSQL + " >= ?"
+		args = append(args, f.Since.UTC().Format("2006-01"))
 	}
 	if !f.Until.IsZero() {
-		where += " AND p.created < ?"
-		args = append(args, f.Until)
+		where += " AND " + researchPublicationMonthSQL + " < ?"
+		args = append(args, f.Until.UTC().Format("2006-01"))
 	}
 	return where, args
 }

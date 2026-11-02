@@ -16,7 +16,7 @@ func TestResearchPostgresFiltersAndExactRanking(t *testing.T) {
 	for _, row := range []struct{ id, title, category, date string }{
 		{"2601.00001", "Ocean whitecap foam rendering", "cs.GR", "2026-01-01"},
 		{"2601.00002", "Ocean ocean ocean rendering rendering", "cs.CV", "2026-01-01"},
-		{"2401.00003", "Ocean whitecap foam rendering", "cs.GR", "2024-01-01"},
+		{"2401.00003", "Ocean whitecap foam rendering", "cs.GR", "2026-01-01"},
 	} {
 		if err := c.db.Exec(`INSERT INTO papers(id,title,categories,created,updated)VALUES(?,?,?,?,?)`, row.id, row.title, row.category, row.date, row.date).Error; err != nil {
 			t.Fatal(err)
@@ -30,6 +30,18 @@ func TestResearchPostgresFiltersAndExactRanking(t *testing.T) {
 	papers, err = c.ResearchKeywords(context.Background(), "ocean unknownconcept", f, 20)
 	if err != nil || len(papers) != 1 {
 		t.Fatalf("concept terms should OR-match: %+v %v", papers, err)
+	}
+
+	papers, err = c.ResearchKeywords(context.Background(), "ocean", ResearchFilter{Category: "cs.GR", Until: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}, 10)
+	if err != nil || len(papers) != 1 || papers[0].ID != "2401.00003" {
+		t.Fatalf("revision must not move original month: %+v %v", papers, err)
+	}
+	if err := c.db.Exec(`INSERT INTO papers(id,title,categories,created)VALUES('hep-th/9912001','Legacy example','hep-th','2026-01-01')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	papers, err = c.ResearchKeywords(context.Background(), "legacy", ResearchFilter{Since: time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC), Until: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}, 10)
+	if err != nil || len(papers) != 1 || papers[0].ID != "hep-th/9912001" {
+		t.Fatalf("legacy submission month: %+v %v", papers, err)
 	}
 	papers, err = c.ResearchKeywords(context.Background(), "2601.00001", f, 1)
 	if err != nil || len(papers) != 1 || papers[0].ID != "2601.00001" {
@@ -67,7 +79,7 @@ func TestResearchPostgresVectorFiltersAndDeepSnippets(t *testing.T) {
 	}{
 		{"2601.00001", "cs.GR", "2026-01-01", vector},
 		{"2601.00002", "cs.CV", "2026-01-01", vector},
-		{"2401.00003", "cs.GR", "2024-01-01", vector},
+		{"2401.00003", "cs.GR", "2026-01-01", vector},
 		{"2601.00004", "cs.GR", "2026-01-01", other},
 	} {
 		if err := c.db.Exec(`INSERT INTO papers(id,title,categories,created)VALUES(?,?,?,?)`, row.id, "Ocean", row.category, row.date).Error; err != nil {
@@ -93,5 +105,13 @@ func TestResearchPostgresVectorFiltersAndDeepSnippets(t *testing.T) {
 	rows, err = c.ResearchVectors(context.Background(), vector, ResearchFilter{}, 10, true)
 	if err != nil || len(rows) != 1 || rows[0].ChunkID != "fresh" || rows[0].Snippet != "Latency 42 ms; bitrate 12 Mbps." {
 		t.Fatalf("deep freshness and snippet: %+v %v", rows, err)
+	}
+}
+
+func TestPaperSubmissionMonth(t *testing.T) {
+	for _, tc := range []struct{ id, want string }{{"2503.03326", "2025-03"}, {"2401.15628", "2024-01"}, {"math/0309136", "2003-09"}, {"hep-th/9912001", "1999-12"}} {
+		if got := PaperSubmissionMonth(&Paper{ID: tc.id, Created: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}); got != tc.want {
+			t.Errorf("%s: got %s want %s", tc.id, got, tc.want)
+		}
 	}
 }

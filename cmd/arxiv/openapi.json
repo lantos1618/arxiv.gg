@@ -65,7 +65,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "Inclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+              "description": "Inclusive YYYY or YYYY-MM"
             }
           },
           {
@@ -74,7 +74,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "description": "Exclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+              "description": "Exclusive YYYY or YYYY-MM"
             }
           },
           {
@@ -766,11 +766,11 @@
           },
           "since": {
             "type": "string",
-            "description": "Inclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+            "description": "Inclusive YYYY or YYYY-MM"
           },
           "until": {
             "type": "string",
-            "description": "Exclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+            "description": "Exclusive YYYY or YYYY-MM"
           },
           "year": {
             "type": "integer"
@@ -853,6 +853,11 @@
               "unknown"
             ],
             "description": "A linked repository is not verified to contain released code. Unknown does not mean unavailable."
+          },
+          "publishedMonth": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}$",
+            "description": "Original submission month encoded in the arXiv ID; stored created/updated feed dates can describe revisions."
           }
         },
         "required": [
@@ -866,7 +871,8 @@
           "created",
           "updated",
           "arxivUrl",
-          "url"
+          "url",
+          "publishedMonth"
         ]
       },
       "Result": {

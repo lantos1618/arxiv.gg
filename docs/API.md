@@ -31,7 +31,7 @@ Use `/api/v1/research` for new integrations. The machine-readable contract is `/
 
 Limits per IP: global 1,000/minute; research 60 query units/minute (each batch item counts); metadata requests 6/minute; legacy PDF search 20/minute. Research and ingestion also have process-wide concurrency limits of four and two. Respect HTTP 429 and `Retry-After`.
 
-**Python edge compatibility:** as verified on 2026-11-02, the deployment rejects default `Python-urllib` requests before API authentication. Use an honest application User-Agent, e.g. `arxivgg-python/1.0 (+https://arxiv.gg)`. The bundled client sets this automatically. Removing this deployment-specific restriction requires updating the Cloudflare user-agent rule; application auth cannot override an edge rejection.
+**Python compatibility:** default `urllib.request` clients work on `/api/v1/*`; no user-agent override is required. Verified on 2026-11-02: public stats returned HTTP 200 and protected PDF search returned HTTP 401 without credentials. Cloudflare Browser Integrity Check is disabled only for this API path on `arxiv.gg`. The bundled client identifies itself with a descriptive User-Agent; that header does not grant access. Public endpoint success does not verify account authentication.
 
 ## Paper Endpoints
 

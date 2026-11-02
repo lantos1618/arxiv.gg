@@ -1,7 +1,7 @@
 """Small standard-library client for the arXiv.gg research API.
 
 Set ARXIV_API_KEY in your environment for Deep Search and paper requests.
-The descriptive User-Agent avoids the deployment's default Python edge block.
+The descriptive User-Agent identifies this client; it is not required for API access.
 """
 import json
 import os
@@ -40,7 +40,7 @@ class Client:
             try:
                 message = json.loads(error.read(8192)).get("error", "request rejected")
             except (ValueError, UnicodeError):
-                message = "edge rejected request; use the documented User-Agent and check API access"
+                message = "request rejected outside the JSON API; check edge security events and API access"
             raise APIError(error.code, message) from None
         if not body.get("success"):
             raise APIError(200, body.get("error", "unsuccessful response"))

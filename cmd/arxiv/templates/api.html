@@ -53,7 +53,7 @@ pre.example code { background: none; color: inherit; }
 <p>Send an account key using <code>Authorization: Bearer &lt;key&gt;</code> or <code>X-API-Key: &lt;key&gt;</code>. Bearer takes precedence if both are sent. Create a separate key per tool in <a href="/account">Account settings</a>.</p>
 <p>Public paper reads and keyword/semantic searches work without a key, so a successful public request does not prove authentication. Use <code>GET /api/v1/account</code> to verify your key and see its capabilities. Account keys unlock Deep Search and metadata-ingestion requests; they do not grant admin access or higher limits.</p>
 <p>Limits per IP: 1,000 requests/minute overall; 60 research queries/minute (each batch item counts); 6 paper requests/minute; 20 legacy PDF searches/minute. A busy operation can also return 429. Respect <code>Retry-After</code>.</p>
-<p><strong>Python clients:</strong> this deployment's edge currently rejects the default <code>Python-urllib</code> user-agent before API authentication. Send a descriptive header such as <code>User-Agent: arxivgg-python/1.0 (+https://arxiv.gg)</code>. A non-JSON 403 can be an edge rejection, not an invalid key.</p>
+<p><strong>Python clients:</strong> standard <code>urllib.request</code> works on <code>/api/v1/*</code> without a user-agent override. A descriptive application User-Agent is optional and does not grant access. Protected endpoints still require credentials.</p>
 </section>
 <section class="api-section" id="research-api">
 <h2>Research API for agents</h2>

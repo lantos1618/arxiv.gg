@@ -112,3 +112,16 @@ Assert the response either identifies Qwen semantic mode or explicitly sets `fal
 ## Adding Tests
 
 Prefer table-driven tests for validation boundaries and regression tests for every fixed failure mode. Use `t.TempDir`, `t.Setenv`, request contexts, and deterministic fixtures. Do not depend on live arXiv, OAuth, or GPU services in the default unit suite; put those checks in explicit integration workflows.
+
+## Research API integration
+
+Run against a disposable PostgreSQL database with pgvector. The HTTP integration test initializes the schema and creates fixture papers and account keys; never point it at production.
+
+```bash
+ARXIV_TEST_POSTGRES_DSN='postgres://arxivqa@127.0.0.1:55432/arxivqa?sslmode=disable' \
+  go test -race . -run '^TestResearchPostgres' -count=1
+ARXIV_RESEARCH_TEST_POSTGRES_DSN='postgres://arxivqa@127.0.0.1:55432/arxivqa?sslmode=disable' \
+  go test -race ./cmd/arxiv -run '^TestResearchHTTPPostgres$' -count=1
+```
+
+These checks cover exact-name ranking, category/date filters before limiting, similarity cutoffs, fresh full-text snippets, account-key authentication, metadata requests, queued-query polling, and batch ordering. The search browser suite also checks that initial search pages start the results stream without waiting for database work.

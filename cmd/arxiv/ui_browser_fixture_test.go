@@ -80,7 +80,14 @@ func TestUIBrowserFixtureServer(t *testing.T) {
 			if r.URL.Query().Get("state") == "error" {
 				data["Error"] = "Google sign-in could not start. Try again in a moment."
 			}
+		case r.URL.Path == "/api/v1/":
+			name = "api"
+			data["BaseURL"], data["MCPURL"] = "https://arxiv.gg/api/v1", "https://arxiv.gg/mcp"
 		case r.URL.Path == "/search":
+			if r.URL.Query().Get("autostart") == "1" {
+				s.handleSearch(w, r)
+				return
+			}
 			name = "search"
 			data["Query"] = r.URL.Query().Get("q")
 			mode := r.URL.Query().Get("mode")

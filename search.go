@@ -15,6 +15,8 @@ import (
 // Search searches papers by title/abstract text using full-text search.
 // Uses FTS5 for SQLite or tsvector for PostgreSQL.
 func (c *Cache) Search(ctx context.Context, query, category string, limit int) ([]Paper, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	if limit <= 0 {
 		limit = 20
 	}
@@ -407,8 +409,11 @@ func (c *Cache) searchPostgres(ctx context.Context, query, category string, limi
 	err := c.withPostgresSearchLimit(ctx, query, func(tx *gorm.DB) error {
 		return tx.Raw(sql, args...).Scan(&papers).Error
 	})
-	if err != nil || len(papers) == 0 {
-		// Fallback to ILIKE search if tsvector not populated
+	if err != nil {
+		return nil, err
+	}
+	// A multi-word miss must not trigger an unindexed scan of every abstract.
+	if len(papers) == 0 && len(strings.Fields(query)) == 1 {
 		return c.searchPostgresFallback(ctx, query, category, limit)
 	}
 

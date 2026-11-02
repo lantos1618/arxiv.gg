@@ -47,7 +47,7 @@ func TestQuickHTTPAuthorLookupWaitsForBudgetedCapacity(t *testing.T) {
 		status     int
 	}{
 		{"API", "/api/v1/search/quick?q=Ada+Lovelace", s.handleAPISearchQuick, http.StatusInternalServerError},
-		{"page", "/search?q=Ada+Lovelace&mode=quick", s.handleSearch, http.StatusServiceUnavailable},
+		{"page", "/search?q=Ada+Lovelace&mode=quick&static=1", s.handleSearch, http.StatusServiceUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)

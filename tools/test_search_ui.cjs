@@ -45,6 +45,11 @@ const streamBody = data => data.map(value=>'data: '+JSON.stringify(value)+'\n\n'
  const page = await context.newPage();
  page.on('pageerror',err=>report.pageErrors.push(String(err)));
  const check = async (name,fn)=>{try{await fn();report.checks.push({name,status:'PASS'});}catch(err){report.checks.push({name,status:'FAIL',error:String(err)});throw err;}finally{saveReport();}};
+ await check('Initial search page streams results without waiting for a database response',async()=>{
+  await page.goto(base+'/search?q=ocean+whitecap+foam+rendering&autostart=1&mode=quick',{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(()=>document.querySelector('#search-status').textContent.includes('1 quick results'));
+  assert.match(await page.locator('#paper-results').innerText(),/ocean whitecap foam rendering/);
+ });
  const searchURL = base+'/search?q=graph&mode=quick&category=cs.AI&limit=7';
  await page.goto(searchURL,{waitUntil:'domcontentloaded'});
  await check('Quick search retains category and limit',async()=>{

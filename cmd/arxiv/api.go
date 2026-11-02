@@ -317,6 +317,10 @@ func (s *server) handleAPIPaper(w http.ResponseWriter, r *http.Request) {
 		s.handleAPIEmbeddingStatus(w, r)
 		return
 	}
+	if strings.HasSuffix(path, "/request") {
+		s.handleAPIRequestPaper(w, r)
+		return
+	}
 	if strings.HasSuffix(path, "/fetch") {
 		s.handleAPIFetch(w, r)
 		return
@@ -438,12 +442,30 @@ func (s *server) handleAPISearchSemantic(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *server) respondSemanticSearchFallback(w http.ResponseWriter, r *http.Request, query, category string, limit int, reasonCode, notice string, retryAfterSeconds int) {
-	papers, _, err := quickSearchPapers(r.Context(), s.cache, query, category, limit)
+	fallbackCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	papers, _, err := quickSearchPapers(fallbackCtx, s.cache, query, category, limit)
 	if err != nil {
-		respondAPIInternalError(w, http.StatusServiceUnavailable, "fallback search", "search is temporarily unavailable", err)
-		return
+		logAPIInternalError("fallback search", err)
+		papers = []arxiv.Paper{}
+		notice = "Keyword fallback could not finish. Semantic search is unavailable."
+		if retryAfterSeconds > 0 {
+			notice = "Keyword fallback could not finish. Semantic results are still being prepared."
+		}
 	}
 
+	if len(papers) == 0 && err == nil {
+		notice = "No Quick matches. Semantic search is unavailable."
+		if retryAfterSeconds > 0 {
+			notice = "No Quick matches. Semantic results are still being prepared; an empty fallback is not a completed semantic search."
+		}
+	}
+	var job *researchJob
+	if retryAfterSeconds > 0 {
+		_, hash := arxiv.QwenQueryHash(query)
+		job = &researchJob{ID: hash, Status: "queued", StatusURL: "/api/v1/research/status?id=" + hash, RetryAfterSeconds: retryAfterSeconds}
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
+	}
 	results := make([]map[string]interface{}, len(papers))
 	for i := range papers {
 		results[i] = map[string]interface{}{
@@ -458,6 +480,7 @@ func (s *server) respondSemanticSearchFallback(w http.ResponseWriter, r *http.Re
 		Success: true,
 		Data: map[string]interface{}{
 			"results":       results,
+			"job":           job,
 			"papers":        papers,
 			"count":         len(papers),
 			"query":         query,
@@ -1220,7 +1243,8 @@ func (s *server) handleAPIFetch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !s.localMode && !s.requireAdmin(w, r) {
+	if !s.localMode && !s.hasAdminAccess(r) {
+		respondJSON(w, http.StatusForbidden, APIResponse{Error: "Full source/PDF fetch requires admin access. To add public metadata with an account API key, POST /api/v1/papers/{id}/request."})
 		return
 	}
 
@@ -2166,7 +2190,7 @@ var (
 	errQwenQueryEmbeddingUnavailable = errors.New("Qwen query embedding execution unavailable")
 )
 
-const qwenQueryRetryAfterSeconds = 75
+const qwenQueryRetryAfterSeconds = 3
 
 func (s *server) generateQwenQueryEmbedding(ctx context.Context, query string) ([]float32, error) {
 	query, err := validateSearchQuery(query)
@@ -2183,7 +2207,7 @@ func (s *server) generateQwenQueryEmbedding(ctx context.Context, query string) (
 		status, err := s.cache.EnsureQwenQueryJob(ctx, query, 1000)
 		if err != nil {
 			if cause != nil {
-				return nil, fmt.Errorf("%w after Qwen service error %q; failed to queue query embedding: %v", errQwenQueryEmbeddingQueued, cause.Error(), err)
+				return nil, fmt.Errorf("%w after Qwen service error %q; failed to queue query embedding: %v", errQwenQueryEmbeddingUnavailable, cause.Error(), err)
 			}
 			return nil, err
 		}
@@ -2211,7 +2235,7 @@ func (s *server) generateQwenQueryEmbedding(ctx context.Context, query string) (
 		return nil, err
 	}
 
-	requestCtx, cancel := context.WithTimeout(ctx, 75*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(requestCtx, "POST", strings.TrimRight(s.qwenEmbeddingServiceURL, "/")+"/embed/batch", bytes.NewReader(body))

@@ -400,7 +400,7 @@
 				return;
 			}
 			const nextAttempt = retryAttempt + 1;
-			const delay = Math.min(Math.max(retryAfterSeconds, 1), 300);
+			const delay = Math.min(Math.max(retryAfterSeconds, 1) * (retryAfterSeconds < 30 ? Math.pow(2, retryAttempt) : 1), 300);
 			statusEl.textContent = label + ' Search preparation is queued. Checking automatically in ' + delay + ' seconds...';
 			semanticRetryTimer = setTimeout(() => {
 				semanticRetryTimer = null;

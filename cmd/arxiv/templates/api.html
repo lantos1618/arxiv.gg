@@ -48,6 +48,39 @@ pre.example code { background: none; color: inherit; }
 <p>This instance exposes a JSON-based REST API under <code>/api/v1/</code>. All responses use the format:</p>
 <pre class="example" tabindex="0" aria-label="API code example"><code>{ "success": true, "data": { ... }, "error": "..." }</code></pre>
 
+<section class="api-section" id="authentication">
+<h2>Authentication and limits</h2>
+<p>Send an account key using <code>Authorization: Bearer &lt;key&gt;</code> or <code>X-API-Key: &lt;key&gt;</code>. Bearer takes precedence if both are sent. Create a separate key per tool in <a href="/account">Account settings</a>.</p>
+<p>Public paper reads and keyword/semantic searches work without a key, so a successful public request does not prove authentication. Use <code>GET /api/v1/account</code> to verify your key and see its capabilities. Account keys unlock Deep Search and metadata-ingestion requests; they do not grant admin access or higher limits.</p>
+<p>Limits per IP: 1,000 requests/minute overall; 60 research queries/minute (each batch item counts); 6 paper requests/minute; 20 legacy PDF searches/minute. A busy operation can also return 429. Respect <code>Retry-After</code>.</p>
+<p><strong>Python clients:</strong> this deployment's edge currently rejects the default <code>Python-urllib</code> user-agent before API authentication. Send a descriptive header such as <code>User-Agent: arxivgg-python/1.0 (+https://arxiv.gg)</code>. A non-JSON 403 can be an edge rejection, not an invalid key.</p>
+</section>
+<section class="api-section" id="research-api">
+<h2>Research API for agents</h2>
+<p><a href="/api/v1/openapi.json">OpenAPI schema</a>. The research endpoints use consistent camelCase fields, full abstracts, author names, category arrays, arXiv links, snippets, and known repository links. Existing search endpoints keep their legacy fields for compatibility.</p>
+<div class="endpoint"><span class="method">GET</span> <code>/api/v1/research</code><div class="desc">Search using <code>q</code> (a question or paragraph), <code>mode=hybrid|semantic|keyword|deep</code>, <code>category=cs.GR</code>, <code>since=2025-01</code>, <code>until=2027-01</code>, or <code>year=2026</code>. Dates are inclusive at the start and exclusive at the end. Use <code>limit=20</code> (max 100), <code>minSimilarity=0.5</code>, and optional <code>recencyBoost=0.2</code> (0–1).</div></div>
+<p>Hybrid ranking combines lexical and vector ranks, prioritizes exact names, and optionally boosts recency. It is a deterministic rerank, not a learned cross-encoder. <code>similarity</code> is cosine similarity or null for lexical-only matches; <code>score</code> is a ranking score, not a confidence probability. A positive minimum similarity excludes lexical-only matches.</p>
+<p><code>mode=deep</code> searches prepared full-paper chunks and returns <code>snippet</code>, <code>section</code>, and <code>chunkId</code>. Coverage depends on extracted and embedded papers. Numerical values and tables should still be checked against the original PDF.</p>
+<p>Cold queries return HTTP 202 with <code>complete:false</code> and <code>job:{id,statusUrl,retryAfterSeconds}</code>. Poll <code>statusUrl</code> until ready, then repeat the original search. Use <code>waitSeconds=3</code> (max 8) for a brief wait. An empty keyword fallback is not a completed semantic search. <code>effectiveMode</code> reports the retrieval used. HTTP 206 and <code>partial:true</code> indicate incomplete retrieval without a pending job. Check <code>partial</code> and <code>warnings</code> even when <code>complete</code> is true.</p>
+<div class="endpoint"><span class="method post">POST</span> <code>/api/v1/research/batch</code><div class="desc">Send up to four query objects in <code>{"queries":[{"q":"Gaussian streaming","mode":"hybrid"},{"q":"ocean foam","category":"cs.GR"}]}</code>. Results stay in input order; inspect each item's success and job status. Each item may include waitSeconds.</div></div>
+<div class="endpoint"><span class="method post">POST</span> <code>/api/v1/papers/{id}/request</code><div class="desc">With an account key, fetch missing public arXiv metadata and queue embedding preparation. No admin token needed. Source/PDF downloads remain administrative. Check embeddingQueued and statusUrl before requesting similar papers.</div></div>
+<p><code>codeLinks</code> contains repository links found in paper metadata. <code>codeAvailability:"linked"</code> means a link was found, not that a release was verified; <code>"unknown"</code> does not mean code is unavailable.</p>
+<pre class="example" tabindex="0" aria-label="Python research example"><code>import json, urllib.parse, urllib.request
+params = urllib.parse.urlencode({
+    "q": "ocean whitecap foam rendering",
+    "mode": "hybrid", "category": "cs.GR", "since": "2025-01"
+})
+request = urllib.request.Request(
+    "https://arxiv.gg/api/v1/research?" + params,
+    headers={"User-Agent": "arxivgg-python/1.0 (+https://arxiv.gg)"}
+)
+with urllib.request.urlopen(request, timeout=25) as response:
+    result = json.load(response)["data"]
+# Check complete, job, and warnings before treating this as final results.
+for hit in result["results"]:
+    print(hit["paper"]["title"], hit["paper"]["arxivUrl"])</code></pre>
+</section>
+
 <h2 id="agent-setup-title">Agent setup</h2>
 <div class="agent-panel" id="agent-setup" data-base-url="{{.BaseURL}}" data-mcp-url="{{.MCPURL}}" data-api-key="{{if .APIKey}}{{.APIKey}}{{end}}" data-api-key-mask="{{if .APIKeyMasked}}{{.APIKeyMasked}}{{end}}" data-signed-in="{{if .CurrentUser}}true{{else}}false{{end}}">
 	<div class="agent-panel-header">
@@ -113,7 +146,7 @@ pre.example code { background: none; color: inherit; }
 
 <div class="endpoint">
 	<span class="method post">POST</span> <code>/api/v1/papers/{id}/fetch</code>
-	<div class="desc">Fetch and cache a paper from arXiv.</div>
+	<div class="desc">Administrative source/PDF fetch. For account-key metadata ingestion, use POST /api/v1/papers/{id}/request.</div>
 	<div class="params">Query: <code>pdf=true</code>, <code>source=true</code> (default), <code>embedding=true</code></div>
 </div>
 
@@ -314,7 +347,7 @@ curl "{{.BaseURL}}/api/v1/papers/1706.03762/export/bibtex"</code></pre>
 		if (apiKey) {
 			accountNoteEl.innerHTML = 'Signed in. Agent prompts include <code>Authorization: Bearer ' + apiKeyMask + '</code>.';
 		} else if (apiKeyMask) {
-			accountNoteEl.innerHTML = 'Signed in with active key <code>' + apiKeyMask + '</code>. Regenerate it from <a href="/account">Account</a> to copy the full key.';
+			accountNoteEl.innerHTML = 'Signed in with active key <code>' + apiKeyMask + '</code>. Create a separate key from <a href="/account">Account</a> for this tool.';
 		} else if (signedIn) {
 			accountNoteEl.innerHTML = 'Signed in. Open <a href="/account">Account</a> to create an API key for authenticated agent work.';
 		} else {

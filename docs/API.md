@@ -5,13 +5,33 @@ The JSON API is rooted at `/api/v1/`; MCP uses `/mcp`. Successful JSON endpoints
 ## Authentication
 
 - Public reads need no credential unless noted.
-- Account API keys use `Authorization: Bearer arxivgg_...` and are created/regenerated from `/account` after Google sign-in.
+- Account API keys use `Authorization: Bearer arxivgg_...` or `X-API-Key: arxivgg_...` (Bearer takes precedence) and are created/regenerated from `/account` after Google sign-in.
 - Admin API operations accept an admin Google session, `X-Admin-Token`, or `Authorization: Bearer <ADMIN_TOKEN>`.
 - Remote Qwen workers use `X-Qwen-Worker-Token` or bearer `QWEN_WORKER_TOKEN`; an admin credential is also accepted.
 - Query-string admin secrets are not accepted.
 - In `serve -local`, privileged checks are bypassed and the server binds to loopback.
 
 Cookie-authenticated mutations require a same-origin request. Use headers, not cookies, for agents and remote workers.
+
+## Agent research contract
+
+Use `/api/v1/research` for new integrations. The machine-readable contract is `/api/v1/openapi.json`; `tools/arxiv_client.py` is a standard-library Python client with query polling.
+
+- `q`: concept query or paragraph, maximum 2,048 UTF-8 bytes.
+- `mode`: `hybrid` (default), `keyword`, `semantic`, or authenticated `deep`.
+- `category`: exact arXiv category; `since` inclusive and `until` exclusive accept YYYY, YYYY-MM, YYYY-MM-DD. `year` is an alternative to the date range.
+- `limit`: 1–100. `minSimilarity`: 0–1; positive values exclude lexical-only results. `recencyBoost`: 0–1, default zero. Filters apply before database ranking/LIMIT.
+- `waitSeconds`: 0–8. A cold query can return HTTP 202 with `complete:false` and a query `job`. Poll its `statusUrl` for queued/running/ready/failed, then repeat the original search once ready. The status response never exposes query text or worker details.
+
+`data.results[]` uses `{paperId, paper, similarity, score, snippet, section?, chunkId?}`. `paper` uses `{id, title, abstract, authors, categories, created, updated, arxivUrl, url, codeLinks, codeAvailability}`. Categories are an array; authors retain the complete source string. `similarity` is a cosine similarity or null; `score` is reciprocal-rank fusion with exact-name priority and optional recency, not confidence. Deep mode returns a matched full-paper snippet and chunk reference. Repository links are extracted from metadata; `linked` does not verify a released repository, and `unknown` does not mean no code exists.
+
+`POST /api/v1/research/batch` accepts `{"queries":[{"q":"Gaussian streaming"},{"q":"ocean foam","category":"cs.GR"}]}` with 1–4 query objects. Items execute concurrently and return in input order under `data.queries`, each with its own success/result/job. `effectiveMode` reports the retrieval actually used. `partial:true` and HTTP 206 identify incomplete retrieval without a pending job; HTTP 202 takes precedence when a job is pending. `complete` means there is no pending job, not that every retrieval source succeeded. Inspect `partial` and `warnings`, and never interpret an empty fallback as a completed semantic search.
+
+`GET /api/v1/account` verifies authentication and returns capabilities and rate limits. Public endpoint success alone does not verify a key. Account keys grant Deep Search and paper metadata requests, not admin permissions or higher request limits.
+
+Limits per IP: global 1,000/minute; research 60 query units/minute (each batch item counts); metadata requests 6/minute; legacy PDF search 20/minute. Research and ingestion also have process-wide concurrency limits of four and two. Respect HTTP 429 and `Retry-After`.
+
+**Python edge compatibility:** as verified on 2026-11-02, the deployment rejects default `Python-urllib` requests before API authentication. Use an honest application User-Agent, e.g. `arxivgg-python/1.0 (+https://arxiv.gg)`. The bundled client sets this automatically. Removing this deployment-specific restriction requires updating the Cloudflare user-agent rule; application auth cannot override an edge rejection.
 
 ## Paper Endpoints
 
@@ -23,6 +43,7 @@ Cookie-authenticated mutations require a same-origin request. Use headers, not c
 | `GET` | `/api/v1/papers/{id}/graph` | Citation graph | Public |
 | `GET` | `/api/v1/papers/{id}/similar?limit=80` | Qwen neighbors and semantic map; max 160 | Public |
 | `GET` | `/api/v1/papers/{id}/embedding-status` | Qwen abstract/map readiness and job state | Public |
+| `POST` | `/api/v1/papers/{id}/request` | Metadata ingestion and embedding preparation; no source/PDF download | Account key |
 | `POST` | `/api/v1/papers/{id}/fetch` | Fetch metadata/source/PDF | Admin |
 | `POST` | `/api/v1/papers/{id}/embeddings` | Generate or queue Qwen paper work | Public, separately rate-limited |
 | `GET` | `/api/v1/papers/{id}/export/{format}` | `bibtex`, `ris`, or `json` export | Public |
@@ -64,19 +85,16 @@ Semantic success identifies `mode:"semantic"` and `model:"Qwen/Qwen3-Embedding-8
 {
   "success": true,
   "data": {
-    "results": [{"paperId":"...","paper":{},"similarity":null,"fallback":true}],
-    "papers": [],
-    "count": 1,
-    "query": "...",
-    "mode": "quick",
-    "model": "quick",
-    "fallback": true,
-    "notice": "Idea search is unavailable; showing Quick matches."
+    "results": [], "papers": [], "count": 0, "query": "...",
+    "mode": "quick", "requestedMode": "semantic", "model": null,
+    "fallback": {"used": true, "reasonCode": "query_embedding_queued", "notice": "No Quick matches. Semantic results may still be preparing."},
+    "retry": {"recommended": true, "afterSeconds": 3},
+    "job": {"id": "<query hash>", "status": "queued", "statusUrl": "/api/v1/research/status?id=<query hash>", "retryAfterSeconds": 3}
   }
 }
 ```
 
-Always inspect `data.fallback` before consuming similarity scores.
+Always inspect `data.fallback` before consuming similarity scores. Legacy search items use Go paper fields such as `ID`, `Title`, `Abstract`, `Created`, with camelCase outer `paperId` and `similarity`; these fields remain for existing clients. New integrations should use the consistent research contract above.
 
 The SSE endpoint emits `start`, `status`, `fallback`, `result`, `error`, and `complete` events as JSON in `data:` lines. `mode=semantic` uses Qwen abstract search; `mode=deep` uses prepared Qwen full-paper chunks and requires an authenticated session or account API key. Omitted mode defaults to Quick. The legacy `search` alias remains accepted, but clients should use `quick`, `semantic`, or `deep`.
 

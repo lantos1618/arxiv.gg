@@ -202,6 +202,11 @@ func cmdServe(ctx context.Context, cacheDir string, args []string) {
 	mux.HandleFunc("/api/v1/", srv.handleAPIRoot)
 	mux.HandleFunc("/api/v1/papers/", srv.handleAPIPaper)
 	mux.HandleFunc("/api/v1/search", srv.handleAPISearch)
+	mux.HandleFunc("/api/v1/research", srv.handleAPIResearch)
+	mux.HandleFunc("/api/v1/research/batch", srv.handleAPIResearchBatch)
+	mux.HandleFunc("/api/v1/research/status", srv.handleAPIResearchStatus)
+	mux.HandleFunc("/api/v1/account", srv.handleAPIAccountAccess)
+	mux.HandleFunc("/api/v1/openapi.json", srv.handleAPIOpenAPI)
 	mux.HandleFunc("/api/v1/search/quick", srv.handleAPISearchQuick)
 	mux.HandleFunc("/api/v1/search/stream", srv.handleAPISearchStream)
 	mux.HandleFunc("/api/v1/search/semantic", srv.handleAPISearchSemantic)
@@ -328,10 +333,13 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 }
 
 type server struct {
-	cache        *arxiv.Cache
-	sitemapCache sitemapResponseCache
-	cacheDir     string
-	localMode    bool // Enable local PDF/source caching instead of redirecting to arxiv.org
+	researchOnce                   sync.Once
+	researchLimiter, ingestLimiter *rateLimiter
+	researchSlots, ingestSlots     chan struct{}
+	cache                          *arxiv.Cache
+	sitemapCache                   sitemapResponseCache
+	cacheDir                       string
+	localMode                      bool // Enable local PDF/source caching instead of redirecting to arxiv.org
 
 	// Real-time paper broadcast
 	paperBroadcast *paperBroadcaster
@@ -798,6 +806,32 @@ func (s *server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Check if query looks like an arXiv ID or URL - redirect to abs page
 	if arxivID := extractArxivID(query); arxivID != "" {
 		http.Redirect(w, r, "/abs/"+arxivID, http.StatusFound)
+		return
+	}
+
+	// Deliver the browser page before doing search work. Its SSE stream reports
+	// progress and remains cancellable; the explicit static path supports no-JS.
+	if r.URL.Query().Get("format") != "json" && r.URL.Query().Get("static") != "1" {
+		category, err := validateSearchCategory(r.URL.Query().Get("category"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mode := normalizeSearchMode(r)
+		if mode == "deep" {
+			if _, ok := s.currentUser(r); !ok {
+				http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+				return
+			}
+		}
+		fallback := r.URL.Query()
+		fallback.Set("static", "1")
+		s.renderTemplate(w, r, "search", map[string]any{
+			"Title": "Search", "Query": query, "Category": category, "SearchMode": mode,
+			"IsSemantic": mode == "semantic", "IsDeep": mode == "deep", "StreamOnLoad": true,
+			"StaticSearchURL": "/search?" + fallback.Encode(), "Papers": []arxiv.Paper{},
+			"SemanticResults": []arxiv.SemanticResult{}, "DeepResults": []arxiv.DeepSearchResult{},
+		})
 		return
 	}
 

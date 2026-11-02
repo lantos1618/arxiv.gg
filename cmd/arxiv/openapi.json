@@ -1,0 +1,1006 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "arXiv.gg Research API",
+    "version": "1.0.0",
+    "description": "Agent-facing contract. Rate limits apply per IP; an account key enables account features, Deep Search, and metadata requests, not higher limits. Legacy /search endpoints remain compatible and are documented on the API page."
+  },
+  "servers": [
+    {
+      "url": "https://arxiv.gg/api/v1"
+    }
+  ],
+  "paths": {
+    "/research": {
+      "get": {
+        "summary": "Consistent agent research search",
+        "description": "Public keyword, semantic, and hybrid search. Deep full-text search requires an account key. Filters are applied before vector LIMIT. 60 query units per IP per minute; four simultaneous searches per process. Existing legacy search endpoints retain their original response fields.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "description": "Query text or paragraph; maximum 2048 UTF-8 bytes."
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "keyword",
+                "semantic",
+                "hybrid",
+                "deep"
+              ],
+              "default": "hybrid"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Inclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Exclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "minSimilarity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0
+            }
+          },
+          {
+            "name": "recencyBoost",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0
+            }
+          },
+          {
+            "name": "waitSeconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search completed using all requested retrieval sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Research"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Query queued; poll job.statusUrl and repeat the same query when ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Research"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or revoked account key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or capacity exhausted; honor Retry-After",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Search temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial retrieval; inspect warnings and effectiveMode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Research"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/research/batch": {
+      "post": {
+        "summary": "Run up to four queries concurrently in one call",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "queries": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": {
+                      "$ref": "#/components/schemas/Query"
+                    }
+                  }
+                },
+                "required": [
+                  "queries"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Input-order results; inspect each success, complete, job, and warnings field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "queries": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "success": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  },
+                                  "data": {
+                                    "$ref": "#/components/schemas/Research"
+                                  }
+                                },
+                                "required": [
+                                  "success",
+                                  "data"
+                                ]
+                              },
+                              {
+                                "$ref": "#/components/schemas/Error"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "queries"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or revoked account key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or capacity exhausted; honor Retry-After",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Search temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/research/status": {
+      "get": {
+        "summary": "Poll query preparation without repeating a search",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readiness only; no query text or worker details are exposed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Job"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or revoked account key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or capacity exhausted; honor Retry-After",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Search temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account": {
+      "get": {
+        "summary": "Verify account-key authentication and capabilities",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated account access; account keys do not grant admin access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "authenticated": {
+                          "type": "boolean"
+                        },
+                        "plan": {
+                          "type": "string"
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "admin": {
+                          "type": "boolean"
+                        },
+                        "rateLimits": {
+                          "type": "object",
+                          "properties": {
+                            "globalPerIPPerMinute": {
+                              "type": "integer"
+                            },
+                            "researchQueriesPerIPPerMinute": {
+                              "type": "integer"
+                            },
+                            "paperRequestsPerIPPerMinute": {
+                              "type": "integer"
+                            },
+                            "higherLimitsWithKey": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "globalPerIPPerMinute",
+                            "researchQueriesPerIPPerMinute",
+                            "paperRequestsPerIPPerMinute",
+                            "higherLimitsWithKey"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "authenticated",
+                        "plan",
+                        "capabilities",
+                        "admin",
+                        "rateLimits"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or revoked account key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or capacity exhausted; honor Retry-After",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Search temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/papers/{id}/request": {
+      "post": {
+        "summary": "Request arXiv metadata ingestion with an account key",
+        "description": "Six requests per IP per minute, two concurrent. Does not download source/PDF. Embedding work is queued when configured; inspect embeddingQueued and statusUrl.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata available; embeddings may still be queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "paper": {
+                          "$ref": "#/components/schemas/Paper"
+                        },
+                        "embeddingQueued": {
+                          "type": "boolean"
+                        },
+                        "statusUrl": {
+                          "type": "string"
+                        },
+                        "warning": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "paper",
+                        "embeddingQueued",
+                        "statusUrl",
+                        "warning"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or revoked account key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit or capacity exhausted; honor Retry-After",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Search temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "arXiv metadata unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "arxivgg_..."
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    },
+    "schemas": {
+      "Query": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "Query text or paragraph; maximum 2048 UTF-8 bytes."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "keyword",
+              "semantic",
+              "hybrid",
+              "deep"
+            ],
+            "default": "hybrid"
+          },
+          "category": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string",
+            "description": "Inclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+          },
+          "until": {
+            "type": "string",
+            "description": "Exclusive YYYY, YYYY-MM, or YYYY-MM-DD"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "minSimilarity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0
+          },
+          "recencyBoost": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0
+          },
+          "waitSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 8,
+            "default": 0
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "additionalProperties": false
+      },
+      "Paper": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "abstract": {
+            "type": "string"
+          },
+          "authors": {
+            "type": "string"
+          },
+          "arxivUrl": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "codeLinks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "codeAvailability": {
+            "type": "string",
+            "enum": [
+              "linked",
+              "unknown"
+            ],
+            "description": "A linked repository is not verified to contain released code. Unknown does not mean unavailable."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "abstract",
+          "authors",
+          "categories",
+          "codeLinks",
+          "codeAvailability",
+          "created",
+          "updated",
+          "arxivUrl",
+          "url"
+        ]
+      },
+      "Result": {
+        "type": "object",
+        "properties": {
+          "paperId": {
+            "type": "string"
+          },
+          "paper": {
+            "$ref": "#/components/schemas/Paper"
+          },
+          "similarity": {
+            "type": "number",
+            "nullable": true,
+            "description": "Cosine similarity when a vector result exists; null for keyword-only matches."
+          },
+          "score": {
+            "type": "number",
+            "description": "Reciprocal rank fusion plus exact-title/name priority and optional recency. Not a probability."
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "chunkId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "paperId",
+          "paper",
+          "similarity",
+          "score",
+          "snippet"
+        ]
+      },
+      "Research": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Result"
+            }
+          },
+          "count": {
+            "type": "integer"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "effectiveMode": {
+            "type": "string"
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "A requested retrieval component was queued or unavailable; inspect warnings."
+          }
+        },
+        "required": [
+          "query",
+          "mode",
+          "results",
+          "count",
+          "complete",
+          "warnings",
+          "effectiveMode",
+          "partial"
+        ]
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "ready",
+              "failed"
+            ]
+          },
+          "statusUrl": {
+            "type": "string"
+          },
+          "retryAfterSeconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "statusUrl",
+          "retryAfterSeconds"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ]
+      }
+    }
+  }
+}

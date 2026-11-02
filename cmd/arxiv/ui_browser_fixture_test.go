@@ -65,6 +65,14 @@ func TestUIBrowserFixtureServer(t *testing.T) {
 				data["APIKeyNotice"] = "We couldn’t update your API key. Your existing key has not been changed. Please try again."
 				data["APIKeyWarning"] = true
 			}
+		case r.URL.Path == "/admin" || r.URL.Path == "/admin/users" || r.URL.Path == "/admin/audit" || r.URL.Path == "/admin/feedback":
+			names := map[string]string{"/admin": "admin", "/admin/users": "admin_users", "/admin/audit": "admin_audit", "/admin/feedback": "admin_feedback"}
+			titles := map[string]string{"/admin": "Admin", "/admin/users": "Admin Users", "/admin/audit": "Admin Audit", "/admin/feedback": "Admin Feedback"}
+			name = names[r.URL.Path]
+			data["Title"] = titles[r.URL.Path]
+			data["CurrentUserIsAdmin"] = true
+			data["Stats"] = &arxiv.AdminStats{GeneratedAt: time.Now(), DBType: arxiv.DBTypePostgres, Cache: arxiv.CacheStats{TotalPapers: 3120000}, Embeddings: arxiv.AdminEmbeddingStats{FullAbstracts: 3120000, QwenAbstracts: 2964000}, Users: arxiv.AdminUserStats{TotalUsers: 1280, Active24h: 146}, RecentUsers: []arxiv.AdminUserRow{{Email: "alex@example.test", Name: "Alex Reader", Plan: "free", Provider: "google"}}}
+			data["Plans"] = simplePlanModel()
 		case r.URL.Path == "/login":
 			name = "login"
 			data["Next"] = "/account"

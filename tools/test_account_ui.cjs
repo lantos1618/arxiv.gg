@@ -30,9 +30,9 @@ if (out) fs.mkdirSync(out, {recursive:true});
      assert.equal(await page.locator('.key-table tbody tr').count(),2);
      for (const action of ['rotate','revoke']) {
       await page.locator(`[data-key-action="${action}"][data-key-id="key_fixture_two"]`).click();
-      const dialog=page.locator('#key-dialog');
+      const dialog=page.locator('#key-editor');
       assert.equal(await dialog.isVisible(),true);
-      assert.match(await dialog.locator('h2').innerText(),/Research script/);
+      assert.match(await dialog.locator('h3').innerText(),/Research script/);
       assert.equal(await dialog.locator('[name=key_id]').inputValue(),'key_fixture_two');
       assert.equal(await dialog.locator('form').evaluate(form => form.checkValidity()),false);
       await dialog.locator('[type=checkbox]').check();
@@ -47,13 +47,15 @@ if (out) fs.mkdirSync(out, {recursive:true});
      }
     }
     await page.locator('[data-open-create]').click();
-    const create=page.locator('#key-dialog');
+    const create=page.locator('#key-editor');
     assert.equal(await create.locator('form').evaluate(form => form.checkValidity()),false);
     await create.getByRole('textbox',{name:'Key name'}).fill('Codex');
     assert.equal(await create.locator('form').evaluate(form => form.checkValidity()),true);
     assert.equal(await create.locator('form').getAttribute('action'),'/account/api-key/create');
     if ([390,1280].includes(width) && state==='active') await screenshot(`account-${width}-create.png`);
     await page.keyboard.press('Escape');
+    assert.equal(await create.isVisible(),false);
+    assert.equal(await page.locator('[data-open-create]').evaluate(node=>node===document.activeElement),true);
     if (state === 'error') assert.match(await page.getByRole('alert').innerText(),/existing key has not been changed/);
     if (state === 'new') {
      assert.equal(await page.locator('#account-api-key').getAttribute('type'),'password');
@@ -79,23 +81,21 @@ if (out) fs.mkdirSync(out, {recursive:true});
    const action=page.locator('[data-key-action=rotate]').first();
    await action.evaluate(node => { node.dataset.keyName='x'.repeat(120); });
    await action.click();
-   assert(await page.locator('#key-dialog').evaluate(node => node.scrollWidth <= node.clientWidth),'Long key name overflows dialog');
+   assert(await page.locator('#key-editor').evaluate(node => node.scrollWidth <= node.clientWidth),'Long key name overflows dialog');
    await page.keyboard.press('Escape');
   }
   await page.goto(new URL('/account',base).href);
-  await page.getByRole('link',{name:'Profile',exact:true}).click();
-  await page.locator('#profile').waitFor({state:'visible'});
-  assert.equal(await page.locator('#api-keys').isVisible(),false);
-  await page.getByRole('link',{name:'Reading',exact:true}).click();
-  await page.locator('#reading-history').waitFor({state:'visible'});
-  await page.goBack();
-  await page.locator('#profile').waitFor({state:'visible'});
+  assert.equal(await page.locator('#profile').isVisible(),true);
+  assert.equal(await page.locator('#api-keys').isVisible(),true);
+  await page.locator('#reading-details > summary').click();
+  assert.equal(await page.locator('#reading-details').getAttribute('open'),'');
+  await page.goto(new URL('/account#reading-history',base).href);
+  assert.equal(await page.locator('#reading-details').getAttribute('open'),'');
   await page.reload();
-  await page.locator('#profile').waitFor({state:'visible'});
-  await page.getByRole('link',{name:'API keys',exact:true}).click();
+  assert.equal(await page.locator('#reading-details').getAttribute('open'),'');
   await page.locator('[data-key-action=rotate]').first().click();
-  await page.locator('#key-dialog [name=confirm_rotation]').check();
-  await page.locator('#key-dialog form').evaluate(form => {
+  await page.locator('#key-editor [name=confirm_rotation]').check();
+  await page.locator('#key-editor form').evaluate(form => {
    window.accountSubmissions=[];
    form.addEventListener('submit',event => {
     event.preventDefault();
@@ -103,11 +103,11 @@ if (out) fs.mkdirSync(out, {recursive:true});
    });
   });
   await page.getByRole('button',{name:'Rotate API key',exact:true}).click();
-  assert.equal(await page.locator('#key-dialog button[type=submit]').isDisabled(),true);
-  await page.locator('#key-dialog button[type=submit]').evaluate(button => button.click());
+  assert.equal(await page.locator('#key-editor button[type=submit]').isDisabled(),true);
+  await page.locator('#key-editor button[type=submit]').evaluate(button => button.click());
   assert.deepEqual(await page.evaluate(() => window.accountSubmissions),['key_id=key_fixture_one&confirm_rotation=rotate']);
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
-  assert.equal(await page.locator('#key-dialog button[type=submit]').isEnabled(),true);
+  assert.equal(await page.locator('#key-editor button[type=submit]').isEnabled(),true);
   for (const width of [320,390,768,1280]) {
    await page.setViewportSize({width,height:900});
    for (const state of ['active','error','unavailable']) {
@@ -133,6 +133,6 @@ if (out) fs.mkdirSync(out, {recursive:true});
    assert.equal(await fallback.locator('#'+id+' button[type=submit]').isVisible(),true);
   }
   await noJS.close();
-  console.log('PASS: multiple keys and all account/login states at 320/390/768/1280px, correct per-key actions, create/rotate/revoke dialogs, reveal/copy, settings navigation/history, duplicate-submit prevention, no-JS fallback, no page errors');
+  console.log('PASS: multiple keys and all account/login states at 320/390/768/1280px, correct per-key actions, create/rotate/revoke inline confirmations, reveal/copy, flat settings and reading deep links, duplicate-submit prevention, no-JS fallback, no page errors');
  } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;});

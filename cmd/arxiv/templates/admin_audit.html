@@ -1,27 +1,12 @@
 {{define "admin_audit"}}
 {{template "head" .}}
-<style>
-	.admin-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
-	.admin-tabs a { padding: 0.35rem 0.65rem; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #111827; }
-	.admin-tabs a.active { border-color: #0066cc; color: #0066cc; background: #f0f7ff; }
-	.admin-section { margin: 1.5rem 0; }
-	.admin-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-	.admin-table th, .admin-table td { border-bottom: 1px solid #e5e7eb; padding: 0.55rem 0.45rem; text-align: left; vertical-align: top; }
-	.admin-table th { color: #374151; font-weight: 700; background: #f9fafb; }
-	@media (max-width: 760px) {
-		.admin-table { display: block; overflow-x: auto; white-space: nowrap; }
-	}
-</style>
+{{template "management_style" .}}
+<div class="management-page admin-page">
 
-<h1>Admin Audit</h1>
+<h1>Audit</h1>
 <p class="inline-notice">Audit trail for admin page views and moderation actions.</p>
 
-<div class="admin-tabs">
-	<a href="/admin">Overview</a>
-	<a href="/admin/users">Users</a>
-	<a class="active" href="/admin/audit">Audit</a>
-	<a href="/admin/feedback">Feedback</a>
-</div>
+{{template "admin_nav" .}}
 
 <div class="admin-section">
 	<table class="admin-table">
@@ -29,11 +14,11 @@
 		<tbody>
 			{{range .Stats.RecentAuditLog}}
 			<tr>
-				<td>{{timeStamp .CreatedAt}}</td>
-				<td>{{.AdminEmail}}</td>
-				<td>{{.Action}}</td>
-				<td>{{.TargetType}} {{.TargetID}}</td>
-				<td>{{.Details}}</td>
+				<td data-label="Time UTC">{{timeStamp .CreatedAt}}</td>
+				<td data-label="Admin">{{.AdminEmail}}</td>
+				<td data-label="Action">{{.Action}}</td>
+				<td data-label="Target">{{.TargetType}} {{.TargetID}}</td>
+				<td data-label="Details">{{.Details}}</td>
 			</tr>
 			{{else}}
 			<tr><td colspan="5">No admin audit rows yet.</td></tr>
@@ -42,5 +27,6 @@
 	</table>
 </div>
 
+</div>
 {{template "foot" .}}
 {{end}}

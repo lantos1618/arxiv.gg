@@ -1,31 +1,13 @@
 {{define "admin_feedback"}}
 {{template "head" .}}
-<style>
-	.admin-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
-	.admin-tabs a { padding: 0.35rem 0.65rem; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #111827; }
-	.admin-tabs a.active { border-color: #0066cc; color: #0066cc; background: #f0f7ff; }
-	.admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-	.admin-table th, .admin-table td { border-bottom: 1px solid #e5e7eb; padding: 0.55rem 0.45rem; text-align: left; vertical-align: top; }
-	.admin-table th { color: #374151; font-weight: 700; background: #f9fafb; }
-	.admin-post-body { white-space: pre-wrap; max-width: 34rem; }
-	.admin-status { display: inline-flex; border-radius: 999px; padding: 0.12rem 0.45rem; font-size: 0.78rem; font-weight: 700; background: #ecfdf5; color: #047857; }
-	.admin-status.hidden { background: #fef2f2; color: #b91c1c; }
-	.admin-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-	@media (max-width: 760px) {
-		.admin-table { display: block; overflow-x: auto; white-space: nowrap; }
-	}
-</style>
+{{template "management_style" .}}
+<div class="management-page admin-page">
 
-<h1>Admin Feedback</h1>
+<h1>Feedback</h1>
 <p class="inline-notice">Moderate the public product-feedback page. Hidden posts stay in the database but disappear from the community ideas list. Anonymous display does not hide account identity from administrators.</p>
 {{if .Error}}<p class="inline-notice error" role="alert">{{.Error}}</p>{{end}}
 
-<div class="admin-tabs">
-	<a href="/admin">Overview</a>
-	<a href="/admin/users">Users</a>
-	<a href="/admin/audit">Audit</a>
-	<a class="active" href="/admin/feedback">Feedback</a>
-</div>
+{{template "admin_nav" .}}
 
 <table class="admin-table">
 	<thead>
@@ -34,15 +16,15 @@
 	<tbody>
 	{{range .Posts}}
 		<tr id="post-{{.ID}}">
-			<td><span class="admin-status {{if eq .Status "hidden"}}hidden{{end}}">{{if .Status}}{{.Status}}{{else}}visible{{end}}</span></td>
-			<td>
+			<td data-label="Status"><span class="admin-status {{if eq .Status "hidden"}}hidden{{end}}">{{if .Status}}{{.Status}}{{else}}visible{{end}}</span></td>
+			<td data-label="Author">
 				{{if .Anonymous}}anonymous display{{else}}{{.DisplayName}}{{end}}<br>
 				<code>{{.UserEmail}}</code>
 			</td>
-			<td class="admin-post-body">{{.Body}}</td>
-			<td>{{.Score}} score<br>{{.UpVotes}} up / {{.DownVotes}} down</td>
-			<td>{{timeStamp .CreatedAt}} UTC{{if .HiddenAt}}<br>Hidden {{timeStamp .HiddenAt}} by {{.HiddenBy}}{{end}}</td>
-			<td>
+			<td class="admin-post-body" data-label="Post">{{.Body}}</td>
+			<td data-label="Votes">{{.Score}} score<br>{{.UpVotes}} up / {{.DownVotes}} down</td>
+			<td data-label="Created">{{timeStamp .CreatedAt}} UTC{{if .HiddenAt}}<br>Hidden {{timeStamp .HiddenAt}} by {{.HiddenBy}}{{end}}</td>
+			<td data-label="Actions">
 				<div class="admin-actions">
 					<form method="post" action="/admin/feedback/status">
 						<input type="hidden" name="post_id" value="{{.ID}}">
@@ -63,5 +45,6 @@
 	</tbody>
 </table>
 
+</div>
 {{template "foot" .}}
 {{end}}

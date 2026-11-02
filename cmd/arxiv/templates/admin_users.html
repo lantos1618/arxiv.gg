@@ -1,48 +1,14 @@
 {{define "admin_users"}}
 {{template "head" .}}
-<style>
-	.admin-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0 1.25rem; }
-	.admin-tabs a { padding: 0.35rem 0.65rem; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #111827; }
-	.admin-tabs a.active { border-color: #0066cc; color: #0066cc; background: #f0f7ff; }
-	.admin-section { margin: 1.5rem 0; }
-	.admin-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; }
-	.admin-metric { border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.85rem; background: #fff; }
-	.admin-metric-label { color: #4b5563; font-size: 0.82rem; }
-	.admin-metric-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
-	.admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-	.admin-table th, .admin-table td { border-bottom: 1px solid #e5e7eb; padding: 0.55rem 0.45rem; text-align: left; vertical-align: top; }
-	.admin-table th { color: #374151; font-weight: 700; background: #f9fafb; }
-	.admin-note { color: #6b7280; }
-	@media (max-width: 760px) {
-		.admin-table { display: block; overflow-x: auto; white-space: nowrap; }
-	}
-</style>
+{{template "management_style" .}}
+<div class="management-page admin-page">
 
-<h1>Admin Users</h1>
-<p class="inline-notice">Real users from the <code>users</code> table. Anonymous visitors do not have user rows.</p>
+<h1>Users</h1>
+<p class="inline-notice">Signed-in accounts and reading activity. Anonymous visitors are not included.</p>
 
-<div class="admin-tabs">
-	<a href="/admin">Overview</a>
-	<a class="active" href="/admin/users">Users</a>
-	<a href="/admin/audit">Audit</a>
-	<a href="/admin/feedback">Feedback</a>
-</div>
+{{template "admin_nav" .}}
 
-<div class="admin-section">
-	<div class="admin-kpis">
-		<div class="admin-metric"><div class="admin-metric-label">Total users</div><div class="admin-metric-value">{{formatInt .Stats.Users.TotalUsers}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">New 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.New24h}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">New 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.New7d}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">New 30d</div><div class="admin-metric-value">{{formatInt .Stats.Users.New30d}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Active 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.Active24h}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Active 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.Active7d}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Free</div><div class="admin-metric-value">{{formatInt .Stats.Users.FreeUsers}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Plan label: paid</div><div class="admin-metric-value">{{formatInt .Stats.Users.PaidUsers}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Paper views</div><div class="admin-metric-value">{{formatInt .Stats.Users.PaperViews}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Viewers 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.Viewers24h}}</div></div>
-		<div class="admin-metric"><div class="admin-metric-label">Viewers 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.Viewers7d}}</div></div>
-	</div>
-</div>
+<div class="admin-section"><div class="admin-kpis"><div class="admin-metric"><div class="admin-metric-label">Total users</div><div class="admin-metric-value">{{formatInt .Stats.Users.TotalUsers}}</div></div><div class="admin-metric"><div class="admin-metric-label">New 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.New7d}}</div></div><div class="admin-metric"><div class="admin-metric-label">Active 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.Active24h}}</div></div><div class="admin-metric"><div class="admin-metric-label">Viewers 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.Viewers7d}}</div></div></div></div>
 
 <div class="admin-section">
 	<h2>Recent Users</h2>
@@ -53,14 +19,14 @@
 		<tbody>
 			{{range .Stats.RecentUsers}}
 			<tr>
-				<td>{{.Email}}</td>
-				<td>{{if .Name}}{{.Name}}{{else}}-{{end}}</td>
-				<td>{{.Plan}}</td>
-				<td>{{.Provider}}</td>
-				<td>{{.Verified}}</td>
-				<td>{{timeStamp .CreatedAt}}</td>
-				<td>{{timeOrDash .LastLoginAt}}</td>
-				<td>{{timeOrDash .LastSeenAt}}</td>
+				<td data-label="Email">{{.Email}}</td>
+				<td data-label="Name">{{if .Name}}{{.Name}}{{else}}-{{end}}</td>
+				<td data-label="Plan">{{.Plan}}</td>
+				<td data-label="Provider">{{.Provider}}</td>
+				<td data-label="Verified">{{.Verified}}</td>
+				<td data-label="Created">{{timeStamp .CreatedAt}}</td>
+				<td data-label="Last login">{{timeOrDash .LastLoginAt}}</td>
+				<td data-label="Last seen">{{timeOrDash .LastSeenAt}}</td>
 			</tr>
 			{{else}}
 			<tr><td colspan="8">No users yet.</td></tr>
@@ -79,11 +45,11 @@
 		<tbody>
 			{{range .Stats.RecentViews}}
 			<tr>
-				<td>{{if .UserEmail}}{{.UserEmail}}{{else}}{{.UserID}}{{end}}{{if .UserName}}<br><span>{{.UserName}}</span>{{end}}</td>
-				<td><a href="{{paperPath .PaperID}}">{{if .PaperTitle}}{{.PaperTitle}}{{else}}{{.PaperID}}{{end}}</a><br><code>{{.PaperID}}</code></td>
-				<td>{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</td>
-				<td>{{.ViewCount}}</td>
-				<td>{{timeStamp .LastViewedAt}}</td>
+				<td data-label="User">{{if .UserEmail}}{{.UserEmail}}{{else}}{{.UserID}}{{end}}{{if .UserName}}<br><span>{{.UserName}}</span>{{end}}</td>
+				<td data-label="Paper"><a href="{{paperPath .PaperID}}">{{if .PaperTitle}}{{.PaperTitle}}{{else}}{{.PaperID}}{{end}}</a><br><code>{{.PaperID}}</code></td>
+				<td data-label="Categories">{{range $i, $c := parseCategories .Categories}}{{if $i}} {{end}}<a class="cat-link" href="{{categoryPath $c}}">{{$c}}</a>{{end}}</td>
+				<td data-label="Views">{{.ViewCount}}</td>
+				<td data-label="Last viewed">{{timeStamp .LastViewedAt}}</td>
 			</tr>
 			{{else}}
 			<tr><td colspan="5">No signed-in paper views yet.</td></tr>
@@ -92,6 +58,7 @@
 	</table>
 </div>
 
+<details class="admin-details"><summary>More account metrics</summary><div class="admin-kpis"><div class="admin-metric"><div class="admin-metric-label">New 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.New24h}}</div></div><div class="admin-metric"><div class="admin-metric-label">New 30d</div><div class="admin-metric-value">{{formatInt .Stats.Users.New30d}}</div></div><div class="admin-metric"><div class="admin-metric-label">Active 7d</div><div class="admin-metric-value">{{formatInt .Stats.Users.Active7d}}</div></div><div class="admin-metric"><div class="admin-metric-label">Free</div><div class="admin-metric-value">{{formatInt .Stats.Users.FreeUsers}}</div></div><div class="admin-metric"><div class="admin-metric-label">Plan label: paid</div><div class="admin-metric-value">{{formatInt .Stats.Users.PaidUsers}}</div></div><div class="admin-metric"><div class="admin-metric-label">Paper views</div><div class="admin-metric-value">{{formatInt .Stats.Users.PaperViews}}</div></div><div class="admin-metric"><div class="admin-metric-label">Viewers 24h</div><div class="admin-metric-value">{{formatInt .Stats.Users.Viewers24h}}</div></div></div></details>
 <div class="admin-section">
 	<h2>Plan Rules</h2>
 	<table class="admin-table">
@@ -99,12 +66,13 @@
 		<tbody>
 			{{range .Plans}}
 			<tr>
-				<td>{{.Plan}}</td><td>{{.Who}}</td><td>{{.Access}}</td><td>{{.Billing}}</td>
+				<td data-label="Plan">{{.Plan}}</td><td data-label="Who">{{.Who}}</td><td data-label="Access">{{.Access}}</td><td data-label="Billing">{{.Billing}}</td>
 			</tr>
 			{{end}}
 		</tbody>
 	</table>
 </div>
 
+</div>
 {{template "foot" .}}
 {{end}}

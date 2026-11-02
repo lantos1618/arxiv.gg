@@ -50,8 +50,8 @@ func researchWhere(f ResearchFilter) (string, []any) {
 	where := ""
 	args := []any{}
 	if f.Category != "" {
-		where += " AND ? = ANY(string_to_array(p.categories, ' '))"
-		args = append(args, f.Category)
+		where += " AND p.categories LIKE ? AND ? = ANY(string_to_array(p.categories, ' '))"
+		args = append(args, "%"+f.Category+"%", f.Category)
 	}
 	if !f.Since.IsZero() {
 		where += " AND " + researchPublicationMonthSQL + " >= ?"
@@ -127,16 +127,32 @@ func (c *Cache) ResearchVectors(ctx context.Context, vector []float32, f Researc
  WHERE c.scope='pdf_text' AND e.source_hash=c.text_hash AND COALESCE(c.text,'')<>'' AND e.model=? AND e.dim=? AND e.vector IS NOT NULL`
 	}
 	vec := float32SliceToVectorString(vector)
-	query := selectFrom + where + ` AND 1-(e.vector <=> ?::vector) >= ? ORDER BY e.vector <=> ?::vector LIMIT ?`
+	var query string
 	all := append([]any{vec, qwenEmbeddingModel, qwenEmbeddingDim}, args...)
 	candidates := limit
 	if deep {
 		candidates = min(limit*8, 800)
 	}
-	all = append(all, vec, f.MinSimilarity, vec, candidates)
+
+	if f.Category != "" {
+		// A trigram index narrows categories before exact distance ranking. Sparse
+		// categories otherwise force ANN to traverse thousands of unrelated papers.
+		query = `WITH filtered AS MATERIALIZED (` + selectFrom + where + `)
+ SELECT * FROM filtered WHERE similarity >= ? ORDER BY similarity DESC, paper_id, chunk_id LIMIT ?`
+		all = append(all, f.MinSimilarity, candidates)
+	} else {
+		// Apply the threshold outside the ordered nearest-neighbor scan. Filtering
+		// inside makes an iterative index keep scanning when fewer than LIMIT match.
+		query = `WITH nearest AS MATERIALIZED (` + selectFrom + where + ` ORDER BY e.vector <=> ?::vector LIMIT ?)
+ SELECT * FROM nearest WHERE similarity >= ? ORDER BY similarity DESC, paper_id, chunk_id`
+		all = append(all, vec, candidates, f.MinSimilarity)
+	}
 	rows := []DeepSearchResult{}
 	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SET LOCAL statement_timeout = '10000ms'").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("SET LOCAL jit = off").Error; err != nil {
 			return err
 		}
 		if err := tx.Exec("SET LOCAL hnsw.ef_search = 400").Error; err != nil {
